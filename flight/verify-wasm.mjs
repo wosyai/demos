@@ -33,16 +33,20 @@ engine = new WebAssembly.Instance(module, { flight: {
         aircraft = readFloats(pointer, length, 18, 12288);
     },
     frame(pointer, length) {
-        frame = readFloats(pointer, length, 1, 28);
-        assert.equal(frame.length, 28);
+        frame = readFloats(pointer, length, 1, 31);
+        assert.equal(frame.length, 31);
+        assert(frame[28] >= -1 && frame[28] <= 1, "turn cue is bounded");
+        assert([0, 1, 2, 3, 4].includes(frame[29]), "landing enum is recognized");
+        assert(frame[30] === 0 || frame[30] === 1, "shortcut availability is Boolean");
     },
     record(pointer, length) {
-        assert(length >= 186 && length <= 7206);
+        assert(length >= 186 && length <= 14406);
         assert(pointer >= 0 && pointer + length <= engine.memory.buffer.byteLength);
         packet = new Uint8Array(engine.memory.buffer, pointer, length).slice();
     },
 } }).exports;
 engine._start();
+assert.equal(engine.input_version(), 1);
 
 const tick = (mask = 0, dt = 1 / 30, aspect = 1.65) => engine.tick(dt, mask, aspect);
 function load(data) {
@@ -157,4 +161,62 @@ for (const bytes of malformed) {
     assert.equal(frame[23], 0, "rejects corrupt, mismatched, or unfinished ghost runs");
 }
 assert.equal(packet, undefined, "never publishes a record before landing");
-console.log("Flight WASM: ABI, two scenes, both first gates, fixed-step replay, and ghost envelope verified");
+const hostAnalog = (bank, pitch, power = 0) => 64 | (power & 48) | ((bank & 255) << 8) | ((pitch & 255) << 16);
+function headingAfter(input) {
+    reset(0);
+    for (let i = 0; i < 21; i++) tick(input);
+    return frame[3];
+}
+const weakRight = headingAfter(hostAnalog(63, 0));
+const digitalRight = headingAfter(2);
+assert(weakRight > 0 && weakRight < digitalRight, "partial joystick motion banks proportionally");
+assert.equal(headingAfter(hostAnalog(-127, 0) | 2), digitalRight, "keyboard wins on its own axis");
+assert(headingAfter(hostAnalog(-127, 0)) < 0, "signed joystick left is preserved");
+
+const route = JSON.parse(readFileSync(new URL("test/reference-controls.json", import.meta.url), "utf8"))
+    .find(({ course, shortcut }) => course === 0 && !shortcut);
+function analogEquivalent(mask) {
+    const bank = Number((mask & 2) !== 0) - Number((mask & 1) !== 0);
+    const pitch = Number((mask & 4) !== 0) - Number((mask & 8) !== 0);
+    return hostAnalog(bank * 127, pitch * 127, mask);
+}
+function finishWith(convert, expectedVersion) {
+    packet = undefined;
+    reset(1);
+    reset(0);
+    assert.deepEqual(Array.from(frame.subarray(28)), [0, 0, 0]);
+    let sawShortcut = false, sawLanding = false;
+    for (const [mask, count] of route.controls) {
+        for (let i = 0; i < count; i++) {
+            tick(convert(mask));
+            if (frame[20] === 6) sawShortcut ||= frame[30] === 1;
+            else assert.equal(frame[30], 0, "shortcut offer is exclusive to that gate");
+            if (frame[26] && frame[22] === 0) sawLanding ||= frame[29] > 0;
+        }
+    }
+    for (let i = 0; i < 15 && frame[22] === 0; i++) tick(convert(route.controls.at(-1)[0]));
+    assert.equal(frame[22], 1, "authored flight lands with the selected control style");
+    assert(sawShortcut && sawLanding, "flight visits actual shortcut and landing guidance");
+    assert(packet, "landing emits an authentic replay packet");
+    assert.equal(packet[2], expectedVersion);
+    assert.equal(packet.length, 6 + (packet[4] + packet[5] * 256) * expectedVersion);
+    return { time: frame[17], data: packet };
+}
+const classic = finishWith((mask) => mask, 1);
+const proportional = finishWith(analogEquivalent, 2);
+assert.equal(classic.time, proportional.time, "full deflection retains the legacy route exactly");
+for (const { time, data } of [classic, proportional]) {
+    reset(1);
+    reset(0);
+    if (data[2] === 2) {
+        const corrupt = data.slice();
+        corrupt[7] |= 0xf0;
+        load(corrupt);
+        tick(0, 0);
+        assert.equal(frame[23], 0, "v2 packet rejects an out-of-range canonical axis");
+    }
+    load(data);
+    tick(0, 0);
+    assert.equal(frame[23], time, "an authentic saved ghost survives either packet version");
+}
+console.log("Flight WASM: geometry, fixed-step controls, two replay formats, and route guidance verified");

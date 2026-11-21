@@ -69,13 +69,19 @@ kbd { background: #374d4e; padding: .06rem .22rem; border: 1px solid #ffffff47; 
 @media (any-pointer: coarse) {
   .keys { display: none; }
   .touch { position: absolute; z-index: 3; inset: auto max(.65rem, env(safe-area-inset-right)) max(.7rem, env(safe-area-inset-bottom)) max(.65rem, env(safe-area-inset-left)); display: flex; align-items: end; justify-content: space-between; gap: 1rem; pointer-events: none; }
-  .pad, .throttle { display: grid; gap: .16rem; }
-  .pad { grid-template-columns: repeat(3, 3.1rem); grid-template-areas: ". up ." "left . right" ". down ."; }
-  .stick-up { grid-area: up; } .stick-left { grid-area: left; } .stick-right { grid-area: right; } .stick-down { grid-area: down; }
-  .touch button { touch-action: none; pointer-events: auto; user-select: none; -webkit-user-select: none; min-width: 2.75rem; min-height: 2.75rem; padding: .15rem .24rem; border: 1px solid #f4deb48a; border-radius: .34rem; background: #172f33d9; font-size: .7rem; letter-spacing: .045em; font-weight: 800; }
-  .throttle button { padding-inline: .55rem; }
+  .stick-zone { position: relative; width: clamp(9rem, 45vw, 13.5rem); height: clamp(7.15rem, 24dvh, 10rem); align-self: end; pointer-events: auto; touch-action: none; user-select: none; -webkit-user-select: none; }
+  .stick-base { position: absolute; display: grid; place-items: center; width: clamp(4.8rem, 14dvh, 6rem); aspect-ratio: 1; left: var(--stick-x, 33%); top: var(--stick-y, 45%); transform: translate(-50%,-50%); border: 1px solid #f4deb4b0; border-radius: 50%; background: radial-gradient(circle, #182d32a0 25%, #152a30c5 75%); box-shadow: inset 0 0 0 .3rem #1830364d, 0 .15rem .45rem #17232765; pointer-events: none; }
+  .stick-base::before, .stick-base::after { content: ""; position: absolute; background: #f4deb463; pointer-events: none; }
+  .stick-base::before { width: 76%; height: 1px; }
+  .stick-base::after { width: 1px; height: 76%; }
+  .stick-knob { z-index: 1; width: 48%; aspect-ratio: 1; border-radius: 50%; border: 1px solid #fff0c9; background: #ead39f; box-shadow: 0 .14rem .45rem #0a1b20aa; transform: translate(var(--stick-dx, 0px),var(--stick-dy, 0px)); }
+  .stick-zone.active .stick-label { opacity: 0; }
+  .stick-label { position: absolute; left: .45rem; bottom: .1rem; border: 1px solid var(--line); border-radius: .2rem; padding: .07rem .4rem; background: #172f33e9; font-size: .67rem; font-weight: 800; letter-spacing: .06em; pointer-events: none; }
+  .throttle { display: grid; gap: .45rem; }
+  .touch button { touch-action: none; pointer-events: auto; user-select: none; -webkit-user-select: none; min-width: 5.25rem; min-height: 3rem; padding: .3rem .6rem; border: 1px solid #f4deb4a1; border-radius: .34rem; background: #172f33ec; font-size: .72rem; letter-spacing: .04em; font-weight: 800; }
   .touch button.active { background: #f0d8aa; color: #162b31; }
-  .callout { bottom: max(3.7rem, env(safe-area-inset-bottom)); max-width: calc(100% - 13rem); background: #17292bf5; }
+  .callout { bottom: max(7.7rem, calc(env(safe-area-inset-bottom) + 7rem)); max-width: calc(100% - 1.5rem); background: #17292bf5; }
+
 }
 @media (max-width: 730px) {
   .hud { grid-template-columns: 1fr auto; gap: .35rem; }
@@ -87,7 +93,7 @@ kbd { background: #374d4e; padding: .06rem .22rem; border: 1px solid #ffffff47; 
   .shade { background: linear-gradient(0deg,#132d33f5 0%,#132d33de 35%,#132d3330 84%); }
   .menu { inset: max(3.8rem, env(safe-area-inset-top)) 1.05rem max(.8rem, env(safe-area-inset-bottom)); width: auto; justify-content: safe flex-end; }
   h1 { font-size: clamp(4.5rem, 16vw, 7.4rem); }
-  .callout { bottom: 10rem; max-width: calc(100% - 2rem); }
+  .callout { bottom: max(10.9rem, calc(env(safe-area-inset-bottom) + 10rem)); max-width: calc(100% - 2rem); }
 }
 @media (max-height: 530px) and (orientation: landscape) {
   .menu { inset-block: 2.9rem .65rem; }
@@ -105,3 +111,7 @@ kbd { background: #374d4e; padding: .06rem .22rem; border: 1px solid #ffffff47; 
   .hud { top: max(2.75rem, calc(env(safe-area-inset-top) + 1.9rem)); }
 }
 @media (prefers-reduced-motion: reduce) { .shade { transition: none; } }
+
+@media (any-pointer: coarse) and (max-height: 430px) and (orientation: landscape) {
+  .callout { bottom: max(.45rem, env(safe-area-inset-bottom)); max-width: calc(100% - 17rem); padding-inline: .45rem; line-height: 1.22; }
+}

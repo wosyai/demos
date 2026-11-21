@@ -6,8 +6,8 @@
   <meta name="theme-color" content="#162b31">
   <title>Flying Low · Wosy Arcade</title>
   <meta name="description" content="Fly two pioneering aircraft through two low-altitude time trials. An original Wosy browser game.">
-  <link rel="stylesheet" href="./style.css">
-  <script type="module" src="./host.mjs"></script>
+  <link rel="stylesheet" href="./style.css?v=control-v2">
+  <script type="module" src="./host.mjs?v=control-v2"></script>
 </head>
 <body>
   <main id="game" class="game" tabindex="-1">
@@ -32,7 +32,7 @@
           <span class="race-copy"><span class="race-title">Seine Sprint</span><span class="race-location">SANTOS-DUMONT · PARIS</span></span>
         </button>
       </div>
-      <p id="menu-help" class="menu-help">Clear the marked gates, then land in the marked strip. Chase the ghost of your best run.</p>
+      <p id="menu-help" class="menu-help">Fly the amber gates, or try the narrow cyan shortcut. Brake and level your wings to land in the marked strip.</p>
       <p id="problem" class="problem" role="alert" hidden></p>
     </section>
 
@@ -65,15 +65,13 @@
     </section>
 
     <div id="touch" class="touch" aria-label="Touch flight controls" hidden>
-      <div class="pad" aria-label="Flight stick">
-        <button type="button" data-action="dive" class="stick-up" aria-label="Dive">DIVE</button>
-        <button type="button" data-action="left" class="stick-left" aria-label="Bank left">LEFT</button>
-        <button type="button" data-action="right" class="stick-right" aria-label="Bank right">RIGHT</button>
-        <button type="button" data-action="climb" class="stick-down" aria-label="Climb">CLIMB</button>
+      <div id="flight-stick" class="stick-zone" role="group" aria-label="Flight stick. Drag sideways to bank. Pull down to climb.">
+        <span class="stick-base" aria-hidden="true"><span class="stick-knob"></span></span>
+        <span class="stick-label" aria-hidden="true">DRAG TO STEER</span>
       </div>
       <div class="throttle" aria-label="Throttle controls">
-        <button type="button" data-action="power" aria-label="Increase power">POWER +</button>
-        <button type="button" data-action="brake" aria-label="Reduce power">POWER −</button>
+        <button type="button" data-action="power" aria-label="Increase power">THROTTLE</button>
+        <button type="button" data-action="brake" aria-label="Reduce power">BRAKE</button>
       </div>
     </div>
 

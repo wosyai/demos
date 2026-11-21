@@ -8,22 +8,49 @@ const KEYS = new Map([
 ]);
 const COURSES = ["Barnstorm Run", "Seine Sprint"];
 const STORAGE_KEY = "wosy-flying-low/v1/";
-const FRAME_FLOATS = 28;
+const LEGACY_FRAME_FLOATS = 28;
+const GUIDANCE_FRAME_FLOATS = 31;
+const LANDING_CUES = [
+  "Land in the marked strip", "Line up with the landing strip", "Brake to slow down",
+  "Ease your descent", "Aligned · ease onto the strip",
+];
 const FLOATS_PER_VERTEX = 6;
 const MAX_REPLAY = 65536;
 const FIELD_COLORS = [[.64, .79, .84], [.72, .79, .83]];
 
+const ANALOG_FLAG = 1 << 6;
+const JOYSTICK_DEADZONE = .13;
+const LEGACY_THRESHOLD = 38;
+
+export function stickAxes(x, y, radius) {
+  const magnitude = Math.hypot(x, y);
+  const scaled = Math.min(magnitude / radius, 1);
+  if (scaled <= JOYSTICK_DEADZONE) return { bank: 0, pitch: 0 };
+  const factor = 127 * (scaled - JOYSTICK_DEADZONE) / ((1 - JOYSTICK_DEADZONE) * magnitude);
+  return { bank: Math.round(x * factor), pitch: Math.round(y * factor) };
+}
+
 export function makeControls() {
   const keys = new Map(), pointers = new Map();
   return {
-    keys, pointers,
+    keys, pointers, stick: null,
     get mask() {
       let result = 0;
       for (const value of keys.values()) result |= value;
       for (const value of pointers.values()) result |= value;
       return result;
     },
-    clear() { keys.clear(); pointers.clear(); },
+    input(analog) {
+      const mask = this.mask;
+      if (!this.stick) return mask;
+      const {bank, pitch} = this.stick;
+      if (analog) return mask | ANALOG_FLAG | ((bank & 255) << 8) | ((pitch & 255) << 16);
+      const bankKey = bank >= LEGACY_THRESHOLD ? STEER.right : bank <= -LEGACY_THRESHOLD ? STEER.left : 0;
+      const pitchKey = pitch >= LEGACY_THRESHOLD ? STEER.climb : pitch <= -LEGACY_THRESHOLD ? STEER.dive : 0;
+      return mask | (mask & (STEER.left | STEER.right) ? 0 : bankKey)
+        | (mask & (STEER.climb | STEER.dive) ? 0 : pitchKey);
+    },
+    clear() { keys.clear(); pointers.clear(); this.stick = null; },
   };
 }
 
@@ -194,20 +221,34 @@ export function bootFlight(win, doc) {
   const summaryKicker = get("summary-kicker"), again = get("again"), choose = get("choose");
   const callout = get("callout"), flightCue = get("flight-cue"), buttons = Array.from(doc.querySelectorAll("[data-course]"));
   const actionButtons = Array.from(doc.querySelectorAll("[data-action]"));
+  const stick = get("flight-stick");
   const instruments = ["time", "gates", "speed", "altitude", "best"].map(get);
   const controls = makeControls(), replays = replayStore(() => win.localStorage);
   const field = { pointer: 0, length: 0, version: 0 }, moving = { pointer: 0, length: 0, version: 0 };
   const gl = canvas.getContext("webgl2", { alpha: false, antialias: true });
-  let gpu, engine, memory, framePointer = null;
+  let gpu, engine, memory, framePointer = null, frameLength = 0;
   let raf = 0, previous = null, current = 0, mode = "menu", modal = null;
   let loading = true, error = false, lost = false, hudTick = 0, dirty = true;
+  let activeStick = null, analogInput = false;
 
   function syncButtons() {
     const mask = controls.mask;
     for (const button of actionButtons) button.classList.toggle("active", Boolean(mask & STEER[button.dataset.action]));
   }
+  function releaseStick(pointerId) {
+    if (!activeStick || activeStick.id !== pointerId) return;
+    activeStick = null;
+    controls.stick = null;
+    for (const name of ["x", "y", "dx", "dy"]) stick.style.removeProperty("--stick-" + name);
+    stick.classList.toggle("active", false);
+  }
   function clearInput() {
     const captured = Array.from(controls.pointers.keys());
+    if (activeStick) {
+      const { id } = activeStick;
+      releaseStick(id);
+      if (stick.hasPointerCapture?.(id)) stick.releasePointerCapture(id);
+    }
     controls.clear();
     for (const button of actionButtons) for (const id of captured) {
       if (button.hasPointerCapture?.(id)) button.releasePointerCapture(id);
@@ -256,9 +297,12 @@ export function bootFlight(win, doc) {
       world: provide(field),
       aircraft: provide(moving),
       frame(pointer, length) {
-        if (length !== FRAME_FLOATS) throw new Error("The flight engine returned an invalid frame.");
+        if (length !== LEGACY_FRAME_FLOATS && length !== GUIDANCE_FRAME_FLOATS) {
+          throw new Error("The flight engine returned an invalid frame.");
+        }
         memoryRange(memory, pointer, length, Float32Array);
         framePointer = pointer;
+        frameLength = length;
       },
       record(pointer, length) {
         if (!Number.isSafeInteger(length) || length < 1 || length > MAX_REPLAY) return;
@@ -267,7 +311,7 @@ export function bootFlight(win, doc) {
     },
   };
   function state() {
-    return framePointer === null ? null : memoryRange(memory, framePointer, FRAME_FLOATS, Float32Array);
+    return framePointer === null ? null : memoryRange(memory, framePointer, frameLength, Float32Array);
   }
   function updateHud(frame) {
     setText(instruments[0], clockText(frame[17]));
@@ -275,7 +319,17 @@ export function bootFlight(win, doc) {
     setText(instruments[2], roundText(frame[18], "m/s"));
     setText(instruments[3], roundText(frame[19], "m"));
     setText(instruments[4], frame[23] > 0 ? clockText(frame[23]) : "—");
-    const cue = frame[26] ? "LAND IN THE MARKED STRIP" : `NEXT GATE · ${roundText(frame[27], "m")}`;
+    const guidance = frame.length === GUIDANCE_FRAME_FLOATS;
+    let cue;
+    if (frame[26]) {
+      cue = LANDING_CUES[guidance ? frame[29] : 0] ?? LANDING_CUES[0];
+    } else {
+      const turn = guidance ? frame[28] : 0;
+      const bearing = turn < -.14 ? "← Gate left" : turn > .14 ? "Gate right →" : "Gate ahead";
+      const label = guidance ? bearing : "Next gate";
+      const shortcut = guidance && frame[30] === 1 ? " · Cyan shortcut" : "";
+      cue = `${label} · ${roundText(frame[27], "m")}${shortcut}`;
+    }
     setText(callout, cue);
     callout.hidden = false;
     setText(flightCue, frame[26] ? "Land in the marked strip." :
@@ -371,7 +425,7 @@ export function bootFlight(win, doc) {
       previous = timestamp;
       const active = mode === "playing" && !modal;
       const resized = aspect !== loop.aspect || canvas.width !== loop.width || canvas.height !== loop.height;
-      if (active) engine.tick(elapsed, controls.mask, aspect);
+      if (active) engine.tick(elapsed, controls.input(analogInput), aspect);
       else if (resized) engine.tick(0, 0, aspect);
       loop.aspect = aspect;
       loop.width = canvas.width;
@@ -447,7 +501,32 @@ export function bootFlight(win, doc) {
     });
     button.addEventListener("contextmenu", (event) => event.preventDefault());
   }
+  stick.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0 || activeStick || modal || mode !== "playing" || lost) return;
+    event.preventDefault();
+    const area = stick.getBoundingClientRect();
+    const radius = Math.max(33, Math.min(46, area.height * .32));
+    const midpoint = (value, extent) => Math.max(radius, Math.min(extent - radius, value));
+    activeStick = { id: event.pointerId, x: event.clientX, y: event.clientY, radius };
+    controls.stick = {bank: 0, pitch: 0};
+    stick.style.setProperty("--stick-x", `${midpoint(event.clientX - area.left, area.width)}px`);
+    stick.style.setProperty("--stick-y", `${midpoint(event.clientY - area.top, area.height)}px`);
+    stick.setPointerCapture?.(event.pointerId);
+    stick.classList.toggle("active", true);
+  });
+  stick.addEventListener("pointermove", (event) => {
+    if (!activeStick || event.pointerId !== activeStick.id) return;
+    event.preventDefault();
+    const {x, y, radius} = activeStick;
+    const axes = stickAxes(event.clientX - x, event.clientY - y, radius);
+    controls.stick = axes;
+    stick.style.setProperty("--stick-dx", `${axes.bank * radius * .55 / 127}px`);
+    stick.style.setProperty("--stick-dy", `${axes.pitch * radius * .55 / 127}px`);
+  });
+  stick.addEventListener("lostpointercapture", (event) => releaseStick(event.pointerId));
+  stick.addEventListener("contextmenu", (event) => event.preventDefault());
   for (const type of ["pointerup", "pointercancel"]) win.addEventListener(type, (event) => {
+    releaseStick(event.pointerId);
     if (controls.pointers.delete(event.pointerId)) syncButtons();
   }, true);
   buttons.forEach((button) => button.addEventListener("click", () => reset(Number(button.dataset.course), true)));
@@ -457,7 +536,10 @@ export function bootFlight(win, doc) {
   choose.addEventListener("click", () => reset(current, false));
   win.addEventListener("keydown", (event) => press(event, true));
   win.addEventListener("keyup", (event) => press(event, false));
-  win.addEventListener("blur", () => { clearInput(); previous = null; });
+  function clearInterruptedInput() { clearInput(); previous = null; }
+  win.addEventListener("blur", clearInterruptedInput);
+  if (win.screen?.orientation?.addEventListener) win.screen.orientation.addEventListener("change", clearInterruptedInput);
+  else win.addEventListener("orientationchange", clearInterruptedInput);
   doc.addEventListener("visibilitychange", () => {
     clearInput();
     if (doc.hidden) {
@@ -493,7 +575,7 @@ export function bootFlight(win, doc) {
     if (!gl) { failure("This game needs WebGL 2. Try a current browser with hardware acceleration enabled."); return; }
     try {
       gpu = graphics(gl);
-      const wasm = await win.fetch(new URL("./flight.wasm", import.meta.url));
+      const wasm = await win.fetch(new URL("./flight.wasm?v=control-v2", import.meta.url));
       if (!wasm.ok) throw new Error("The flight engine could not be downloaded.");
       const { instance } = await win.WebAssembly.instantiate(await wasm.arrayBuffer(), imports);
       engine = instance.exports;
@@ -501,6 +583,7 @@ export function bootFlight(win, doc) {
       for (const name of ["_start", "reset", "tick", "ghost_begin", "ghost_byte", "ghost_end"])
         if (typeof engine[name] !== "function") throw new Error("The flight engine is incomplete.");
       engine._start();
+      analogInput = engine.input_version?.() === 1;
       loading = false;
       if (!lost) reset(0, false);
       if (error) return;

@@ -15,12 +15,15 @@ f32[6][16][16][8] moving_mesh = [mesh_chunk_1, mesh_chunk_1, mesh_chunk_1, mesh_
 u8[16] empty_bytes = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 u8[16][16] byte_chunk_0 = [empty_bytes, empty_bytes, empty_bytes, empty_bytes, empty_bytes, empty_bytes, empty_bytes, empty_bytes, empty_bytes, empty_bytes, empty_bytes, empty_bytes, empty_bytes, empty_bytes, empty_bytes, empty_bytes];
 u8[16][16][16] byte_chunk_1 = [byte_chunk_0, byte_chunk_0, byte_chunk_0, byte_chunk_0, byte_chunk_0, byte_chunk_0, byte_chunk_0, byte_chunk_0, byte_chunk_0, byte_chunk_0, byte_chunk_0, byte_chunk_0, byte_chunk_0, byte_chunk_0, byte_chunk_0, byte_chunk_0];
-u8[16][16][16][4] flight_log = [byte_chunk_1, byte_chunk_1, byte_chunk_1, byte_chunk_1];
+u16[16] empty_controls = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+u16[16][16] control_chunk_0 = [empty_controls, empty_controls, empty_controls, empty_controls, empty_controls, empty_controls, empty_controls, empty_controls, empty_controls, empty_controls, empty_controls, empty_controls, empty_controls, empty_controls, empty_controls, empty_controls];
+u16[16][16][16] control_chunk_1 = [control_chunk_0, control_chunk_0, control_chunk_0, control_chunk_0, control_chunk_0, control_chunk_0, control_chunk_0, control_chunk_0, control_chunk_0, control_chunk_0, control_chunk_0, control_chunk_0, control_chunk_0, control_chunk_0, control_chunk_0, control_chunk_0];
+u16[16][16][16][2] flight_log = [control_chunk_1, control_chunk_1];
 u8[16][16][16][4] best_log = [byte_chunk_1, byte_chunk_1, byte_chunk_1, byte_chunk_1];
 u8[16][16][16][4] incoming_log = [byte_chunk_1, byte_chunk_1, byte_chunk_1, byte_chunk_1];
 f32[8] initial_pose = [0.0, 17.0, 0.0, 0.0, 0.0, 0.0, 22.0, 0.0];
 f32[8][3] poses = [initial_pose, initial_pose, initial_pose];
-f32[28] display = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+f32[31] display = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
 
 f32[6][11] farm_gates = [
 	[0.0, 17.0, 88.0, 0.0, 1.0, 23.0],
@@ -61,6 +64,8 @@ i32[2] result = [0, 0];
 i32[2] shortcut = [0, 0];
 i32[2] stage_tick = [0, 0];
 i32 best_ticks = 0;
+i32 best_width = 1;
+bool used_analog = false;
 i32 incoming_count = 0;
 bool incoming_bad = false;
 f32 accumulator = 0.0;
@@ -545,6 +550,32 @@ f32(i32,i32,i32) axis = fn(mask,a,b) {
 	(if (held(mask,a)) { 1.0 } else { 0.0 }) - (if (held(mask,b)) { 1.0 } else { 0.0 })
 };
 
+i32() input_version = fn { 1 };
+
+i32(i32) quantized_axis = fn(raw) {
+	i32 v = if (raw >= 128) { raw-256 } else { raw };
+	i32 mag = if (v >= 0) { v } else { -v };
+	i32 clipped = if (mag > 127) { 127 } else { mag };
+	i32 q = (clipped*7+63)/127;
+	if (v >= 0) { q } else { -q }
+};
+
+i32(i32,i32,i32,i32) effective_axis = fn(mask,raw,plus,minus) {
+	if (held(mask,plus|minus)) {
+		i32 a = if (held(mask,plus)) { 7 } else { 0 };
+		i32 b = if (held(mask,minus)) { 7 } else { 0 };
+		a-b
+	} else { quantized_axis(raw) }
+};
+
+i32(i32) canonical_input = fn(mask) {
+	if ((mask & 64) == 0) { mask & 63 } else {
+		i32 bank = effective_axis(mask,(mask >> 8) & 255,2,1);
+		i32 pitch = effective_axis(mask,(mask >> 16) & 255,4,8);
+		64 | (mask & 48) | ((bank+7) << 8) | ((pitch+7) << 12)
+	}
+};
+
 unit(u64) spawn = fn(lane) {
 	poses[lane][0] = 0.0;
 	poses[lane][1] = if (course == 0) { 17.0 } else { 24.0 };
@@ -557,8 +588,8 @@ unit(u64) spawn = fn(lane) {
 };
 
 unit(u64,i32) fly = fn(lane,controls) {
-	f32 banks = axis(controls,2,1);
-	f32 climbs = axis(controls,4,8);
+	f32 banks = if (held(controls,64)) { float_i(((controls >> 8) & 15)-7)/7.0 } else { axis(controls,2,1) };
+	f32 climbs = if (held(controls,64)) { float_i(((controls >> 12) & 15)-7)/7.0 } else { axis(controls,4,8) };
 	f32 power = axis(controls,16,32);
 	f32 roll_old = poses[lane][5];
 	f32 pitch_old = poses[lane][4];
@@ -633,25 +664,62 @@ unit(u64,f32,f32,f32,f32,f32,f32) update_gate = fn(race,x0,y0,z0,x1,y1,z1) {
 	};
 };
 
-u8(i32) current_byte = fn(n) { flight_log[ix(n/4096)][ix(n/256%16)][ix(n/16%16)][ix(n%16)] };
+u16(i32) logged_control = fn(n) { flight_log[ix(n/4096)][ix(n/256%16)][ix(n/16%16)][ix(n%16)] };
 u8(i32) record_byte = fn(n) { best_log[ix(n/4096)][ix(n/256%16)][ix(n/16%16)][ix(n%16)] };
 u8(i32) packet_byte = fn(n) { incoming_log[ix(n/4096)][ix(n/256%16)][ix(n/16%16)][ix(n%16)] };
 
-unit(i32,i32,bool) copy_run = fn(i,last,incoming) {
+unit(i32,u8) set_best_byte = fn(i,value) {
+	best_log[ix(i/4096)][ix(i/256%16)][ix(i/16%16)][ix(i%16)] = value;
+};
+
+unit(i32,i32) copy_packet = fn(i,last) {
 	if (i < last) {
-		best_log[ix(i/4096)][ix(i/256%16)][ix(i/16%16)][ix(i%16)] = if (incoming) { packet_byte(i) } else { current_byte(i) };
-		copy_run(i+1,last,incoming);
+		set_best_byte(i,packet_byte(i));
+		copy_packet(i+1,last);
 	};
+};
+
+unit(i32,i32,i32) write_record = fn(i,last,width) {
+	if (i < last) {
+		i32 value = core.int_extend<i32>(logged_control(i));
+		i32 at = 6+i*width;
+		set_best_byte(at,core.int_trunc<u8>(value & 255));
+		if (width == 2) { set_best_byte(at+1,core.int_trunc<u8>(value >> 8)); };
+		write_record(i+1,last,width);
+	};
+};
+
+i32(i32,i32) record_word = fn(step_index,width) {
+	i32 i = 6+step_index*width;
+	i32 low = core.int_extend<i32>(record_byte(i));
+	if (width == 1) { low } else { low + (core.int_extend<i32>(record_byte(i+1)) << 8) }
+};
+
+i32(i32,i32) packet_word = fn(step_index,width) {
+	i32 i = 6+step_index*width;
+	i32 low = core.int_extend<i32>(packet_byte(i));
+	if (width == 1) { low } else { low + (core.int_extend<i32>(packet_byte(i+1)) << 8) }
+};
+
+bool(i32,i32) valid_control = fn(word,width) {
+	word <= 63 || (width == 2 && held(word,64) && (word & 143) == 0 &&
+		((word >> 8) & 15) < 15 && ((word >> 12) & 15) < 15)
 };
 
 unit() store_record = fn {
 	i32 record_ticks = stage_tick[0];
 	if (best_ticks == 0 || record_ticks < best_ticks) {
 		best_ticks = record_ticks;
-		i32 size = record_ticks + 6;
-		copy_run(0,size,false);
-		best_log[0][0][0][4] = core.int_trunc<u8>(record_ticks % 256);
-		best_log[0][0][0][5] = core.int_trunc<u8>(record_ticks / 256);
+		i32 width = if (used_analog) { 2 } else { 1 };
+		best_width = width;
+		set_best_byte(0,87);
+		set_best_byte(1,70);
+		set_best_byte(2,core.int_trunc<u8>(width));
+		set_best_byte(3,core.int_trunc<u8>(course));
+		set_best_byte(4,core.int_trunc<u8>(record_ticks % 256));
+		set_best_byte(5,core.int_trunc<u8>(record_ticks / 256));
+		write_record(0,record_ticks,width);
+		i32 size = record_ticks*width+6;
 		unsafe { host.record(core.pointer_cast<*?u8>(&?best_log[0][0][0][0]),size); };
 	};
 };
@@ -663,7 +731,7 @@ unit() ghost_begin = fn {
 
 unit(i32) ghost_byte = fn(b) {
 	i32 i = incoming_count;
-	if (i < 7206 && b >= 0 && b <= 255 && (i < 6 || b <= 63)) {
+	if (i < 14406 && b >= 0 && b <= 255) {
 		incoming_log[ix(i/4096)][ix(i/256%16)][ix(i/16%16)][ix(i%16)] = core.int_trunc<u8>(b);
 		incoming_count = i+1;
 	} else {
@@ -693,30 +761,35 @@ unit(u64,u64,i32) step_course = fn(plane,race,input) {
 	};
 };
 
-bool(i32,i32) validate_steps = fn(i,length) {
-	step_course(2,1,core.int_extend<i32>(packet_byte(i+6)));
-	if (i+1 == length) { result[1] == 1 } else {
-		if (result[1] == 0) { validate_steps(i+1,length) } else { false }
-	}
+bool(i32,i32,i32) validate_steps = fn(i,length,width) {
+	i32 control = packet_word(i,width);
+	if (valid_control(control,width)) {
+		step_course(2,1,control);
+		if (i+1 == length) { result[1] == 1 } else {
+			if (result[1] == 0) { validate_steps(i+1,length,width) } else { false }
+		}
+	} else { false }
 };
 
-bool(i32) validate_replay = fn(length) {
+bool(i32,i32) validate_replay = fn(length,width) {
 	spawn(2);
 	passed[1] = 0;
 	stage_tick[1] = 0;
 	result[1] = 0;
 	shortcut[1] = 0;
-	validate_steps(0,length)
+	validate_steps(0,length,width)
 };
 
 unit() ghost_end = fn {
-	if (!incoming_bad && incoming_count >= 7 && packet_byte(0)==87 && packet_byte(1)==70 && packet_byte(2)==1 &&
+	if (!incoming_bad && incoming_count >= 7 && packet_byte(0)==87 && packet_byte(1)==70 &&
 	    packet_byte(3)==core.int_trunc<u8>(course)) {
+		i32 width = core.int_extend<i32>(packet_byte(2));
 		i32 length = core.int_extend<i32>(packet_byte(4)) + 256*core.int_extend<i32>(packet_byte(5));
-		if (length >= 180 && length <= 7200 && length+6 == incoming_count && stage_tick[0] == 0 &&
-		    (best_ticks == 0 || length < best_ticks) && validate_replay(length)) {
+		if ((width == 1 || width == 2) && length >= 180 && length <= 7200 && length*width+6 == incoming_count &&
+		    stage_tick[0] == 0 && (best_ticks == 0 || length < best_ticks) && validate_replay(length,width)) {
 			best_ticks = length;
-			copy_run(0,incoming_count,true);
+			best_width = width;
+			copy_packet(0,incoming_count);
 			spawn(1);
 		};
 	};
@@ -724,9 +797,9 @@ unit() ghost_end = fn {
 
 unit(i32) step = fn(input) {
 	i32 n = stage_tick[0];
-	i32 offset = n+6;
-	flight_log[ix(offset/4096)][ix(offset/256%16)][ix(offset/16%16)][ix(offset%16)] = core.int_trunc<u8>(input & 63);
-	if (n < best_ticks) { fly(1,core.int_extend<i32>(record_byte(offset))); };
+	flight_log[ix(n/4096)][ix(n/256%16)][ix(n/16%16)][ix(n%16)] = core.int_trunc<u16>(input);
+	if (held(input,64)) { used_analog = true; };
+	if (n < best_ticks) { fly(1,record_word(n,best_width)); };
 	step_course(0,0,input);
 	if (result[0] == 1) { store_record(); };
 };
@@ -805,14 +878,30 @@ unit() frame = fn {
 	display[24] = float_i(passed[0]*100 + shortcut[0]*150 + (if (result[0] == 1) { 250+remaining/9 } else { 0 }));
 	display[25] = float_i(shortcut[0]);
 	display[26] = if (passed[0] == 11) { 1.0 } else { 0.0 };
-	display[27] = if (passed[0] < 11) {
-		f32 dx = abs_f(gate(passed[0],0)-poses[0][0]);
-		f32 dz = abs_f(gate(passed[0],2)-poses[0][2]);
-		if (dx > dz) { dx+0.41*dz } else { dz+0.41*dx }
-	} else {
-		abs_f(strip_z()+40.0-poses[0][2]) + abs_f(strip_x()-poses[0][0])*0.6
+	i32 stage = passed[0];
+	f32 target_x = if (stage < 11) { gate(stage,0) } else { strip_x() };
+	f32 target_z = if (stage < 11) { gate(stage,2) } else { strip_z()+40.0 };
+	f32 steer_x = target_x-poses[0][0];
+	f32 steer_z = target_z-poses[0][2];
+	f32 mx = abs_f(steer_x);
+	f32 mz = abs_f(steer_z);
+	display[27] = if (stage < 11) {
+		if (mx > mz) { mx+0.41*mz } else { mz+0.41*mx }
+	} else { mz+mx*0.6 };
+	f32 right = steer_x*hz-steer_z*hx;
+	f32 ahead = steer_x*hx+steer_z*hz;
+	display[28] = if (ahead <= 0.0) {
+		if (right < 0.0) { -1.0 } else { 1.0 }
+	} else { clamp(right*1.6/ahead,-1.0,1.0) };
+	display[29] = if (stage < 11 || result[0] != 0) { 0.0 } else {
+		if (mx > strip_w()*0.42 || cos_small(poses[0][3]) < 0.68 || abs_f(poses[0][5]) > 0.30) { 1.0 } else {
+			if (poses[0][6] >= 27.0) { 2.0 } else {
+				if (poses[0][7] < -5.9 || poses[0][4] < -0.26) { 3.0 } else { 4.0 }
+			}
+		}
 	};
-	unsafe { host.frame(core.pointer_cast<*?u8>(&?display[0]),28); };
+	display[30] = if (stage == 6) { 1.0 } else { 0.0 };
+	unsafe { host.frame(core.pointer_cast<*?u8>(&?display[0]),31); };
 };
 
 unit(i32) reset = fn(requested) {
@@ -824,12 +913,7 @@ unit(i32) reset = fn(requested) {
 	accumulator = 0.0;
 	result[0] = 0;
 	shortcut[0] = 0;
-	flight_log[0][0][0][0] = 87;
-	flight_log[0][0][0][1] = 70;
-	flight_log[0][0][0][2] = 1;
-	flight_log[0][0][0][3] = core.int_trunc<u8>(course);
-	flight_log[0][0][0][4] = 0;
-	flight_log[0][0][0][5] = 0;
+	used_analog = false;
 	spawn(0);
 	spawn(1);
 	smooth_x = poses[0][0];
@@ -843,7 +927,7 @@ unit(f32,i32,f32) tick = fn(dt,input,aspect) {
 	f32 accepted = if (dt >= 0.0 && dt < 0.20) { dt } else { 0.0 };
 	viewport = if (aspect > 0.25 && aspect < 5.0) { aspect } else { 1.0 };
 	accumulator = clamp(accumulator+accepted,0.0,0.17);
-	advance(input,5);
+	advance(canonical_input(input),5);
 	f32 weight = clamp(accepted*11.0,0.0,0.81);
 	smooth_x = blend(smooth_x,poses[0][0],weight);
 	smooth_y = blend(smooth_y,poses[0][1],weight);
