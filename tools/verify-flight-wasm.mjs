@@ -162,4 +162,45 @@ for (const { course, shortcut, controls } of traces) {
       'same fixed-step controls at 30 and 60 Hz rendering must produce the same gates, landing and replay time');
   }
 }
+if (typeof engine.input_version === 'function' && engine.input_version() === 1) {
+  engine.reset(0);
+  for (let i = 0; i < 140; i++) engine.tick(1 / 30, 2, 16 / 9);
+  assert.equal(frame.length, 31);
+  assert.equal(frame[20], 0, 'a hard turn before approaching the first gate must not collect it');
+  assert(frame[11] < -0.75, 'plane now points back toward the start rather than the first gate');
+  assert.equal(Math.abs(frame[28]), 1, 'a rear gate must produce a full turn cue, not an ahead cue');
+}
+
+// Optional migration gate: record with the actual previously published WASM,
+// not the new engine's still-supported v1 writer.
+if (process.argv[3]) {
+  let old;
+  let oldFrame;
+  let saved;
+  old = new WebAssembly.Instance(new WebAssembly.Module(readFileSync(process.argv[3])), {
+    flight: {
+      world() {}, aircraft() {},
+      frame(pointer, length) { oldFrame = Array.from(new Float32Array(old.memory.buffer, pointer, length)); },
+      record(pointer, length) { saved = new Uint8Array(old.memory.buffer, pointer, length).slice(); },
+    },
+    wasi_snapshot_preview1: { proc_exit(code) { assert.fail(`Old Wosy exited with ${code}`); } },
+  }).exports;
+  const { course, controls } = traces.find(run => run.course === 0 && Number(run.shortcut) === 0);
+  old._start();
+  old.reset(course);
+  old.tick(0, 0, 16 / 9);
+  for (const [mask, count] of [...controls, [controls.at(-1)[0], 15]]) {
+    for (let i = 0; i < count && oldFrame[22] === 0; i++) old.tick(1 / 30, mask, 16 / 9);
+    if (oldFrame[22] !== 0) break;
+  }
+  assert.equal(oldFrame[22], 1, 'the old release must issue an actual completed record');
+  assert.equal(saved[2], 1);
+  engine.reset(1 - course);
+  engine.reset(course);
+  engine.ghost_begin();
+  for (const byte of saved) engine.ghost_byte(byte);
+  engine.ghost_end();
+  engine.tick(0, 0, 16 / 9);
+  assert.equal(frame[23], oldFrame[23], 'published pre-analog saves should retain their exact best time');
+}
 console.log('Flying Low: exact WASM ABI, both route variants landed on both courses, deterministic steering, portrait projection, and saved ghost validation passed.');
