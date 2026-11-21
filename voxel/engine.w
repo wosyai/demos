@@ -770,4 +770,59 @@ unit(i32) cycle_material = fn(delta) {
 };
 
 i32() place_selected = fn { edit_view(selected_material) };
+i32 seed_phase = 4;
+bool seed_trim = false;
+bool seed_negative = false;
+i64 seed_magnitude = 0;
+
+i32() default_seed = fn { 471 };
+
+unit(i32) seed_begin = fn(trim) {
+	seed_phase = 0;
+	seed_trim = trim != 0;
+	seed_negative = false;
+	seed_magnitude = 0;
+};
+
+bool(i32) seed_trim_space = fn(value) {
+	(value >= 9 && value <= 13) || value == 32 || value == 160 || value == 5760
+		|| (value >= 8192 && value <= 8202) || value == 8232 || value == 8233
+		|| value == 8239 || value == 8287 || value == 12288 || value == 65279
+};
+
+i32() reject_seed = fn { seed_phase = 4; 0 };
+
+i32(i32) seed_code_unit = fn(value) {
+	if (seed_phase == 4) { 0 } else {
+		if (value >= 48 && value <= 57) {
+			if (seed_phase == 3) { reject_seed() } else {
+				i64 next = seed_magnitude * 10 + core.int_extend<i64>(value - 48);
+				i64 limit = if (seed_negative) { 2147483648 } else { 2147483647 };
+				if (next > limit) { reject_seed() } else {
+					seed_magnitude = next;
+					seed_phase = 2;
+					1
+				}
+			}
+		} else {
+			if (seed_phase == 0 && value == 45) {
+				seed_negative = true;
+				seed_phase = 1;
+				1
+			} else {
+				if (seed_trim && seed_phase != 1 && seed_trim_space(value)) {
+					if (seed_phase == 2) { seed_phase = 3; };
+					1
+				} else { reject_seed() }
+			}
+		}
+	}
+};
+
+i64() seed_end = fn {
+	if (seed_phase == 2 || seed_phase == 3) {
+		if (seed_negative) { -seed_magnitude } else { seed_magnitude }
+	} else { 2147483648 }
+};
+
 %%end

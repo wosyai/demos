@@ -249,7 +249,7 @@ async function boot() {
   }
   try {
     prepareGraphics();
-    const response = await fetch(new URL("./engine.wasm?v=creative-1", import.meta.url));
+    const response = await fetch(new URL("./engine.wasm?v=creative-2", import.meta.url));
     if (!response.ok) throw new Error(`Motor não encontrado (HTTP ${response.status}).`);
     const bytes = await response.arrayBuffer();
     const api = {
@@ -267,14 +267,19 @@ async function boot() {
     if (failed) return;
     engine = instance.exports;
     memory = engine.memory;
-    if (!(memory instanceof WebAssembly.Memory) || ["_start", "generate", "control", "clear_controls", "look", "tick", "edit_view", "select_material", "cycle_material", "place_selected"].some((name) => typeof engine[name] !== "function")) {
+    const required = [
+      "_start", "generate", "control", "clear_controls", "look", "tick", "edit_view",
+      "select_material", "cycle_material", "place_selected",
+      "seed_begin", "seed_code_unit", "seed_end", "default_seed",
+    ];
+    if (!(memory instanceof WebAssembly.Memory) || required.some((name) => typeof engine[name] !== "function")) {
       throw new Error("O binário WebAssembly não oferece a interface esperada.");
     }
     if (gl.isContextLost()) loseGraphics();
     engine._start();
-    let seed = 471;
-    try { const stored = readSeed(localStorage.getItem("wosy-voxel-seed")); if (stored !== null) seed = stored; } catch {}
-    generate(seed);
+    let stored = null;
+    try { stored = localStorage.getItem("wosy-voxel-seed"); } catch {}
+    generate(readSeed(stored, false) ?? engine.default_seed());
     loaded = true;
     if (gl.isContextLost()) loseGraphics();
     else refreshAvailability();
@@ -432,15 +437,19 @@ function stopPlaying() {
   shell.classList.remove("playing");
 }
 
-function readSeed(value) {
-  if (typeof value !== "string" || !/^-?[0-9]+$/.test(value)) return null;
-  const seed = Number(value);
-  return Number.isInteger(seed) && seed >= -2147483648 && seed <= 2147483647 ? seed : null;
+function readSeed(value, trim) {
+  if (typeof value !== "string") return null;
+  engine.seed_begin(trim ? 1 : 0);
+  for (let index = 0; index < value.length; index++) {
+    if (engine.seed_code_unit(value.charCodeAt(index)) === 0) return null;
+  }
+  const seed = engine.seed_end();
+  return seed === 2147483648n ? null : Number(seed);
 }
 
 function changeSeed(seed) {
   if (!engine || !loaded || contextLost) return;
-  if (seed === null) { toast("Use um inteiro entre −2.147.483.648 e 2.147.483.647."); return; }
+  if (seed === null) { toast("Use um número inteiro válido para a semente."); return; }
   try { generate(seed); toast(`Nova ilha · semente ${seed}`); }
   catch (e) { fail("O motor Wosy não conseguiu gerar esta ilha.", e); }
 }
@@ -451,7 +460,12 @@ get("pause").addEventListener("click", () => {
   stopPlaying();
   enter.focus({ preventScroll: true });
 });
-get("seed-form").addEventListener("submit", (e) => { e.preventDefault(); changeSeed(readSeed(seedInput.value.trim())); });
+get("seed-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  if (!loaded || contextLost) return;
+  try { changeSeed(readSeed(seedInput.value, true)); }
+  catch (e) { fail("O motor Wosy não conseguiu ler a semente.", e); }
+});
 randomSeed.addEventListener("click", () => changeSeed(crypto.getRandomValues(new Int32Array(1))[0]));
 get("fullscreen").addEventListener("click", async () => {
   try {
