@@ -1,4 +1,4 @@
-const STEER = Object.freeze({ left: 1, right: 2, climb: 4, dive: 8, power: 16, brake: 32 });
+const STEER = Object.freeze({ left: 1, right: 2, climb: 4, dive: 8, power: 16, brake: 32, drop: 128 });
 const KEYS = new Map([
   ["KeyA", STEER.left], ["ArrowLeft", STEER.left],
   ["KeyD", STEER.right], ["ArrowRight", STEER.right],
@@ -6,13 +6,27 @@ const KEYS = new Map([
   ["KeyW", STEER.dive], ["ArrowUp", STEER.dive],
   ["KeyE", STEER.power], ["KeyQ", STEER.brake],
 ]);
-const COURSES = ["Barnstorm Run", "Seine Sprint"];
-const STORAGE_KEY = "wosy-flying-low/v1/";
-const LEGACY_FRAME_FLOATS = 28;
-const GUIDANCE_FRAME_FLOATS = 31;
+const COURSES = ["Pasture Landing", "Paris Air Mail"];
+const STORAGE_KEY = "wosy-flying-low/missions-v3/";
+const MISSION_FRAME_FLOATS = 32;
 const LANDING_CUES = [
-  "Land in the marked strip", "Line up with the landing strip", "Brake to slow down",
+  "Land in the marked strip", "Level wings and align with the strip", "Brake to slow down",
   "Ease your descent", "Aligned · ease onto the strip",
+];
+const RELEASE_CUES = [
+  "", "", "", "", "", "Descend into the drop window", "Climb a little before dropping",
+  "Level your wings and face the yellow target", "Move closer to the yellow target", "Drop now",
+];
+const FAILURE_CUES = [
+  "", "", "You hit an obstacle. Give it more clearance.", "You left the flight area or ran out of time.",
+  "You touched down outside the marked strip. Aim for the near end.",
+  "Touchdown was crooked. Line up and level your wings.",
+  "You were too fast at touchdown. Brake earlier.",
+  "The mail must reach the drop zone before you land.",
+  "You hit the bridge. Climb before the deck, or go around the amber side.",
+  "You ran out of strip. Touch down earlier and hold Brake until stopped.",
+  "You descended too hard. Ease the stick before touchdown.",
+  "You left the side of the strip. Steer gently and brake as you roll."
 ];
 const FLOATS_PER_VERTEX = 6;
 const MAX_REPLAY = 65536;
@@ -138,19 +152,31 @@ void main() {
   gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
 }`;
 const SKY_FRAGMENT = `#version 300 es
-precision mediump float;
+precision highp float;
 uniform vec3 atmosphere;
-uniform float aspect;
+uniform mat4 skyProjection;
 in vec2 uv;
 out vec4 fragment;
+vec3 skyRay(mat4 matrix, vec2 screen) {
+  vec3 right = vec3(matrix[0].x, matrix[1].x, matrix[2].x);
+  vec3 up = vec3(matrix[0].y, matrix[1].y, matrix[2].y);
+  vec3 forward = vec3(matrix[0].w, matrix[1].w, matrix[2].w);
+  float r = dot(right,right);
+  float u = dot(up,up);
+  if (r == 0.0 || u == 0.0) return normalize(vec3(screen, -1.9));
+  return normalize(forward + screen.x*right/r + screen.y*up/u);
+}
 void main() {
+  vec3 ray = skyRay(skyProjection, uv*2.0-1.0);
   vec3 zenith = atmosphere * vec3(0.54, 0.79, 0.93);
-  vec3 tone = mix(atmosphere, zenith, smoothstep(0.08, 1.0, uv.y));
-  float d = length((uv - vec2(.78, .79)) * vec2(aspect, 1.0));
-  tone = mix(tone, vec3(.99, .90, .68), .30 * exp(-9.0 * d));
-  tone = mix(tone, vec3(1.0, .94, .75), 1.0 - smoothstep(.028, .034, d));
+  vec3 tone = mix(atmosphere, zenith, smoothstep(0.0, .82, ray.y));
+  vec3 sunDirection = normalize(vec3(.35,.31,.88));
+  float d = length(ray-sunDirection);
+  tone = mix(tone, vec3(.99,.90,.68), .27*exp(-8.0*d));
+  tone = mix(tone, vec3(1.0,.95,.81), 1.0-smoothstep(.017,.020,d));
   fragment = vec4(tone, 1.0);
-}`;
+}
+`;
 function program(gl, vertexSource, fragmentSource) {
   function shader(type, source) {
     const shader = gl.createShader(type);
@@ -197,7 +223,7 @@ function graphics(gl) {
     matrix: gl.getUniformLocation(scene, "viewProjection"),
     fog: gl.getUniformLocation(scene, "atmosphere"),
     skyColor: gl.getUniformLocation(sky, "atmosphere"),
-    aspect: gl.getUniformLocation(sky, "aspect"),
+    skyMatrix: gl.getUniformLocation(sky, "skyProjection"),
     field: batch(gl, gl.STATIC_DRAW),
     moving: batch(gl, gl.DYNAMIC_DRAW),
   };
@@ -222,14 +248,16 @@ export function bootFlight(win, doc) {
   const callout = get("callout"), flightCue = get("flight-cue"), buttons = Array.from(doc.querySelectorAll("[data-course]"));
   const actionButtons = Array.from(doc.querySelectorAll("[data-action]"));
   const stick = get("flight-stick");
-  const instruments = ["time", "gates", "speed", "altitude", "best"].map(get);
+  const instruments = ["time", "mission-phase", "speed", "altitude", "best"].map(get);
   const controls = makeControls(), replays = replayStore(() => win.localStorage);
   const field = { pointer: 0, length: 0, version: 0 }, moving = { pointer: 0, length: 0, version: 0 };
   const gl = canvas.getContext("webgl2", { alpha: false, antialias: true });
   let gpu, engine, memory, framePointer = null, frameLength = 0;
   let raf = 0, previous = null, current = 0, mode = "menu", modal = null;
   let loading = true, error = false, lost = false, hudTick = 0, dirty = true;
-  let activeStick = null, analogInput = false;
+  const dropButton = actionButtons.find((button) => button.dataset.action === "drop");
+  const dropKey = get("drop-key");
+  let activeStick = null, analogInput = false, dropPending = false, dropAvailable = false;
 
   function syncButtons() {
     const mask = controls.mask;
@@ -250,6 +278,8 @@ export function bootFlight(win, doc) {
       if (stick.hasPointerCapture?.(id)) stick.releasePointerCapture(id);
     }
     controls.clear();
+    dropPending = false;
+    engine?.cancel_drop?.();
     for (const button of actionButtons) for (const id of captured) {
       if (button.hasPointerCapture?.(id)) button.releasePointerCapture(id);
     }
@@ -266,6 +296,11 @@ export function bootFlight(win, doc) {
     menu.hidden = mode !== "menu";
     hud.hidden = mode === "menu";
     keys.hidden = touch.hidden = !active;
+    if (dropButton) {
+      dropButton.hidden = !active || current !== 1;
+      dropButton.disabled = !active || !dropAvailable;
+    }
+    if (dropKey) dropKey.hidden = !active || current !== 1;
     if (!active) { callout.hidden = true; setText(flightCue, ""); }
     hud.inert = Boolean(modal);
   }
@@ -297,7 +332,7 @@ export function bootFlight(win, doc) {
       world: provide(field),
       aircraft: provide(moving),
       frame(pointer, length) {
-        if (length !== LEGACY_FRAME_FLOATS && length !== GUIDANCE_FRAME_FLOATS) {
+        if (length !== MISSION_FRAME_FLOATS) {
           throw new Error("The flight engine returned an invalid frame.");
         }
         memoryRange(memory, pointer, length, Float32Array);
@@ -315,25 +350,42 @@ export function bootFlight(win, doc) {
   }
   function updateHud(frame) {
     setText(instruments[0], clockText(frame[17]));
-    setText(instruments[1], `${frame[20]} / ${frame[21]}`);
     setText(instruments[2], roundText(frame[18], "m/s"));
     setText(instruments[3], roundText(frame[19], "m"));
     setText(instruments[4], frame[23] > 0 ? clockText(frame[23]) : "—");
-    const guidance = frame.length === GUIDANCE_FRAME_FLOATS;
-    let cue;
-    if (frame[26]) {
-      cue = LANDING_CUES[guidance ? frame[29] : 0] ?? LANDING_CUES[0];
-    } else {
-      const turn = guidance ? frame[28] : 0;
-      const bearing = turn < -.14 ? "← Gate left" : turn > .14 ? "Gate right →" : "Gate ahead";
-      const label = guidance ? bearing : "Next gate";
-      const shortcut = guidance && frame[30] === 1 ? " · Cyan shortcut" : "";
-      cue = `${label} · ${roundText(frame[27], "m")}${shortcut}`;
+    const phase = frame[20], dropStatus = frame[21], route = frame[25];
+    dropAvailable = phase === 1;
+    if (dropButton) {
+      dropButton.hidden = current !== 1 || phase > 1;
+      dropButton.disabled = !dropAvailable;
+      dropButton.classList.toggle("drop-ready", dropStatus === 9);
     }
-    setText(callout, cue);
+    const turn = frame[28];
+    const bearing = turn < -.14 ? "←" : turn > .14 ? "→" : "↑";
+    const meters = roundText(frame[27], "m");
+    let label, cue;
+    if (phase === 0) {
+      label = "Cross the Seine";
+      cue = frame[30] ? "Climb now to clear the bridge" : "Cyan: low then climb · Amber: wider around";
+    } else if (phase === 1) {
+      label = "Deliver mail";
+      cue = RELEASE_CUES[dropStatus] ?? RELEASE_CUES[8];
+      if (frame[26] && frame[26] === dropStatus) cue = `Not released · ${cue}`;
+    } else if (phase === 5) {
+      label = "Mail in flight";
+      cue = "Pouch away · turn toward the landing strip";
+    } else if (phase === 3) {
+      label = "Rollout";
+      cue = `Steer gently and brake · ${meters} left`;
+    } else {
+      label = frame[31] || current === 1 ? "Mail delivered · land" : "Land in the pasture";
+      cue = `${bearing} ${LANDING_CUES[frame[29]] ?? LANDING_CUES[0]} · ${meters}`;
+    }
+    setText(instruments[1], label);
+    const routeLabel = route === 1 ? "Low route." : route === 2 ? "Wide route." : "";
+    setText(callout, phase === 1 && dropStatus !== 9 ? `${bearing} ${cue} · ${meters}` : cue);
     callout.hidden = false;
-    setText(flightCue, frame[26] ? "Land in the marked strip." :
-      `Gates cleared: ${frame[20]} of ${frame[21]}.`);
+    setText(flightCue, `${label}. ${phase === 3 ? "Steer gently and hold Brake to stop" : phase === 2 ? LANDING_CUES[frame[29]] ?? LANDING_CUES[0] : cue}. ${routeLabel}`.trim());
   }
   function showSummary(type, frame) {
     modal = type;
@@ -343,15 +395,15 @@ export function bootFlight(win, doc) {
     if (type === "pause") {
       setText(summaryKicker, "FLIGHT CONTROL");
       setText(summaryTitle, "Flight paused");
-      setText(summaryDetail, "Resume where you left off, or pick another course.");
+      setText(summaryDetail, "Resume where you left off, or pick another mission.");
       setText(again, "Resume flight");
     } else {
       const landed = frame[22] === 1;
       setText(summaryKicker, landed ? "FLIGHT REPORT" : "RUN ENDED");
-      setText(summaryTitle, landed ? "Run complete" : "Flight ended");
+      setText(summaryTitle, landed ? (current === 1 ? "Mail delivered" : "Precision landing") : "Flight ended");
       setText(summaryDetail, landed
         ? `${clockText(frame[17])} · ${frame[24]} points${frame[23] > 0 ? ` · Best ${clockText(frame[23])}` : ""}`
-        : `Cleared ${frame[20]} of ${frame[21]} gates. Fly again for a cleaner line.`);
+        : (FAILURE_CUES[frame[22]] ?? "Retry the mission for a cleaner flight."));
       setText(again, "Fly again");
     }
     again.focus();
@@ -392,7 +444,7 @@ export function bootFlight(win, doc) {
       failure("Could not restart the flight engine. Try reloading this page.");
     }
   }
-  function draw(aspect, frame) {
+  function draw(frame) {
     const tint = FIELD_COLORS[current];
     gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(...tint, 1);
@@ -401,14 +453,15 @@ export function bootFlight(win, doc) {
     gl.useProgram(gpu.sky);
     gl.bindVertexArray(gpu.skyVao);
     gl.uniform3fv(gpu.skyColor, tint);
-    gl.uniform1f(gpu.aspect, aspect);
+    const projection = frame?.subarray(0, 16);
+    if (projection) gl.uniformMatrix4fv(gpu.skyMatrix, false, projection);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     if (!frame) return;
     updateBatch(gl, gpu.field, field, memory);
     updateBatch(gl, gpu.moving, moving, memory);
     gl.enable(gl.DEPTH_TEST);
     gl.useProgram(gpu.scene);
-    gl.uniformMatrix4fv(gpu.matrix, false, frame.subarray(0, 16));
+    gl.uniformMatrix4fv(gpu.matrix, false, projection);
     gl.uniform3fv(gpu.fog, tint);
     for (const item of [gpu.field, gpu.moving]) {
       if (item.count === 0) continue;
@@ -425,13 +478,16 @@ export function bootFlight(win, doc) {
       previous = timestamp;
       const active = mode === "playing" && !modal;
       const resized = aspect !== loop.aspect || canvas.width !== loop.width || canvas.height !== loop.height;
-      if (active) engine.tick(elapsed, controls.input(analogInput), aspect);
-      else if (resized) engine.tick(0, 0, aspect);
+      if (active) {
+        const input = controls.input(analogInput) | (dropPending ? STEER.drop : 0);
+        dropPending = false;
+        engine.tick(elapsed, input, aspect);
+      } else if (resized) engine.tick(0, 0, aspect);
       loop.aspect = aspect;
       loop.width = canvas.width;
       loop.height = canvas.height;
       const frame = state();
-      if (active || dirty || resized) { draw(aspect, frame); dirty = false; }
+      if (active || dirty || resized) { draw(frame); dirty = false; }
       if (active && frame) {
         if (frame[22] !== 0) {
           updateHud(frame);
@@ -481,6 +537,13 @@ export function bootFlight(win, doc) {
     if (mode !== "playing" || modal || lost) return;
     const action = STEER[event.target?.dataset?.action];
     const virtual = action && (event.code === "Enter" || event.code === "Space");
+    if ((virtual && action === STEER.drop) || (event.code === "Space" && !event.target?.closest?.("button"))) {
+      if (current === 1 && dropAvailable) {
+        event.preventDefault();
+        if (!event.repeat) dropPending = true;
+      }
+      return;
+    }
     const code = virtual ? action : KEYS.get(event.code);
     if (!code) return;
     event.preventDefault();
@@ -492,6 +555,10 @@ export function bootFlight(win, doc) {
     button.addEventListener("pointerdown", (event) => {
       if (event.button !== 0 || modal || mode !== "playing" || lost) return;
       event.preventDefault();
+      if (button === dropButton) {
+        if (dropAvailable) dropPending = true;
+        return;
+      }
       controls.pointers.set(event.pointerId, STEER[button.dataset.action]);
       button.setPointerCapture?.(event.pointerId);
       syncButtons();
@@ -501,6 +568,9 @@ export function bootFlight(win, doc) {
     });
     button.addEventListener("contextmenu", (event) => event.preventDefault());
   }
+  dropButton?.addEventListener("click", (event) => {
+    if (event.detail === 0 && mode === "playing" && !modal && !lost && current === 1 && dropAvailable) dropPending = true;
+  });
   stick.addEventListener("pointerdown", (event) => {
     if (event.button !== 0 || activeStick || modal || mode !== "playing" || lost) return;
     event.preventDefault();
@@ -575,12 +645,12 @@ export function bootFlight(win, doc) {
     if (!gl) { failure("This game needs WebGL 2. Try a current browser with hardware acceleration enabled."); return; }
     try {
       gpu = graphics(gl);
-      const wasm = await win.fetch(new URL("./flight.wasm?v=motion-v3", import.meta.url));
+      const wasm = await win.fetch(new URL("./flight.wasm?v=missions-v5", import.meta.url));
       if (!wasm.ok) throw new Error("The flight engine could not be downloaded.");
       const { instance } = await win.WebAssembly.instantiate(await wasm.arrayBuffer(), imports);
       engine = instance.exports;
       memory = engine.memory;
-      for (const name of ["_start", "reset", "tick", "ghost_begin", "ghost_byte", "ghost_end"])
+      for (const name of ["_start", "reset", "tick", "cancel_drop", "ghost_begin", "ghost_byte", "ghost_end"])
         if (typeof engine[name] !== "function") throw new Error("The flight engine is incomplete.");
       engine._start();
       analogInput = engine.input_version?.() === 1;

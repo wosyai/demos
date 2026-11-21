@@ -113,5 +113,24 @@ kbd { background: #374d4e; padding: .06rem .22rem; border: 1px solid #ffffff47; 
 @media (prefers-reduced-motion: reduce) { .shade { transition: none; } }
 
 @media (any-pointer: coarse) and (max-height: 430px) and (orientation: landscape) {
-  .callout { bottom: max(.45rem, env(safe-area-inset-bottom)); max-width: calc(100% - 17rem); padding-inline: .45rem; line-height: 1.22; }
+  .stick-zone { width: clamp(8rem, 30vw, 11rem); }
+  .callout {
+    bottom: max(.45rem, env(safe-area-inset-bottom));
+    left: calc(max(.65rem, env(safe-area-inset-left)) + clamp(8rem, 30vw, 11rem) + .35rem);
+    right: calc(max(.65rem, env(safe-area-inset-right)) + 5.6rem);
+    width: auto;
+    max-width: none;
+    transform: none;
+    padding-inline: .45rem;
+    line-height: 1.22;
+  }
+}
+
+[data-action="drop"].drop-ready { background: #f2cd83; color: #17292b; }
+[data-action="drop"]:disabled { opacity: .62; }
+@media (max-width: 430px) {
+  .instruments dt { font-size: .64rem; }
+  .instruments dd { font-size: .81rem; }
+  .instruments { gap: .12rem .37rem; }
+  .instruments dd { white-space: normal; }
 }
