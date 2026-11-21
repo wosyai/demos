@@ -4,10 +4,10 @@ Playable examples built with the [Wosy language](https://github.com/wosyai/lang)
 
 ## Voxel island
 
-Explore a seeded island on foot or in creative flight. Jump, remove blocks, and build using six materials. Terrain, collision, movement, selection, camera, and edits run in Wosy compiled to WebAssembly. The browser host handles input and submits the mesh to WebGL 2, without a 3D framework.
+Start on foot in a seeded voxel landscape or switch to creative flight. Jump, break blocks, and build with six materials and original pixel textures. Terrain, texture pixels and face UVs, collision, movement, targeting, and edit timing run in Wosy compiled to WebAssembly. The browser host handles input and submits the mesh to WebGL 2, without a 3D framework.
 
-- Desktop: WASD or arrows to move, Space to jump, and F to toggle flight. In flight, Space and C rise and descend. Select with 1–6 or the wheel, and use Q/E to remove/place. With mouse capture, left/right click also remove/place. Drag to look when capture is unavailable.
-- Touch: use the on-screen directional pad, jump and flight controls, and material bar. Drag the world to look; tap the remove/place buttons to edit.
+- Desktop: WASD or arrows to move, Space to jump, and F to toggle flight. In flight, Space and C rise and descend. Select with 1–6 or the wheel, and use Q/E to remove/place. With mouse capture, left/right click also break/place; hold either action to repeat. Drag to look when capture is unavailable.
+- Touch: use the on-screen directional pad, jump and flight controls, and material bar. Drag the world to look; press or hold the break/place buttons to edit. To set a seed manually, pause and open World options.
 
 This is an experimental demo, not a claim that all game logic is statically verified.
 
