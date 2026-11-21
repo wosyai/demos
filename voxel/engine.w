@@ -62,6 +62,7 @@ f32 cos_yaw = 1.0;
 f32 sin_pitch = 0.0;
 f32 cos_pitch = 1.0;
 i32 controls = 0;
+i32 pulse_controls = 0;
 i32 selected_material = 2;
 bool flying = false;
 bool grounded = false;
@@ -434,39 +435,55 @@ unit() spawn_player = fn {
 	target_dirty = true;
 };
 
+unit() clear_controls = fn {
+	controls = 0;
+	pulse_controls = 0;
+	jump_pending = false;
+};
+
 unit() reset_camera = fn {
 	flying = false;
 	spawn_player();
 	yaw = -0.72664234;
 	pitch = -0.21;
-	controls = 0;
+	clear_controls();
 	orientation_dirty = true;
 };
 
-unit() clear_controls = fn {
-	controls = 0;
+unit() toggle_flight = fn {
+	flying = !flying;
+	grounded = false;
+	ground_contact_dirty = !flying;
 	jump_pending = false;
+	vertical_speed = 0.0;
 };
 
 unit(i32, i32) control = fn(action, down) {
 	if (action >= 0 && action < 8) {
 		i32 bit = 1 << action;
 		if (down != 0) {
-			bool first_press = (controls & bit) == 0;
+			bool first_press = ((controls | pulse_controls) & bit) == 0;
 			controls = controls | bit;
 			if (first_press && action == 4 && !flying) { jump_pending = true; };
-			if (first_press && action == 7) {
-				flying = !flying;
-				grounded = false;
-				ground_contact_dirty = !flying;
-				jump_pending = false;
-				vertical_speed = 0.0;
-			};
+			if (first_press && action == 7) { toggle_flight(); };
 		} else { controls = controls & ~bit; };
 	};
 };
 
-i32(i32) active = fn(mask) { if ((controls & mask) != 0) { 1 } else { 0 } };
+unit(i32) pulse_control = fn(action) {
+	if (action == 7) {
+		if ((controls & 128) == 0) { toggle_flight(); };
+	} else {
+		if (action >= 0 && action < 7) {
+			i32 bit = 1 << action;
+			bool first_press = ((controls | pulse_controls) & bit) == 0;
+			pulse_controls = pulse_controls | bit;
+			if (first_press && action == 4 && !flying) { jump_pending = true; };
+		};
+	};
+};
+
+i32(i32) active = fn(mask) { if (((controls | pulse_controls) & mask) != 0) { 1 } else { 0 } };
 
 unit(f32, f32) look = fn(dx, dy) {
 	if (dx >= -10000.0 && dx <= 10000.0 && dy >= -10000.0 && dy <= 10000.0) {
@@ -586,6 +603,7 @@ unit(f32, f32, f32) move_camera = fn(dt, sy, cy) {
 		};
 		if (camera_y < -6.0) { spawn_player(); };
 		if (camera_x != previous_x || camera_y != previous_y || camera_z != previous_z) { target_dirty = true; };
+		pulse_controls = 0;
 	};
 };
 

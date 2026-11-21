@@ -26,7 +26,6 @@ const keyActions = new Map([
 const pressed = new Set();
 const dpad = new Map();
 const downActions = new Set();
-const pulsedActions = new Set();
 const layers = {
   mesh: { data: null, count: 0, version: 0 },
   water: { data: null, count: 0, version: 0 },
@@ -249,7 +248,7 @@ async function boot() {
   }
   try {
     prepareGraphics();
-    const response = await fetch(new URL("./engine.wasm?v=creative-2", import.meta.url));
+    const response = await fetch(new URL("./engine.wasm?v=creative-3", import.meta.url));
     if (!response.ok) throw new Error(`Motor não encontrado (HTTP ${response.status}).`);
     const bytes = await response.arrayBuffer();
     const api = {
@@ -268,7 +267,7 @@ async function boot() {
     engine = instance.exports;
     memory = engine.memory;
     const required = [
-      "_start", "generate", "control", "clear_controls", "look", "tick", "edit_view",
+      "_start", "generate", "control", "pulse_control", "clear_controls", "look", "tick", "edit_view",
       "select_material", "cycle_material", "place_selected",
       "seed_begin", "seed_code_unit", "seed_end", "default_seed",
     ];
@@ -354,15 +353,8 @@ function frame(now) {
   const h = Math.max(1, Math.round(canvas.clientHeight * ratio));
   if (w !== canvas.width || h !== canvas.height) { canvas.width = w; canvas.height = h; }
   gl.viewport(0, 0, w, h);
-  try {
-    engine.tick(dt, w / h, playing ? 1 : 0);
-    if (dt > 0) {
-      for (const action of pulsedActions) {
-        pulsedActions.delete(action);
-        syncAction(action);
-      }
-    }
-  } catch (e) { fail("O motor Wosy não conseguiu atualizar a imagem.", e); }
+  try { engine.tick(dt, w / h, playing ? 1 : 0); }
+  catch (e) { fail("O motor Wosy não conseguiu atualizar a imagem.", e); }
   startLoop();
 }
 
@@ -372,7 +364,7 @@ function startLoop() {
 
 function syncAction(action) {
   if (!loaded || !playing || contextLost) return;
-  const active = pulsedActions.has(action) || [...pressed].some((key) => keyActions.get(key) === action) ||
+  const active = [...pressed].some((key) => keyActions.get(key) === action) ||
     [...dpad.values()].some((button) => keyActions.get(button.dataset.move) === action);
   if (active === downActions.has(action)) return;
   if (active) downActions.add(action);
@@ -381,11 +373,16 @@ function syncAction(action) {
   catch (e) { fail("O motor Wosy não conseguiu receber um comando.", e); }
 }
 
+function pulseControl(action) {
+  if (!playing || !loaded || contextLost) return;
+  try { engine.pulse_control(action); }
+  catch (e) { fail("O motor Wosy não conseguiu receber um comando.", e); }
+}
+
 function clearInputs() {
   pressed.clear();
   dpad.clear();
   downActions.clear();
-  pulsedActions.clear();
   pointerLook = null;
   if (loaded) {
     try { engine.clear_controls(); }
@@ -541,9 +538,7 @@ for (const event of ["pointerup","pointercancel","lostpointercapture"]) {
 for (const btn of document.querySelectorAll("[data-move]")) {
   const action = keyActions.get(btn.dataset.move);
   btn.addEventListener("click", (e) => {
-    if (e.detail !== 0 || !playing || !loaded || contextLost) return;
-    pulsedActions.add(action);
-    syncAction(action);
+    if (e.detail === 0) pulseControl(action);
   });
   btn.addEventListener("pointerdown", (e) => {
     if (!playing || e.pointerId === pointerLook?.id || dpad.has(e.pointerId)) return;
@@ -563,11 +558,7 @@ for (const btn of document.querySelectorAll("[data-move]")) {
 for (const button of materials) {
   button.addEventListener("click", () => selectMaterial(Number(button.dataset.material)));
 }
-flightTouch.addEventListener("click", () => {
-  if (!playing || !loaded || contextLost || downActions.has(7)) return;
-  try { engine.control(7, 1); engine.control(7, 0); }
-  catch (e) { fail("O motor Wosy não conseguiu alternar o voo.", e); }
-});
+flightTouch.addEventListener("click", () => pulseControl(7));
 document.addEventListener("wheel", (e) => {
   if (!playing || !loaded || contextLost || e.ctrlKey || e.deltaY === 0 ||
       (e.target !== canvas && document.pointerLockElement !== canvas &&
