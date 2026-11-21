@@ -219,4 +219,70 @@ for (const { time, data } of [classic, proportional]) {
     tick(0, 0);
     assert.equal(frame[23], time, "an authentic saved ghost survives either packet version");
 }
-console.log("Flight WASM: geometry, fixed-step controls, two replay formats, and route guidance verified");
+// The tail is the player aircraft (farm: 582 XYZRGB vertices). A local
+// wing corner should translate in world space but not shake against its own
+// chase camera when the authoritative simulation has not stepped.
+function playerWingCorner() {
+    return Array.from(aircraft.subarray(aircraft.length - 582 * 6, aircraft.length - 582 * 6 + 3));
+}
+function screenPoint([x, y, z]) {
+    const w = frame[3] * x + frame[7] * y + frame[11] * z + frame[15];
+    return [
+        (frame[0] * x + frame[4] * y + frame[8] * z + frame[12]) / w,
+        (frame[1] * x + frame[5] * y + frame[9] * z + frame[13]) / w,
+    ];
+}
+function distance(a, b) {
+    return Math.hypot(...a.map((v, i) => v - b[i]));
+}
+for (const hz of [60, 90, 120]) {
+    for (const steering of [0, 2]) {
+        reset(1);
+        reset(0);
+        for (let i = 0; i < 26; i++) tick(steering);
+        const fixedClock = frame[17];
+        let wing = playerWingCorner();
+        const relative = screenPoint(wing);
+        for (let i = 1; i < hz / 30; i++) {
+            tick(steering, 1 / hz);
+            assert.equal(frame[17], fixedClock, "presentation never advances the simulation clock");
+            const next = playerWingCorner();
+            assert(distance(next, wing) > 0.08, `aircraft interpolates a substep at ${hz} Hz`);
+            assert(distance(relative, screenPoint(next)) < 0.002,
+                `camera and aircraft share the same presentation pose at ${hz} Hz while steering ${steering}`);
+            wing = next;
+        }
+        const still = [frame, aircraft];
+        tick(0, 0);
+        assert.deepEqual([frame, aircraft], still, "zero elapsed time freezes the exact presented pose");
+    }
+}
+
+reset(1);
+reset(0);
+let previousHeading = 0, wrapped = false;
+for (let i = 0; i < 800 && !wrapped; i++) {
+    tick(2, 1 / 120);
+    const heading = Math.atan2(frame[3], frame[11]);
+    const raw = heading - previousHeading;
+    const signed = Math.atan2(Math.sin(raw), Math.cos(raw));
+    assert(signed > -0.00001 && signed < 0.013, "held bank follows the short yaw arc through each subframe");
+    if (previousHeading > 3 && heading < -3) wrapped = true;
+    previousHeading = heading;
+}
+assert(wrapped, "the bank trace actually crosses the yaw wrap");
+
+function catchUp(increments) {
+    reset(1);
+    reset(0);
+    for (let i = 0; i < 12; i++) tick(2);
+    for (const dt of increments) tick(2, dt);
+    return { time: frame[17], point: playerWingCorner(), camera: screenPoint(playerWingCorner()) };
+}
+const afterHitch = catchUp([0.125]);
+const afterFrames = catchUp(Array(15).fill(1 / 120));
+assert.equal(afterHitch.time, afterFrames.time, "catch-up traverses the same authoritative steps");
+assert(distance(afterHitch.point, afterFrames.point) < 0.001, "catch-up retains the last step's prior pose");
+assert(distance(afterHitch.camera, afterFrames.camera) < 0.0001, "catch-up camera uses the same final substep");
+
+console.log("Flight WASM: geometry, 60/90/120 Hz cadence, fixed-step controls, replays, and guidance verified");

@@ -23,6 +23,9 @@ u8[16][16][16][4] best_log = [byte_chunk_1, byte_chunk_1, byte_chunk_1, byte_chu
 u8[16][16][16][4] incoming_log = [byte_chunk_1, byte_chunk_1, byte_chunk_1, byte_chunk_1];
 f32[8] initial_pose = [0.0, 17.0, 0.0, 0.0, 0.0, 0.0, 22.0, 0.0];
 f32[8][3] poses = [initial_pose, initial_pose, initial_pose];
+f32[6] empty_presentation = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+f32[6][2] previous_pose = [empty_presentation, empty_presentation];
+f32[6][2] presented_pose = [empty_presentation, empty_presentation];
 f32[31] display = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
 
 f32[6][11] farm_gates = [
@@ -70,10 +73,6 @@ i32 incoming_count = 0;
 bool incoming_bad = false;
 f32 accumulator = 0.0;
 f32 viewport = 1.0;
-f32 smooth_x = 0.0;
-f32 smooth_y = 0.0;
-f32 smooth_z = 0.0;
-f32 smooth_heading = 0.0;
 f32 model_x = 0.0;
 f32 model_y = 0.0;
 f32 model_z = 0.0;
@@ -529,15 +528,15 @@ unit(i32) plane_model = fn(kind) {
 };
 
 unit(u64,bool) draw_plane = fn(lane,ghost) {
-	model_x = poses[lane][0];
-	model_y = poses[lane][1];
-	model_z = poses[lane][2];
-	model_hs = sin_small(poses[lane][3]);
-	model_hc = cos_small(poses[lane][3]);
-	model_ps = sin_small(poses[lane][4]);
-	model_pc = cos_small(poses[lane][4]);
-	model_rs = sin_small(-poses[lane][5]);
-	model_rc = cos_small(poses[lane][5]);
+	model_x = presented_pose[lane][0];
+	model_y = presented_pose[lane][1];
+	model_z = presented_pose[lane][2];
+	model_hs = sin_small(presented_pose[lane][3]);
+	model_hc = cos_small(presented_pose[lane][3]);
+	model_ps = sin_small(presented_pose[lane][4]);
+	model_pc = cos_small(presented_pose[lane][4]);
+	model_rs = sin_small(-presented_pose[lane][5]);
+	model_rc = cos_small(presented_pose[lane][5]);
 	model_local = true;
 	model_ghost = ghost;
 	plane_model(course);
@@ -780,6 +779,34 @@ bool(i32,i32) validate_replay = fn(length,width) {
 	validate_steps(0,length,width)
 };
 
+unit(u64) retain_pose = fn(lane) {
+	previous_pose[lane][0] = poses[lane][0];
+	previous_pose[lane][1] = poses[lane][1];
+	previous_pose[lane][2] = poses[lane][2];
+	previous_pose[lane][3] = poses[lane][3];
+	previous_pose[lane][4] = poses[lane][4];
+	previous_pose[lane][5] = poses[lane][5];
+};
+
+unit(u64,f32) present_pose = fn(lane,alpha) {
+	if (alpha >= 1.0) {
+		presented_pose[lane][0] = poses[lane][0];
+		presented_pose[lane][1] = poses[lane][1];
+		presented_pose[lane][2] = poses[lane][2];
+		presented_pose[lane][3] = poses[lane][3];
+		presented_pose[lane][4] = poses[lane][4];
+		presented_pose[lane][5] = poses[lane][5];
+	} else {
+		presented_pose[lane][0] = blend(previous_pose[lane][0],poses[lane][0],alpha);
+		presented_pose[lane][1] = blend(previous_pose[lane][1],poses[lane][1],alpha);
+		presented_pose[lane][2] = blend(previous_pose[lane][2],poses[lane][2],alpha);
+		f32 prev_heading = previous_pose[lane][3];
+		presented_pose[lane][3] = wrap(prev_heading+wrap(poses[lane][3]-prev_heading)*alpha);
+		presented_pose[lane][4] = blend(previous_pose[lane][4],poses[lane][4],alpha);
+		presented_pose[lane][5] = blend(previous_pose[lane][5],poses[lane][5],alpha);
+	};
+};
+
 unit() ghost_end = fn {
 	if (!incoming_bad && incoming_count >= 7 && packet_byte(0)==87 && packet_byte(1)==70 &&
 	    packet_byte(3)==core.int_trunc<u8>(course)) {
@@ -791,6 +818,8 @@ unit() ghost_end = fn {
 			best_width = width;
 			copy_packet(0,incoming_count);
 			spawn(1);
+			retain_pose(1);
+			present_pose(1,1.0);
 		};
 	};
 };
@@ -799,7 +828,11 @@ unit(i32) step = fn(input) {
 	i32 n = stage_tick[0];
 	flight_log[ix(n/4096)][ix(n/256%16)][ix(n/16%16)][ix(n%16)] = core.int_trunc<u16>(input);
 	if (held(input,64)) { used_analog = true; };
-	if (n < best_ticks) { fly(1,record_word(n,best_width)); };
+	if (n < best_ticks) {
+		retain_pose(1);
+		fly(1,record_word(n,best_width));
+	};
+	retain_pose(0);
 	step_course(0,0,input);
 	if (result[0] == 1) { store_record(); };
 };
@@ -812,7 +845,7 @@ unit(i32,i32) advance = fn(input,left) {
 	};
 };
 
-unit() draw_aircraft = fn {
+unit(f32) draw_aircraft = fn(alpha) {
 	vertex_count = 0;
 	drawing_world = false;
 	if (passed[0] < 11) {
@@ -821,9 +854,10 @@ unit() draw_aircraft = fn {
 		if (passed[0] < 10) { ring_piece(0,passed[0]+1,gate(passed[0]+1,5),0.87,0.98,0.78,false); };
 	};
 	if (best_ticks > 0 && stage_tick[0] > 0 && stage_tick[0] < best_ticks) {
-		f32 dx = poses[1][0]-poses[0][0];
-		f32 dy = poses[1][1]-poses[0][1];
-		f32 dz = poses[1][2]-poses[0][2];
+		present_pose(1,alpha);
+		f32 dx = presented_pose[1][0]-presented_pose[0][0];
+		f32 dy = presented_pose[1][1]-presented_pose[0][1];
+		f32 dz = presented_pose[1][2]-presented_pose[0][2];
 		if (dx*dx+dy*dy+dz*dz > 121.0) { draw_plane(1,true); };
 	};
 	draw_plane(0,false);
@@ -832,9 +866,9 @@ unit() draw_aircraft = fn {
 };
 
 unit() frame = fn {
-	f32 hx = sin_small(smooth_heading);
-	f32 hz = cos_small(smooth_heading);
-	f32 pitch = -0.20 + poses[0][4]*0.62;
+	f32 hx = sin_small(presented_pose[0][3]);
+	f32 hz = cos_small(presented_pose[0][3]);
+	f32 pitch = -0.20 + presented_pose[0][4]*0.62;
 	f32 ps = sin_small(pitch);
 	f32 pc = cos_small(pitch);
 	f32 vx = hx*pc;
@@ -843,9 +877,9 @@ unit() frame = fn {
 	f32 ux = -hx*ps;
 	f32 uy = pc;
 	f32 uz = -hz*ps;
-	f32 ex = smooth_x-hx*17.5;
-	f32 ey = smooth_y+5.3;
-	f32 ez = smooth_z-hz*17.5;
+	f32 ex = presented_pose[0][0]-hx*17.5;
+	f32 ey = presented_pose[0][1]+5.3;
+	f32 ez = presented_pose[0][2]-hz*17.5;
 	f32 scale_y = if (viewport < 0.86) { 1.30 } else { 1.61 };
 	f32 scale_x = scale_y/viewport;
 	f32 near_far = 1.0015052;
@@ -916,10 +950,10 @@ unit(i32) reset = fn(requested) {
 	used_analog = false;
 	spawn(0);
 	spawn(1);
-	smooth_x = poses[0][0];
-	smooth_y = poses[0][1];
-	smooth_z = poses[0][2];
-	smooth_heading = poses[0][3];
+	retain_pose(0);
+	retain_pose(1);
+	present_pose(0,1.0);
+	present_pose(1,1.0);
 	if (!world_ready) { render_land(); world_ready = true; };
 };
 
@@ -928,12 +962,9 @@ unit(f32,i32,f32) tick = fn(dt,input,aspect) {
 	viewport = if (aspect > 0.25 && aspect < 5.0) { aspect } else { 1.0 };
 	accumulator = clamp(accumulator+accepted,0.0,0.17);
 	advance(canonical_input(input),5);
-	f32 weight = clamp(accepted*11.0,0.0,0.81);
-	smooth_x = blend(smooth_x,poses[0][0],weight);
-	smooth_y = blend(smooth_y,poses[0][1],weight);
-	smooth_z = blend(smooth_z,poses[0][2],weight);
-	smooth_heading = wrap(smooth_heading + wrap(poses[0][3]-smooth_heading)*weight);
-	draw_aircraft();
+	f32 alpha = if (result[0] == 0) { clamp(accumulator*30.0,0.0,1.0) } else { 1.0 };
+	present_pose(0,alpha);
+	draw_aircraft(alpha);
 	frame();
 };
 %%end
