@@ -45,5 +45,5 @@ h1 span{color:var(--rust)}
 #start{width:auto}
 .touch .pedals[data-foot=true]{grid-template-columns:minmax(90px,140px)}
 .touch .pedals[data-foot=true] #power{display:none}
-.lobby[data-intro=true]{background-image:linear-gradient(100deg,#101d20f7 5%,#152c2dc9 30%,#142b2b08 80%),url("./art/lobby.webp?v=ferry-1");background-size:cover;background-position:center 62%}
+.lobby[data-intro=true]{background-image:linear-gradient(100deg,#101d20f7 5%,#152c2dc9 30%,#142b2b08 80%),url("./art/lobby.webp?v=ferry-2");background-size:cover;background-position:center 62%}
 #action[aria-disabled=true]{opacity:.63}
