@@ -7,7 +7,7 @@ const file = process.argv[3] === '--binary'
   ? path : JSON.parse(readFileSync(path, 'utf8')).executable;
 const binary = new WebAssembly.Module(readFileSync(file));
 const imports = WebAssembly.Module.imports(binary);
-const graphics = ['frame', 'mesh', 'outline', 'water'];
+const graphics = ['atlas', 'frame', 'mesh', 'outline', 'water'];
 assert.deepEqual(imports.filter((item) => item.module === 'showcase').map((item) => item.name).sort(), graphics);
 for (const item of imports) {
   assert.equal(item.kind, 'function');
@@ -20,6 +20,7 @@ let frame;
 let mesh;
 let water;
 let outline;
+let atlasCount = 0;
 function view(pointer, size) {
   assert(Number.isInteger(pointer) && pointer >= 0 && pointer % 4 === 0);
   assert(pointer + size * 4 <= engine.memory.buffer.byteLength);
@@ -35,7 +36,35 @@ function layer(pointer, count, stride, maximum) {
 }
 engine = new WebAssembly.Instance(binary, {
   showcase: {
-    mesh(pointer, count) { mesh = layer(pointer, count, 3, 165888); },
+    atlas(pointer, width, height) {
+      assert.equal(width, 128);
+      assert.equal(height, 16);
+      const bytes = new Uint8Array(engine.memory.buffer, pointer, width * height * 4);
+      const tileHashes = [];
+      for (let tile = 0; tile < 8; tile++) {
+        const tileBytes = [];
+        for (let y = 0; y < height; y++) {
+          for (let x = 0; x < 16; x++) {
+            const i = (y * width + tile * 16 + x) * 4;
+            assert.equal(bytes[i + 3], 255);
+            tileBytes.push(...bytes.subarray(i, i + 3));
+          }
+        }
+        assert(new Set(tileBytes).size > 8, 'block tile must have texture');
+        tileHashes.push(createHash('sha256').update(Uint8Array.from(tileBytes)).digest('hex'));
+      }
+      assert.equal(new Set(tileHashes).size, 8, 'surface material tiles must be distinct');
+      atlasCount++;
+    },
+    mesh(pointer, count) {
+      mesh = layer(pointer, count, 3, 165888);
+      const data = view(pointer, count * 6);
+      for (let i = 0; i < data.length; i += 6) {
+        assert(data[i + 3] > 0 && data[i + 3] < 1, 'baked atlas U outside bounds');
+        assert(data[i + 4] > 0 && data[i + 4] < 1, 'baked atlas V outside bounds');
+        assert(data[i + 5] > 0 && data[i + 5] <= 1, 'baked light outside bounds');
+      }
+    },
     water(pointer, count) { water = layer(pointer, count, 3, 6); },
     outline(pointer, count) { outline = layer(pointer, count, 2, 24); },
     frame(pointer, hit) { frame = { values: Array.from(view(pointer, 25)), hit }; },
@@ -43,9 +72,9 @@ engine = new WebAssembly.Instance(binary, {
   wasi_snapshot_preview1: { proc_exit(code) { assert.fail('Wosy exited: ' + code); } },
 }).exports;
 
-const { _start, generate, rebuild, edit, pick, control, clear_controls, look, reset_camera, tick, edit_view, select_material, cycle_material, place_selected, seed_begin, seed_code_unit, seed_end, default_seed, pulse_control, memory } = engine;
+const { _start, generate, rebuild, edit, pick, control, clear_controls, look, reset_camera, tick, edit_view, select_material, cycle_material, place_selected, seed_begin, seed_code_unit, seed_end, default_seed, pulse_control, edit_control, memory } = engine;
 assert(memory instanceof WebAssembly.Memory);
-for (const fn of [_start, generate, rebuild, edit, pick, control, clear_controls, look, reset_camera, tick, edit_view, select_material, cycle_material, place_selected, seed_begin, seed_code_unit, seed_end, default_seed, pulse_control]) {
+for (const fn of [_start, generate, rebuild, edit, pick, control, clear_controls, look, reset_camera, tick, edit_view, select_material, cycle_material, place_selected, seed_begin, seed_code_unit, seed_end, default_seed, pulse_control, edit_control]) {
   assert.equal(typeof fn, 'function');
 }
 _start();
@@ -75,16 +104,26 @@ for (const [text, expect] of [
 ]) assert.equal(seed(text, 1), expect, JSON.stringify(text));
 generate(42);
 assert(mesh.count > 0);
-assert.equal(water.count, 6);
+assert.equal(water.count, 0, 'inland setup should not render an ocean');
+assert.equal(atlasCount, 1);
 const original = mesh;
 generate(42);
 rebuild();
 assert.deepEqual(mesh, original, 'seed did not reproduce mesh in the same storage');
+assert.equal(atlasCount, 1, 'reseed must not regenerate the material atlas');
+generate(471);
+const firstSeed = mesh.hash;
+generate(722);
+assert.notEqual(mesh.hash, firstSeed, 'seeds separated by 251 must not produce identical terrain');
+generate(42);
+assert.deepEqual(mesh, original, 'the initial seed still reproduces the same world');
 
 tick(0, 1, 0);
 assert.equal(frame.hit, -1);
 assert.equal(outline.count, 0);
+const preview = frame.values.slice(0, 19);
 tick(0, 1, 1);
+assert.deepEqual(frame.values.slice(0, 19), preview, 'starting play must not snap away from the eye-level preview');
 const priorView = frame.values.slice(0, 16);
 look(45, -12);
 tick(0, 1, 1);
@@ -123,7 +162,7 @@ for (let y = 3; y <= 8; y++) {
 }
 rebuild();
 reset_camera();
-look(0.72664234 / 0.0034, -0.21 / 0.0034);
+look(0.72664234 / 0.0034, -0.10 / 0.0034);
 tick(0, 1, 1);
 const ground = frame.values[17];
 const zStart = frame.values[18];
@@ -220,6 +259,46 @@ control(7, 0);
 tick(0, 1, 1);
 assert.equal(frame.values[22], 0);
 
+for (let y = 3; y <= 8; y++) {
+  for (let x = 8; x < 18; x++) edit(x, y, 15, 0);
+}
+edit(12, 4, 10, 3);
+rebuild();
+reset_camera();
+look(0.72664234 / 0.0034, -0.10 / 0.0034);
+tick(0, 1, 1);
+const [sx, sy, sz] = frame.values.slice(16, 19);
+const aimedZ = () => {
+  const target = pick(sx, sy, sz, 0, 0, -1);
+  return target < 0 ? -1 : (target >>> 9) & 31;
+};
+assert.equal(aimedZ(), 10, 'generic ray should still see distant blocks');
+assert.equal(frame.hit, -1, 'first-person editing ray must not target a block beyond reach');
+assert.equal(edit_control(0, 2), -1, 'long-range edits must fail');
+for (const z of [13, 14, 15]) edit(12, 4, z, 3);
+rebuild();
+tick(0, 1, 1);
+assert.equal(aimedZ(), 15);
+assert.equal(edit_control(0, 1), 1, 'holding break edits immediately');
+assert.equal(aimedZ(), 14);
+assert.equal(edit_control(0, 1), 0, 'duplicate press may not edit twice');
+tick(0, 1, 1);
+tick(NaN, 1, 1);
+for (let i = 0; i < 6; i++) tick(0.06, 1, 0);
+assert.equal(aimedZ(), 14, 'paused or invalid ticks must not advance held edits');
+for (let i = 0; i < 3; i++) tick(0.06, 1, 1);
+assert.equal(aimedZ(), 14, 'held edit must wait out the initial interval');
+for (let i = 0; i < 2; i++) tick(0.06, 1, 1);
+assert.equal(aimedZ(), 13, 'held edit advances to the next targeted block');
+assert.equal(edit_control(0, 0), 0);
+for (let i = 0; i < 8; i++) tick(0.06, 1, 1);
+assert.equal(aimedZ(), 13, 'releasing the action must stop the repeat');
+select_material(4);
+assert.equal(edit_control(1, 2), 1, 'place one selected block in the face-adjacent cell');
+assert.equal(aimedZ(), 14);
+edit(12, 4, 14, 0);
+edit(12, 4, 13, 0);
+edit(12, 4, 10, 0);
 for (let z = 10; z < 23; z++) {
   for (let x = 8; x < 18; x++) edit(x, 2, z, 0);
 }
@@ -239,4 +318,4 @@ assert.equal(mesh.count, 0);
 assert.equal(frame.values[17], 10);
 assert.equal(frame.values[22], 1, 'an empty world must use a stable flight spawn');
 assert.equal(frame.values[23], 0);
-console.log('Verified deterministic terrain, geometry, walking, jump and landing, solid walls, block editing, flight and respawn.');
+console.log('Verified deterministic terrain, geometry, walking, jump and landing, solid walls, first-person break/build reach and repeat, flight and respawn.');

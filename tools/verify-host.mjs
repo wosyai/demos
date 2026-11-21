@@ -23,6 +23,7 @@ class Element {
 
   replaceChildren(...children) { this.textContent = children.at(-1).trim(); }
   focus() {}
+  getBoundingClientRect() { return { left: 0, top: 0, right: 800, bottom: 400 }; }
   setPointerCapture() {}
 }
 
@@ -38,7 +39,7 @@ async function loadHost(caseId, startsLost = false, stored = null) {
   const fetchResponse = deferred();
   const frames = new Map();
   const memory = new WebAssembly.Memory({ initial: 1 });
-  Object.assign(counters, { seeds: [], parser: [], defaults: 0, stored: [], pulses: [], ticksWithPulses: [] });
+  Object.assign(counters, { seeds: [], parser: [], defaults: 0, stored: [], pulses: [], ticksWithPulses: [], atlasUploads: [], editStates: [], looks: [] });
   const pending = new Set(), held = new Set();
   let lost = startsLost;
   let frameId = 0;
@@ -47,6 +48,7 @@ async function loadHost(caseId, startsLost = false, stored = null) {
       if (name === 'isContextLost') return () => lost;
       if (name === 'getProgramParameter' || name === 'getShaderParameter') return () => !lost;
       if (name === 'createProgram') return () => { assert(!lost); counters.programs++; return {}; };
+      if (name === 'texImage2D') return (...args) => { assert(!lost); counters.atlasUploads.push([args[3],args[4],...args[8]]); };
       if (name === 'bufferData') return (_, data) => { assert(!lost); counters.uploads.push([...data]); };
       if (name.startsWith('create')) return () => { assert(!lost); return {}; };
       if (/^[A-Z_]+$/.test(name)) return 1;
@@ -58,7 +60,7 @@ async function loadHost(caseId, startsLost = false, stored = null) {
     swatch.dataset = { material: (i + 1).toString() };
     return swatch;
   });
-  const touch = [["jump-touch", "Space"], ["up-touch", "KeyW"]].map(([id, move]) => {
+  const touch = [["jump-touch", "Space"], ["up-touch", "KeyW"], ["remove", "KeyQ"], ["place", "KeyE"]].map(([id, move]) => {
     const button = node(id);
     button.dataset = { move };
     return button;
@@ -129,10 +131,14 @@ async function loadHost(caseId, startsLost = false, stored = null) {
       generate(seed) {
         counters.seeds.push(seed);
         counters.generations++;
+        if (counters.generations === 1) {
+          new Uint8Array(memory.buffer, 6144, 8192).fill(127);
+          showcase.atlas(6144,caseId === "invalid-atlas" ? 64 : 128,caseId === "invalid-atlas" ? 32 : 16);
+        }
         showcase.water(0, 6);
         showcase.mesh(256, 3);
       },
-      look() {},
+      look(x, y) { counters.looks.push([x,y]); },
       tick(dt, aspect, active) {
         if (active && dt > 0 && pending.size) {
           counters.ticksWithPulses.push([...pending]);
@@ -143,13 +149,14 @@ async function loadHost(caseId, startsLost = false, stored = null) {
       },
       select_material(material) { counters.selected.push(material); counters.picked = material; },
       cycle_material(delta) { counters.cycles.push(delta); counters.picked += delta; },
-      place_selected() {
-        counters.edits.push(counters.picked);
-        new Float32Array(memory.buffer, 256, 18).fill(0.25);
-        showcase.mesh(256, 3);
+      edit_control(mode, state) {
+        counters.editStates.push([mode, state]);
+        if (state === 0) return 0;
+        counters.edits.push(mode === 1 ? counters.picked : 0);
+        new Float32Array(memory.buffer,256,18).fill(0.25);
+        showcase.mesh(256,3);
         return 1;
       },
-      edit_view(material) { counters.edits.push(material); return 1; },
     };
     return { instance: { exports: instanceExports } };
   };
@@ -200,7 +207,7 @@ assert.equal(pending.frames.size, 1);
 pending.node('enter').dispatch('click');
 pending.doc.dispatch('keydown', { code: 'KeyW' });
 assert.deepEqual(pending.counters.controls, [[0, 1]]);
-pending.node('place').dispatch('click');
+pending.node('place').dispatch('click', {detail:0});
 const editedMesh = Array(18).fill(0.25);
 assert.deepEqual(pending.counters.edits, [2]);
 assert.deepEqual(pending.counters.uploads.at(-1), editedMesh);
@@ -281,8 +288,8 @@ creative.node('slot-6').dispatch('click');
 creative.frame();
 assert.equal(creative.node('slot-6')['aria-pressed'], 'true');
 assert.deepEqual(creative.counters.selected, [4, 6]);
-creative.node('place').dispatch('click');
-creative.node('remove').dispatch('click');
+creative.node('place').dispatch('click', {detail:0});
+creative.node('remove').dispatch('click', {detail:0});
 assert.deepEqual(creative.counters.edits, [6, 0]);
 creative.doc.dispatch('keydown', { code: 'Space' });
 creative.doc.dispatch('keyup', { code: 'Space' });
@@ -377,3 +384,87 @@ assert.deepEqual(fallback.counters.seeds,[471]);
 assert.deepEqual(fallback.counters.parser,[{trim:0,units:[32,56,32],complete:true}]);
 assert.deepEqual(fallback.counters.stored,[['wosy-voxel-seed','471']]);
 console.log('Seed host smoke passed: literal UTF-16 code units, Wosy defaults/trim/range sentinel, canonical persistence.');
+
+const edits = await loadHost('batched-editor');
+await edits.resolveFetch();
+const canvas = edits.node('scene');
+assert.deepEqual(edits.counters.atlasUploads.map((a) => a.slice(0,3)), [[128,16,127]]);
+edits.node('enter').dispatch('click');
+edits.grantLock();
+edits.doc.dispatch('mousedown',{button:0,target:canvas});
+edits.doc.dispatch('mousedown',{button:2,target:canvas});
+edits.doc.dispatch('keydown',{code:'KeyQ'});
+edits.doc.dispatch('mouseup',{button:0,target:canvas});
+assert.deepEqual(edits.counters.editStates,[[0,1],[1,1]],'Q retains a still-held break');
+edits.doc.dispatch('keyup',{code:'KeyQ'});
+edits.doc.dispatch('mouseup',{button:2,target:canvas});
+assert.deepEqual(edits.counters.editStates,[[0,1],[1,1],[0,0],[1,0]]);
+const place = edits.node('place');
+place.dispatch('pointerdown',{pointerId:17});
+canvas.dispatch('pointerdown',{pointerId:18,pointerType:'touch',button:0,clientX:240,clientY:120});
+edits.doc.exitPointerLock();
+edits.node('enter').dispatch('click');
+place.dispatch('pointerdown',{pointerId:17});
+canvas.dispatch('pointerdown',{pointerId:18,pointerType:'touch',button:0,clientX:240,clientY:120});
+canvas.dispatch('pointermove',{pointerId:18,clientX:255,clientY:133});
+assert.deepEqual(edits.counters.looks.at(-1),[15,13]);
+canvas.dispatch('pointercancel',{pointerId:18});
+assert.deepEqual(edits.counters.editStates.at(-1),[1,1],'look cancellation must not stop place hold');
+place.dispatch('pointerup',{pointerId:17});
+place.dispatch('click',{detail:1});
+assert.deepEqual(edits.counters.editStates.slice(-2),[[1,1],[1,0]],'ordinary click must not repeat');
+place.dispatch('click',{detail:0});
+assert.deepEqual(edits.counters.editStates.at(-1),[1,2]);
+const position = {pointerId:19,pointerType:'mouse',button:0,clientX:220,clientY:90};
+canvas.dispatch('pointerdown',position);
+canvas.dispatch('pointerup',position);
+assert.deepEqual(edits.counters.editStates.at(-1),[0,2],'unlocked left tap breaks once');
+const beforeDrag = edits.counters.editStates.length;
+canvas.dispatch('pointerdown',position);
+canvas.dispatch('pointermove',{...position,clientX:236});
+canvas.dispatch('pointerup',{...position,clientX:236});
+assert.equal(edits.counters.editStates.length,beforeDrag,'unlocked drag is only a look');
+edits.lostEvent();
+new Uint8Array(edits.memory.buffer,6144,8192).fill(0);
+edits.restoredEvent();
+assert.deepEqual(edits.counters.atlasUploads.map((a) => a.slice(0,3)), [[128,16,127],[128,16,127]],'restore must replay copied atlas, not zeroed WASM memory');
+console.log('Pixel atlas + break/build host tests passed: held overlap, mouse chords, touch cancellation, tap-vs-drag and retained atlas.');
+
+const invalidAtlas = await loadHost('invalid-atlas');
+try {
+  console.warn = () => {};
+  await invalidAtlas.resolveFetch();
+} finally {
+  console.warn = warn;
+}
+disabled(invalidAtlas, true);
+assert.equal(invalidAtlas.status.textContent, 'Motor indisponível');
+assert.equal(invalidAtlas.counters.atlasUploads.length, 0);
+assert.equal(invalidAtlas.node('error').hidden, false);
+console.log('Same-byte-count malformed atlas dimensions rejected before GPU upload.');
+
+const cleared = await loadHost('repeat-after-blur');
+await cleared.resolveFetch();
+cleared.node('enter').dispatch('click');
+cleared.grantLock();
+for (const code of ['KeyQ', 'KeyE', 'KeyF', 'KeyW']) {
+  cleared.doc.dispatch('keydown', {code, repeat:false});
+}
+window.dispatch('blur');
+assert.deepEqual(cleared.counters.editStates, [[0,1],[1,1]]);
+assert.deepEqual(cleared.counters.controls, [[7,1],[0,1]]);
+let prevented = 0;
+for (const code of ['KeyQ', 'KeyE', 'KeyF', 'KeyW', 'Digit3']) {
+  cleared.doc.dispatch('keydown', {code, repeat:true, preventDefault() { prevented++; }});
+}
+assert.equal(prevented, 5);
+assert.deepEqual(cleared.counters.editStates, [[0,1],[1,1]]);
+assert.deepEqual(cleared.counters.controls, [[7,1],[0,1]]);
+assert.deepEqual(cleared.counters.selected, []);
+for (const code of ['KeyQ', 'KeyE', 'KeyF', 'KeyW']) {
+  cleared.doc.dispatch('keyup', {code});
+  cleared.doc.dispatch('keydown', {code, repeat:false});
+}
+assert.deepEqual(cleared.counters.editStates, [[0,1],[1,1],[0,1],[1,1]]);
+assert.deepEqual(cleared.counters.controls, [[7,1],[0,1],[7,1],[0,1]]);
+console.log('Blur reset ignored repeated key-down and accepted a fresh press.');
