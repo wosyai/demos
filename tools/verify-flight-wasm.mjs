@@ -139,13 +139,13 @@ for (const { course, shortcut, controls } of traces) {
   impossible.set([87, 70, 1, course, 180, 0]);
   receive(impossible);
   assert.equal(frame[23], 0, 'a well-formed packet without a legal finish must not set the best time');
-  for (let i = 0; i < 42; i++) engine.tick(1 / 30, 1, 16 / 9);
+  for (let i = 0; i < 60; i++) engine.tick(1 / 30, 1, 16 / 9);
   const soloSize = aircraftSize;
   const soloGates = frame[20];
   engine.reset(course);
   receive(packet);
   assert.equal(frame[23], elapsed, 'same-course record restores its exact time');
-  for (let i = 0; i < 42; i++) engine.tick(1 / 30, 1, 16 / 9);
+  for (let i = 0; i < 60; i++) engine.tick(1 / 30, 1, 16 / 9);
   assert.equal(frame[20], soloGates, 'gate cues must not be counted as a replay aircraft');
   assert(aircraftSize > soloSize, 'Wosy must emit the extra replay aircraft');
 
