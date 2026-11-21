@@ -15,6 +15,7 @@ class Element {
     this.value = '471';
   }
 
+  setAttribute(key, value) { this[key] = value; }
   addEventListener(name, fn) { this.handlers.set(name, fn); }
   dispatch(name, values = {}) {
     this.handlers.get(name)?.({ preventDefault() {}, ...values });
@@ -22,6 +23,7 @@ class Element {
 
   replaceChildren(...children) { this.textContent = children.at(-1).trim(); }
   focus() {}
+  setPointerCapture() {}
 }
 
 async function loadHost(caseId, startsLost = false) {
@@ -30,7 +32,7 @@ async function loadHost(caseId, startsLost = false) {
     if (!nodes.has(id)) nodes.set(id, new Element());
     return nodes.get(id);
   };
-  const counters = { programs: 0, uploads: [], starts: 0, generations: 0, edits: [], controls: [], clears: 0, lockRequests: 0, lockExits: 0 };
+  const counters = { programs: 0, uploads: [], starts: 0, generations: 0, edits: [], controls: [], clears: 0, lockRequests: 0, lockExits: 0, selected: [], cycles: [], picked: 2, flying: false, grounded: true };
   const canv = node('scene');
   const doc = new Element();
   const fetchResponse = deferred();
@@ -49,6 +51,16 @@ async function loadHost(caseId, startsLost = false) {
       return () => {};
     },
   });
+  const swatches = Array.from({ length: 6 }, (_, i) => {
+    const swatch = node('slot-' + (i + 1));
+    swatch.dataset = { material: (i + 1).toString() };
+    return swatch;
+  });
+  const touch = [["jump-touch", "Space"], ["up-touch", "KeyW"]].map(([id, move]) => {
+    const button = node(id);
+    button.dataset = { move };
+    return button;
+  });
   canv.getContext = () => gl;
   canv.requestPointerLock = () => { counters.lockRequests++; };
   const controls = ['enter', 'apply-seed', 'random-seed'].map(node);
@@ -59,7 +71,7 @@ async function loadHost(caseId, startsLost = false) {
   Object.assign(doc, {
     getElementById: node,
     querySelector: node,
-    querySelectorAll: () => [],
+    querySelectorAll: (selector) => selector === "[data-material]" ? swatches : selector === "[data-move]" ? touch : [],
     createElement: node,
     createTextNode: (text) => text,
     exitPointerLock() {
@@ -88,7 +100,10 @@ async function loadHost(caseId, startsLost = false) {
     const instanceExports = {
       memory,
       _start() { counters.starts++; },
-      control(action, active) { counters.controls.push([action, active]); },
+      control(action, active) {
+        counters.controls.push([action, active]);
+        if (action === 7 && active) counters.flying = !counters.flying;
+      },
       clear_controls() { counters.clears++; },
       generate() {
         counters.generations++;
@@ -96,13 +111,19 @@ async function loadHost(caseId, startsLost = false) {
         showcase.mesh(256, 3);
       },
       look() {},
-      tick() { showcase.frame(512, -1); },
-      edit_view(material) {
-        counters.edits.push(material);
+      tick() {
+        new Float32Array(memory.buffer, 512, 25).set([+counters.flying, +counters.grounded, counters.picked], 22);
+        showcase.frame(512, -1);
+      },
+      select_material(material) { counters.selected.push(material); counters.picked = material; },
+      cycle_material(delta) { counters.cycles.push(delta); counters.picked += delta; },
+      place_selected() {
+        counters.edits.push(counters.picked);
         new Float32Array(memory.buffer, 256, 18).fill(0.25);
         showcase.mesh(256, 3);
         return 1;
       },
+      edit_view(material) { counters.edits.push(material); return 1; },
     };
     return { instance: { exports: instanceExports } };
   };
@@ -125,7 +146,12 @@ async function loadHost(caseId, startsLost = false) {
     doc.pointerLockElement = canv;
     doc.dispatch('pointerlockchange');
   };
-  return { node, doc, counters, status, controls, frames, memory, lostEvent, restoredEvent, resolveFetch, grantLock };
+  let mockTime = 0;
+  const frame = () => {
+    const [id, fn] = frames.entries().next().value;
+    frames.delete(id); fn(mockTime += 16);
+  };
+  return { node, doc, counters, status, controls, frames, memory, lostEvent, restoredEvent, resolveFetch, grantLock, frame };
 }
 
 function disabled(host, state) {
@@ -212,3 +238,64 @@ assert.equal(failed.node('error').hidden, false);
 assert.equal(failed.frames.size, 0);
 
 console.log('Verified host boot across WebGL loss/restoration, edited mesh retention and movement reset.');
+
+const creative = await loadHost('creative');
+await creative.resolveFetch();
+creative.node('enter').dispatch('click');
+creative.frame();
+assert.equal(creative.node('slot-2')['aria-pressed'], 'true');
+assert.equal(creative.node('player-state').textContent, 'A pé');
+creative.doc.dispatch('keydown', { code: 'Digit4' });
+assert.equal(creative.node('slot-4')['aria-pressed'], 'false', 'hotbar waits for Wosy confirmation');
+creative.frame();
+assert.equal(creative.node('slot-4')['aria-pressed'], 'true');
+creative.doc.dispatch('wheel', { target: creative.node('scene'), deltaY: 2 });
+assert.deepEqual(creative.counters.cycles, [1]);
+creative.node('slot-6').dispatch('click');
+creative.frame();
+assert.equal(creative.node('slot-6')['aria-pressed'], 'true');
+assert.deepEqual(creative.counters.selected, [4, 6]);
+creative.node('place').dispatch('click');
+creative.node('remove').dispatch('click');
+assert.deepEqual(creative.counters.edits, [6, 0]);
+creative.doc.dispatch('keydown', { code: 'Space' });
+creative.doc.dispatch('keyup', { code: 'Space' });
+creative.node('flight-touch').dispatch('click');
+creative.frame();
+assert.deepEqual(creative.counters.controls, [[4, 1], [4, 0], [7, 1], [7, 0]]);
+assert.equal(creative.node('jump-touch').textContent, 'Subir');
+assert.equal(creative.node('descend-touch').hidden, false);
+assert.equal(creative.node('flight-touch')['aria-pressed'], 'true');
+assert.equal(creative.node('player-state').textContent, 'Voando');
+console.log('Creative host smoke passed: 25-float HUD, Wosy material authority, keyboard/wheel/touch inputs, and selected placement.');
+
+const accessible = await loadHost('accessible');
+await accessible.resolveFetch();
+accessible.node('enter').dispatch('click');
+const jump = accessible.node('jump-touch');
+const arrow = accessible.node('up-touch');
+const transitions = accessible.counters.controls;
+jump.dispatch('click',{detail:0});
+assert.deepEqual(transitions,[[4,1]]);
+accessible.frame();
+assert.deepEqual(transitions,[[4,1]],'do not release before a non-zero tick');
+accessible.frame();
+assert.deepEqual(transitions,[[4,1],[4,0]]);
+arrow.dispatch('pointerdown',{pointerId:12});
+arrow.dispatch('pointerup',{pointerId:12});
+arrow.dispatch('click',{detail:1});
+assert.deepEqual(transitions,[[4,1],[4,0],[0,1],[0,0]],'ordinary pointer click must not duplicate edges');
+accessible.doc.dispatch('keydown',{code:'KeyW'});
+arrow.dispatch('click',{detail:0});
+accessible.frame();
+assert.deepEqual(transitions.slice(-2),[[0,0],[0,1]],'pulse ended but held keyboard source retained');
+accessible.doc.dispatch('keyup',{code:'KeyW'});
+assert.deepEqual(transitions.slice(-2),[[0,1],[0,0]]);
+arrow.dispatch('click',{detail:0});
+accessible.lostEvent();
+accessible.restoredEvent();
+accessible.node('enter').dispatch('click');
+accessible.frame();
+accessible.frame();
+assert.deepEqual(transitions.slice(-2),[[0,0],[0,1]],'context reset consumed stale pulse without replay');
+console.log('Accessible pointerless pulse, suppression, overlap and context reset passed.');
