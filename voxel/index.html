@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#152a24">
+<meta name="description" content="Explore e transforme uma pequena ilha de blocos, gerada em Wosy e renderizada no navegador.">
+<title>Ilha de Bolso • Wosy</title>
+<link rel="stylesheet" href="./style.css">
+<script type="module" src="./main.js"></script>
+</head>
+<body>
+<main class="shell" id="game">
+  <canvas id="scene" tabindex="-1" aria-label="Vista tridimensional da ilha"></canvas>
+  <div class="horizon" aria-hidden="true"></div>
+  <header class="top">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 36 36" fill="none" aria-hidden="true"><path d="m18 4 12 7v14l-12 7-12-7V11L18 4Z" stroke="currentColor" stroke-width="1.5"/><path d="m6 11 12 7 12-7M18 18v14" stroke="currentColor" stroke-width="1.5"/><path d="m12 14.5 12-7" stroke="currentColor" stroke-width="1.5"/></svg>
+      <div><span class="brand-name">WOSY</span><span class="brand-line">LABORATÓRIO DE DEMOS</span></div>
+    </div>
+    <div class="top-actions">
+      <span id="engine-status" class="status" role="status"><i></i> Carregando motor</span>
+      <button class="icon" id="pause" type="button" title="Voltar ao início" aria-label="Voltar ao início"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M8.5 5v14m7-14v14" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+      <button class="icon" id="fullscreen" type="button" title="Tela cheia" aria-label="Tela cheia"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
+    </div>
+  </header>
+  <section class="intro" id="intro" aria-labelledby="title">
+    <span class="eyebrow"><i></i> SANDBOX EM WEBASSEMBLY</span>
+    <h1 id="title">Ilha<br>de Bolso<span>.</span></h1>
+    <p>Um pedaço de mundo que cabe no navegador. Explore o terreno e mude tudo, um bloco por vez.</p>
+    <button class="primary" id="enter" type="button" disabled><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m7 4 9 6-9 6V4Z" fill="currentColor"/></svg>Explorar a ilha</button>
+    <p class="error" id="error" role="alert" hidden></p>
+  </section>
+  <span class="reticle" aria-hidden="true"></span>
+  <p class="notice" id="notice" aria-live="polite"></p>
+  <section class="touch" aria-label="Controles por toque">
+    <div class="dpad" aria-label="Mover câmera">
+      <button data-move="KeyW" type="button" aria-label="Avançar">▲</button>
+      <button data-move="KeyA" type="button" aria-label="Mover para a esquerda">◀</button>
+      <button data-move="KeyS" type="button" aria-label="Recuar">▼</button>
+      <button data-move="KeyD" type="button" aria-label="Mover para a direita">▶</button>
+    </div>
+    <div class="touch-edit"><button id="remove" type="button" aria-label="Remover bloco">−</button><button id="place" type="button" aria-label="Colocar bloco">+</button></div>
+  </section>
+  <footer class="dock">
+    <div class="desktop-guide" aria-label="Controles por teclado">
+      <span title="WASD ou setas"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> mover</span>
+      <span title="Botão esquerdo remove e botão direito coloca"><kbd>mouse</kbd> olhar</span>
+      <span><kbd>Q</kbd><kbd>E</kbd> editar</span>
+      <span><kbd>Esc</kbd> liberar</span>
+    </div>
+    <span class="mobile-guide">Arraste para olhar. Use + e − para editar.</span>
+    <form class="seed" id="seed-form">
+      <label for="seed">SEMENTE</label>
+      <input id="seed" name="seed" type="text" maxlength="11" inputmode="numeric" pattern="-?[0-9]+" value="471" autocomplete="off">
+      <button type="submit" id="apply-seed" disabled>Gerar</button>
+      <button type="button" class="random" id="random-seed" title="Nova semente aleatória" aria-label="Nova semente aleatória" disabled><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 7h3c4 0 6 10 10 10h5m-3-3 3 3-3 3M3 17h3c1.3 0 2.4-1 3.4-2.5M14 8.9C14.7 7.7 15.3 7 16 7h5m-3-3 3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    </form>
+  </footer>
+</main>
+</body>
+</html>
