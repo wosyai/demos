@@ -43,12 +43,36 @@ engine = new WebAssembly.Instance(binary, {
   wasi_snapshot_preview1: { proc_exit(code) { assert.fail('Wosy exited: ' + code); } },
 }).exports;
 
-const { _start, generate, rebuild, edit, pick, control, clear_controls, look, reset_camera, tick, edit_view, select_material, cycle_material, place_selected, memory } = engine;
+const { _start, generate, rebuild, edit, pick, control, clear_controls, look, reset_camera, tick, edit_view, select_material, cycle_material, place_selected, seed_begin, seed_code_unit, seed_end, default_seed, memory } = engine;
 assert(memory instanceof WebAssembly.Memory);
-for (const fn of [_start, generate, rebuild, edit, pick, control, clear_controls, look, reset_camera, tick, edit_view, select_material, cycle_material, place_selected]) {
+for (const fn of [_start, generate, rebuild, edit, pick, control, clear_controls, look, reset_camera, tick, edit_view, select_material, cycle_material, place_selected, seed_begin, seed_code_unit, seed_end, default_seed]) {
   assert.equal(typeof fn, 'function');
 }
 _start();
+function seed(text, trim = 0) {
+  seed_begin(trim);
+  for (let i = 0; i < text.length; i++) {
+    if (seed_code_unit(text.charCodeAt(i)) === 0) {
+      assert.equal(seed_code_unit(52), 0, 'rejection must stay sticky until the next session');
+      break;
+    }
+  }
+  return seed_end();
+}
+assert.equal(default_seed(), 471);
+for (const [text, expect] of [
+  ['0', 0n], ['-0', 0n], ['00042', 42n], ['0'.repeat(5000) + '42', 42n],
+  ['2147483647', 2147483647n], ['-2147483648', -2147483648n],
+]) assert.equal(seed(text), expect, JSON.stringify(text.slice(-15)));
+for (const invalid of ['', '-', '+1', '1e2', '2147483648', '-2147483649',
+  '１２３', '1\n', ' 42 ', '1 2', '1234.5', '😊']) {
+  assert.equal(seed(invalid), 2147483648n, JSON.stringify(invalid));
+}
+for (const [text, expect] of [
+  ['\u00a0 -0012\ufeff\u2028', -12n], ['\r\n 18 \u3000', 18n],
+  ['- 42', 2147483648n], ['\u0085' + '42', 2147483648n],
+  ['4\u20002', 2147483648n], ['\u180e' + '42', 2147483648n], ['  ', 2147483648n],
+]) assert.equal(seed(text, 1), expect, JSON.stringify(text));
 generate(42);
 assert(mesh.count > 0);
 assert.equal(water.count, 6);

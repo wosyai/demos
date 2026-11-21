@@ -26,7 +26,7 @@ class Element {
   setPointerCapture() {}
 }
 
-async function loadHost(caseId, startsLost = false) {
+async function loadHost(caseId, startsLost = false, stored = null) {
   const nodes = new Map();
   const node = (id) => {
     if (!nodes.has(id)) nodes.set(id, new Element());
@@ -38,6 +38,7 @@ async function loadHost(caseId, startsLost = false) {
   const fetchResponse = deferred();
   const frames = new Map();
   const memory = new WebAssembly.Memory({ initial: 1 });
+  Object.assign(counters, { seeds: [], parser: [], defaults: 0, stored: [] });
   let lost = startsLost;
   let frameId = 0;
   const gl = new Proxy({}, {
@@ -85,7 +86,7 @@ async function loadHost(caseId, startsLost = false) {
     window: new Element(),
     HTMLInputElement: class extends Element {},
     matchMedia: () => ({ matches: false }),
-    localStorage: { getItem() {}, setItem() {} },
+    localStorage: { getItem() { return stored; }, setItem(key, seed) { counters.stored.push([key, seed]); } },
     devicePixelRatio: 1,
     fetch(url) {
       assert(url.pathname.endsWith('/voxel/engine.wasm'));
@@ -105,7 +106,18 @@ async function loadHost(caseId, startsLost = false) {
         if (action === 7 && active) counters.flying = !counters.flying;
       },
       clear_controls() { counters.clears++; },
-      generate() {
+      seed_begin(trim) { counters.parser.push({ trim, units: [] }); },
+      seed_code_unit(unit) { counters.parser.at(-1).units.push(unit); return +!(unit === 88); },
+      seed_end() {
+        const call = counters.parser.at(-1);
+        call.complete = true;
+        const text = String.fromCharCode(...call.units);
+        return text === '  -2147483648 ' && call.trim === 1
+          ? -2147483648n : text === '7' && call.trim === 0 ? 7n : 2147483648n;
+      },
+      default_seed() { counters.defaults++; return 471; },
+      generate(seed) {
+        counters.seeds.push(seed);
         counters.generations++;
         showcase.water(0, 6);
         showcase.mesh(256, 3);
@@ -299,3 +311,39 @@ accessible.frame();
 accessible.frame();
 assert.deepEqual(transitions.slice(-2),[[0,0],[0,1]],'context reset consumed stale pulse without replay');
 console.log('Accessible pointerless pulse, suppression, overlap and context reset passed.');
+
+const parsed = await loadHost('engine-parses-seed', false, '7');
+await parsed.resolveFetch();
+assert.deepEqual(parsed.counters.seeds,[7]);
+assert.deepEqual(parsed.counters.parser,[{trim:0,units:[55],complete:true}]);
+assert.equal(parsed.counters.defaults,0);
+const title = parsed.node('seed');
+const form = parsed.node('seed-form');
+const full = '  -2147483648 ';
+title.value = full;
+form.dispatch('submit');
+assert.deepEqual(parsed.counters.seeds,[7,-2147483648]);
+assert.deepEqual(parsed.counters.parser.at(-1),{
+  trim:1,units:Array.from(full, (char) => char.charCodeAt(0)),complete:true
+},'form must pass original whitespace and use Wosy trim policy');
+assert.equal(title.value,'-2147483648');
+title.value = '';
+form.dispatch('submit');
+assert.deepEqual(parsed.counters.parser.at(-1),{trim:1,units:[],complete:true});
+assert.equal(parsed.counters.seeds.length,2,'sentinel must not generate a world');
+title.value = 'X123';
+form.dispatch('submit');
+assert.deepEqual(parsed.counters.parser.at(-1),{trim:1,units:[88]});
+assert.equal(parsed.counters.seeds.length,2,'Wosy invalid code unit must reject even if rest was digits');
+title.value = '🌱';
+form.dispatch('submit');
+assert.deepEqual(parsed.counters.parser.at(-1),{trim:1,units:[0xd83c,0xdf31],complete:true});
+assert.equal(parsed.counters.seeds.length,2,'supplementary characters must be passed as UTF-16 units');
+
+const fallback = await loadHost('fallback-default', false, ' 8 ');
+await fallback.resolveFetch();
+assert.equal(fallback.counters.defaults,1);
+assert.deepEqual(fallback.counters.seeds,[471]);
+assert.deepEqual(fallback.counters.parser,[{trim:0,units:[32,56,32],complete:true}]);
+assert.deepEqual(fallback.counters.stored,[['wosy-voxel-seed','471']]);
+console.log('Seed host smoke passed: literal UTF-16 code units, Wosy defaults/trim/range sentinel, canonical persistence.');
