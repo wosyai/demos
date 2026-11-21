@@ -1,11 +1,11 @@
-export const ENGINE_PATH = "./ferry.wasm?v=ferry-1";
+export const ENGINE_PATH = "./ferry.wasm?v=ferry-2";
 const INPUTS = new Map([
   ["KeyA","left"],["ArrowLeft","left"],["KeyD","right"],["ArrowRight","right"],
   ["KeyW","up"],["ArrowUp","up"],["KeyS","down"],["ArrowDown","down"],["Space","brake"],
 ]);
 const ACTIONS = ["","Enter","Exit","Collect","Board"];
 const HIT = ["","Mailbox hit","Tree hit","Pedestrian hit","Vehicle hit","Wall hit"];
-const OBJECTIVES = ["Pick up the tape","Bring the tape aboard","Caught the last ferry","Missed the last ferry","Explore the waterfront"];
+const OBJECTIVES = ["Pick up the tape at Sunset Video","Bring the tape to Pier 8","Caught the last ferry","Missed the last ferry","Explore the waterfront"];
 
 export function axes(x,y,radius) {
   const length = Math.hypot(x,y);
@@ -55,13 +55,64 @@ function programFor(gl) {
   layout(location=0) in vec3 position;
   layout(location=1) in vec3 color;
   uniform mat4 camera;
+  uniform bool sky;
   out vec3 tint;
-  void main(){gl_Position=camera*vec4(position,1.0);tint=color;}`);
+  out vec3 skyRay;
+  out vec3 local;
+  out float depth;
+  void main(){
+    if(sky){
+      vec2 ndc=vec2(gl_VertexID==1?3.:-1.,gl_VertexID==2?3.:-1.);
+      vec3 right=vec3(camera[0][0],camera[1][0],camera[2][0]);
+      vec3 up=vec3(camera[0][1],camera[1][1],camera[2][1]);
+      vec3 forward=vec3(camera[0][3],camera[1][3],camera[2][3]);
+      skyRay=forward+ndc.x*right/dot(right,right)+ndc.y*up/dot(up,up);
+      gl_Position=vec4(ndc,0.,1.);
+      tint=vec3(0.); local=vec3(0.); depth=0.;
+    }else{
+      gl_Position=camera*vec4(position,1.);
+      tint=color; local=position; depth=gl_Position.w; skyRay=vec3(0.,0.,1.);
+    }
+  }`);
   const fragment=shader(gl.FRAGMENT_SHADER,`#version 300 es
-  precision mediump float;
+  precision highp float;
+  uniform bool sky;
   in vec3 tint;
+  in vec3 skyRay;
+  in vec3 local;
+  in float depth;
   out vec4 pixel;
-  void main(){pixel=vec4(mix(tint,vec3(.69,.45,.38),smoothstep(.988,1.,gl_FragCoord.z)*.34),1.0);}`);
+  void main(){
+    if(sky){
+      vec3 d=normalize(skyRay);
+      vec3 sun=normalize(vec3(-0.39,.14,.91));
+      float elevation=max(0.,d.y);
+      float facing=max(0.,dot(d,sun));
+      vec3 horizon=mix(vec3(.49,.34,.51),vec3(.94,.54,.43),pow(facing,4.));
+      vec3 zenith=vec3(.083,.105,.24);
+      vec3 air=mix(horizon,zenith,smoothstep(.005,.61,elevation));
+      float glow=pow(facing,28.)*.27+pow(facing,280.)*.34;
+      air+=vec3(1.,.51,.25)*glow;
+      float disk=smoothstep(.99941,.99962,facing);
+      air=mix(air,vec3(1.,.77,.52),disk);
+      vec2 p=d.xz/(.135+elevation);
+      float wisps=sin(p.x*9.8+p.y*3.7)+.43*sin(p.x*16.6-p.y*5.)+.36*sin(p.x*4.1+p.y*2.2);
+      float clouds=smoothstep(.47,1.22,wisps)*smoothstep(.08,.25,elevation)*(1.-smoothstep(.31,.63,elevation));
+      air=mix(air,vec3(.65,.43,.56)+vec3(.20,.085,.026)*pow(facing,4.),clouds*.26);
+      pixel=vec4(air,1.);
+    }else if(tint.z<0.){
+      pixel=vec4(.028,.015,.061,-tint.z);
+    }else{
+      float haze=smoothstep(19.,185.,depth);
+      vec3 normal=cross(dFdy(local),dFdx(local));
+      normal*=inversesqrt(max(dot(normal,normal),1e-8));
+      float key=max(0.,dot(normal,vec3(-.60,.57,.56)));
+      float bounce=max(0.,dot(normal,vec3(.57,.37,-.66)));
+      vec3 light=vec3(.76,.75,.92)+vec3(.27,.16,.09)*key+vec3(.05,.09,.16)*bounce;
+      vec3 dusk=tint*light+vec3(.036,.018,.045);
+      pixel=vec4(mix(dusk,vec3(.51,.34,.44),haze*.69),1.);
+    }
+  }`);
   const program=gl.createProgram();
   gl.attachShader(program,vertex);
   gl.attachShader(program,fragment);
@@ -75,8 +126,11 @@ function programFor(gl) {
 function graphics(canvas) {
   const gl=canvas.getContext("webgl2",{alpha:true,antialias:true});
   if (!gl) throw Error("Last Ferry needs WebGL 2. Try a browser with graphics acceleration enabled.");
-  const program=programFor(gl), camera=gl.getUniformLocation(program,"camera");
+  const program=programFor(gl), camera=gl.getUniformLocation(program,"camera"), sky=gl.getUniformLocation(program,"sky");
+  const skyVao=gl.createVertexArray();
   gl.enable(gl.DEPTH_TEST);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
   const layers=["world","moving"].map(()=>{
     const vao=gl.createVertexArray(), buffer=gl.createBuffer();
     gl.bindVertexArray(vao);
@@ -100,6 +154,12 @@ function graphics(canvas) {
       gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
       gl.useProgram(program);
       gl.uniformMatrix4fv(camera,false,frame.subarray(0,16));
+      gl.disable(gl.DEPTH_TEST);
+      gl.uniform1i(sky,1);
+      gl.bindVertexArray(skyVao);
+      gl.drawArrays(gl.TRIANGLES,0,3);
+      gl.enable(gl.DEPTH_TEST);
+      gl.uniform1i(sky,0);
       for (const layer of layers) {
         gl.bindVertexArray(layer.vao);
         gl.drawArrays(gl.TRIANGLES,0,layer.count);
@@ -158,7 +218,7 @@ export async function boot(env=globalThis,createGraphics=graphics) {
     updateAvailability();
     if(ready&&!lost) start.focus({preventScroll:true});
   }
-  const missionText="The clock starts when you pick up the tape. Drive, park, or run to reach the last ferry.";
+  const missionText="Pick up the tape at Sunset Video, then cross the district to Pier 8 before the ferry leaves.";
   function updateAvailability() {
     const available=ready&&!lost;
     start.disabled=!available; roam.disabled=!available;

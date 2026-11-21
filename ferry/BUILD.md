@@ -9,6 +9,7 @@ WOSY=/path/to/wosy
 "$WOSY" build app
 node verify-wasm.mjs .wosy/artifacts/app/dev/main/main
 node --test test/host.test.mjs
+python test/sweep-boundary.py "$WOSY"
 cp .wosy/artifacts/app/dev/main/main ferry.wasm
 ```
 
@@ -20,7 +21,19 @@ fixed-step simulation, foot and car movement, traffic, collision responses,
 objective state, and the one-shot action consumed by the next step. Browser
 code forwards analog and digital input, displays status, and submits batches
 to WebGL. The lobby illustration is not a gameplay capture or a world asset.
-All world objects with volume are modeled in 3D, not stacked sprites.
+All world objects with volume are modeled in 3D, not stacked sprites. The
+static scene includes a western district anchored by Sunset Video, with two
+links to the original boulevard and an expanded harbor promenade. Windshield
+facets and facade geometry are modeled in Wosy. The browser sky evaluates a
+direction at infinity from the same camera matrix as the world draw, so the
+sun and clouds are stationary when the player moves.
+
+Traffic follows separate north-south and east-west lanes on the boulevard and
+the western district. The player and traffic share two vehicle substeps per
+fixed simulation tick. Each move sweeps the oriented body along its relative
+translation, keeps the motion up to first contact, and does not step through
+another vehicle. A normal response with a clamped nudge for a car hit by
+traffic leaves available tangential motion rather than reversing the car.
 
 ## Browser ABI
 

@@ -26,7 +26,7 @@ f32[8][3] poses = [initial_pose, initial_pose, initial_pose];
 f32[6] empty_presentation = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
 f32[6][2] previous_pose = [empty_presentation, empty_presentation];
 f32[6][2] presented_pose = [empty_presentation, empty_presentation];
-f32[32] display = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+f32[35] display = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
 f32[7] empty_mail = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
 f32[7][3] mail = [empty_mail, empty_mail, empty_mail];
 
@@ -38,6 +38,10 @@ i32[3] phase = [0, 0, 0];
 i32[3] result = [0, 0, 0];
 i32[3] route = [0, 0, 0];
 i32[3] stage_tick = [0, 0, 0];
+i32[3] spray_count = [0, 0, 0];
+i32 spray_tick = -50;
+i32[3] next_gate = [0, 0, 0];
+i32[3] ring_score = [0, 0, 0];
 i32[3] event_code = [0, 0, 0];
 bool pending_drop = false;
 i32 best_ticks = 0;
@@ -137,9 +141,17 @@ unit(f32, f32, f32, f32, f32, f32, f32, f32) diamond = fn(x, y, z, wide, tall, r
 };
 
 unit(f32, f32, f32) tree = fn(x, z, size) {
-	box(x-0.7,0.0,z-0.7,1.4,4.0,1.4,0.39,0.26,0.15);
-	diamond(x,3.5,z,size,size*2.0,0.19,0.47,0.29);
-	diamond(x,2.7,z,size*0.9,size*1.0,0.24,0.54,0.33);
+	f32 kind = sin_small(wrap((x+z)*0.007));
+	f32 tall = 4.0 + size*0.22;
+	f32 lean = size*kind*0.17;
+	box(x-0.42,0.0,z-0.42,0.84,tall,0.84,0.34,0.25,0.17);
+	if (kind>0.23) {
+		diamond(x+lean,tall*0.7,z,size*0.95,size*1.92,0.18,0.40,0.25);
+		diamond(x-lean,tall+size*0.61,z+size*0.12,size*0.68,size*1.43,0.27,0.51,0.31);
+	} else {
+		diamond(x+size*0.21,tall-size*0.27,z,size*1.13,size*1.33,0.28,0.45,0.27);
+		diamond(x-size*0.36,tall+size*0.21,z-size*0.19,size*0.95,size*1.64,0.36,0.51,0.30);
+	};
 };
 
 unit(f32,f32,f32,f32,f32,f32) barn_face = fn(x,z,width,base,height,shade) {
@@ -234,7 +246,7 @@ f32() tower_x = fn { 228.0 };
 f32() tower_z = fn { 359.0 };
 
 bool(f32,f32) city_lot = fn(x,z) {
-	!(x == 216.0 && z == 90.0) && abs_f(z-(x*0.49+155.0)) > 58.0 && (abs_f(x-tower_x()) > 66.0 || abs_f(z-tower_z()) > 72.0) &&
+	!(x >= -148.0 && x <= -87.0 && z >= -265.0 && z < 55.0) && !(x == 216.0 && z == 90.0) && abs_f(z-(x*0.49+155.0)) > 58.0 && (abs_f(x-tower_x()) > 66.0 || abs_f(z-tower_z()) > 72.0) &&
 	(x > -82.0 || z < -6.0 || z > 232.0) && (abs_f(x)>44.0 || z>175.0 || z< -65.0)
 };
 
@@ -277,15 +289,27 @@ unit(f32,f32,f32,i32,i32) street_walls = fn(x,z,h,face,style) {
 	};
 };
 
+f32(i32) roof_rise = fn(style) { if (style % 3 == 1) { 4.5 } else { 2.78 } };
+
 unit(f32,f32,f32,i32) roof = fn(x,z,h,style) {
+	f32 top = h+roof_rise(style);
 	f32 r = if (style % 4 == 0) { 0.59 } else { 0.40 };
 	f32 g = if (style % 4 == 0) { 0.43 } else { 0.44 };
 	box(x-1.0,h,z-1.0,30.0,0.52,29.0,0.79,0.70,0.53);
-	quad(x-1.0,h+0.52,z-1.0,x+29.0,h+0.52,z-1.0,x+24.0,h+2.78,z+5.0,x+4.0,h+2.78,z+5.0,r,g,0.55);
-	quad(x-1.0,h+0.52,z+28.0,x+29.0,h+0.52,z+28.0,x+24.0,h+2.78,z+22.0,x+4.0,h+2.78,z+22.0,r*0.83,g*0.83,0.46);
-	quad(x-1.0,h+0.52,z+28.0,x-1.0,h+0.52,z-1.0,x+4.0,h+2.78,z+5.0,x+4.0,h+2.78,z+22.0,r*0.91,g*0.91,0.49);
-	quad(x+29.0,h+0.52,z-1.0,x+29.0,h+0.52,z+28.0,x+24.0,h+2.78,z+22.0,x+24.0,h+2.78,z+5.0,r*0.94,g*0.94,0.50);
-	quad(x+4.0,h+2.78,z+5.0,x+24.0,h+2.78,z+5.0,x+24.0,h+2.78,z+22.0,x+4.0,h+2.78,z+22.0,r*1.13,g*1.13,0.62);
+	quad(x-1.0,h+0.52,z-1.0,x+29.0,h+0.52,z-1.0,x+24.0,top,z+5.0,x+4.0,top,z+5.0,r,g,0.55);
+	quad(x-1.0,h+0.52,z+28.0,x+29.0,h+0.52,z+28.0,x+24.0,top,z+22.0,x+4.0,top,z+22.0,r*0.83,g*0.83,0.46);
+	quad(x-1.0,h+0.52,z+28.0,x-1.0,h+0.52,z-1.0,x+4.0,top,z+5.0,x+4.0,top,z+22.0,r*0.91,g*0.91,0.49);
+	quad(x+29.0,h+0.52,z-1.0,x+29.0,h+0.52,z+28.0,x+24.0,top,z+22.0,x+24.0,top,z+5.0,r*0.94,g*0.94,0.50);
+	quad(x+4.0,top,z+5.0,x+24.0,top,z+5.0,x+24.0,top,z+22.0,x+4.0,top,z+22.0,r*1.13,g*1.13,0.62);
+	if (style % 6 == 1) {
+		f32 front = z + 1.9;
+		f32 dormer = h + 1.9;
+		quad(x+12.3,dormer,front,x+15.7,dormer,front,x+15.7,top-0.2,front,x+12.3,top-0.2,front,0.79,0.68,0.52);
+		quad(x+12.88,dormer+0.32,front-0.05,x+15.1,dormer+0.32,front-0.05,x+15.1,top-0.5,front-0.05,x+12.88,top-0.5,front-0.05,0.31,0.40,0.43);
+		tri(x+11.95,top-0.25,front-0.07,x+16.08,top-0.25,front-0.07,x+14.0,top+0.91,front-0.07,r,g,0.49);
+		quad(x+11.95,top-0.25,front-0.07,x+14.0,top+0.91,front-0.07,x+14.0,top+0.4,z+5.0,x+11.95,top-0.15,z+5.0,r,g,0.49);
+		quad(x+16.08,top-0.25,front-0.07,x+14.0,top+0.91,front-0.07,x+14.0,top+0.4,z+5.0,x+16.08,top-0.15,z+5.0,r*0.85,g*0.85,0.42);
+	};
 };
 
 unit(i32) city = fn(i) {
@@ -295,7 +319,8 @@ unit(i32) city = fn(i) {
 		f32 h = float_i(8+i*11%18);
 		if (city_lot(x,z)) {
 			f32 tint = float_i(i%4)*0.037;
-			box(x,0.0,z,28.0,h,27.0,0.80+tint*0.45,0.64+tint,0.49+tint*0.5);
+			f32 stone = if (i%5 == 0) { 0.12 } else { if (i%5 == 2) { -0.07 } else { 0.0 } };
+			box(x,0.0,z,28.0,h,27.0,0.76+tint*0.45+stone,0.61+tint+stone,0.49+tint*0.5+stone*0.8);
 			street_walls(x,z,h,0,i);
 			roof(x,z,h,i);
 		};
@@ -413,11 +438,81 @@ unit() tower = fn {
 };
 
 f32() strip_x = fn { if (course == 0) { -15.0 } else { 125.0 } };
-f32() strip_z = fn { if (course == 0) { 167.0 } else { 290.0 } };
+f32() strip_z = fn { if (course == 0) { 331.0 } else { 290.0 } };
 f32() strip_w = fn { if (course == 0) { 25.0 } else { 41.0 } };
-f32() strip_l = fn { if (course == 0) { 60.0 } else { 124.0 } };
+f32() strip_l = fn { if (course == 0) { 74.0 } else { 124.0 } };
 f32() drop_x = fn { 109.0 };
 f32() drop_z = fn { 218.0 };
+
+f32() pickup_x = fn { if (course == 0) { -15.0 } else { -111.0 } };
+f32() pickup_z = fn { if (course == 0) { 68.0 } else { -71.0 } };
+f32() pickup_w = fn { if (course == 0) { 29.0 } else { 36.0 } };
+f32() pickup_l = fn { 109.0 };
+f32() service_x = fn { pickup_x()+pickup_w()*0.5+4.0 };
+f32() service_z = fn { pickup_z()+45.0 };
+f32() service_w = fn { 7.0 };
+f32() service_h = fn { 4.32 };
+f32() service_l = fn { 10.0 };
+f32() home_z = fn { if (course == 0) { -74.0 } else { -199.0 } };
+f32(i32) crop_z = fn(i) { 185.0+40.0*float_i(i) };
+f32(i32) gate_x = fn(i) { if (i == 0 || course == 0) { pickup_x() } else { if (i == 1) { 5.0 } else { 89.0 } } };
+f32(i32) gate_z = fn(i) {
+	if (i == 0) { pickup_z()-28.0 } else {
+		if (course == 0) { if (i == 1) { 160.0 } else { 298.0 } } else { if (i == 1) { 167.0 } else { 204.0 } }
+	}
+};
+i32(i32) gate_deadline = fn(i) {
+	if (i == 0) { 238 } else {
+		if (course == 0) { if (i == 1) { 471 } else { 694 } } else { if (i == 1) { 765 } else { 901 } }
+	}
+};
+f32(i32) gate_y = fn(i) { if (i == 0) { 5.0 } else { if (course == 0) { 9.5 } else { 15.5 } } };
+
+unit(f32,f32,f32,f32,i32) service_marks = fn(x,z,w,l,n) {
+	if (n < 8) {
+		f32 mark_z = z+4.0+float_i(n)*l/8.0;
+		ground_patch(x-w*0.46,mark_z,0.58,2.4,0.23,0.34,0.94,0.81);
+		ground_patch(x+w*0.46-0.58,mark_z,0.58,2.4,0.23,0.34,0.94,0.81);
+		ground_patch(x-0.43,mark_z,0.86,1.7,0.23,0.84,0.95,0.82);
+		service_marks(x,z,w,l,n+1);
+	};
+};
+
+unit(f32,f32,f32,f32) service_runway = fn(x,z,w,l) {
+	box(x-w*0.5,0.13,z,w,0.07,l,0.27,0.37,0.33);
+	ground_patch(x-w*0.42,z+5.0,w*0.84,1.2,0.23,0.32,0.92,0.80);
+	service_marks(x,z,w,l,0);
+};
+
+unit(i32) crop_markers = fn(n) {
+	if (n < 3) {
+		f32 z = crop_z(n);
+		ground_patch(-31.0,z,32.0,27.0,0.14,0.51+0.045*float_i(n),0.64,0.25);
+		ground_patch(-30.2,z+2.0,30.4,1.0,0.15,0.92,0.79,0.36);
+		ground_patch(-30.2,z+24.0,30.4,1.0,0.15,0.92,0.79,0.36);
+		crop_markers(n+1);
+	};
+};
+
+unit(f32,f32,f32,i32) gate_arch = fn(x,y,z,n) {
+	if (n < 14) {
+		f32 low = float_i(n)*0.44879895-3.14159265;
+		f32 high = wrap(low+0.44879895);
+		f32 ss = sin_small(low);
+		f32 cs = cos_small(low);
+		f32 es = sin_small(high);
+		f32 ec = cos_small(high);
+		quad(x+ss*9.5,y+cs*5.3,z,x+es*9.5,y+ec*5.3,z,x+es*9.1,y+ec*4.93,z,x+ss*9.1,y+cs*4.93,z,0.90,0.59,0.29);
+		gate_arch(x,y,z,n+1);
+	};
+};
+
+unit(i32) timed_gates = fn(n) {
+	if (n < 3) {
+		gate_arch(gate_x(n),gate_y(n),gate_z(n),0);
+		timed_gates(n+1);
+	};
+};
 
 unit(i32) runway_marks = fn(n) {
 	if (n < 10) {
@@ -492,6 +587,53 @@ unit(f32,f32,f32) bridge = fn(x,z,w) {
 	bridge_stones(x,z,w,0);
 };
 
+f32(i32,i32) ridge_height = fn(layer,point) {
+	f32 key = float_i(point);
+	f32 wave = sin_small(wrap((key-10.0)*0.36))*0.69 + sin_small(wrap((key-8.0)*0.65))*0.31;
+	if (course == 0) {
+		if (layer == 0) { 34.0+wave*18.0 } else { 19.0+wave*11.0 }
+	} else {
+		if (layer == 0) { 22.0+wave*9.0 } else { 10.0+wave*4.0 }
+	}
+};
+
+unit(i32,i32) distant_hills = fn(layer,n) {
+	if (n < 20) {
+		f32 x = -600.0+float_i(n)*60.0;
+		f32 base = if (layer == 0) { 616.0 } else { 569.0 };
+		f32 height = ridge_height(layer,n);
+		f32 next = ridge_height(layer,n+1);
+		f32 green = if (course == 0) { 0.49 } else { 0.54 };
+		f32 shade = if (layer == 0) { 0.09 } else { 0.0 };
+		f32 offset = float_i(n%3)*5.1;
+		f32 next_offset = float_i((n+1)%3)*5.1;
+		quad(x,0.0,base-29.0,x+60.0,0.0,base-29.0,x+60.0,next*0.55,base-13.0+next_offset,x,height*0.55,base-13.0+offset,0.40+shade,green+shade,0.47+shade);
+		quad(x,height*0.55,base-13.0+offset,x+60.0,next*0.55,base-13.0+next_offset,x+60.0,next,base+next_offset,x,height,base+offset,0.44+shade,green+shade,0.53+shade);
+		distant_hills(layer,n+1);
+	};
+};
+
+unit(i32) forage_edges = fn(n) {
+	if (n < 30) {
+		f32 d = float_i(n)*13.0;
+		f32 wiggle = float_i((n*11)%31)-15.0;
+		f32 size = 1.4+float_i((n*7)%18)*0.20;
+		tree(-121.0+wiggle*0.41,-43.0+d,size);
+		tree(169.0+wiggle*0.57,-53.0+d,size*0.91);
+		forage_edges(n+1);
+	};
+};
+
+unit(f32,f32) river_boat = fn(x,z) {
+	quad(x-5.0,0.13,z-14.0,x+5.0,0.13,z-14.0,x+5.0,0.13,z+14.0,x-5.0,0.13,z+14.0,0.40,0.56,0.61);
+	box(x-3.4,0.12,z-12.0,6.8,1.3,24.0,0.31,0.24,0.29);
+	tri(x-3.4,1.43,z+12.0,x+3.4,1.43,z+12.0,x,1.43,z+17.0,0.50,0.32,0.26);
+	box(x-2.4,1.47,z-6.0,4.8,1.94,7.0,0.83,0.74,0.60);
+	box(x-2.57,3.43,z-6.16,5.14,0.22,7.32,0.37,0.29,0.23);
+	box(x-1.9,2.18,z+1.04,3.8,0.51,0.08,0.33,0.44,0.49);
+	box(x-0.21,3.65,z-4.3,0.42,2.10,0.43,0.29,0.28,0.24);
+};
+
 unit() render_land = fn {
 	vertex_count = 0;
 	drawing_world = true;
@@ -500,6 +642,7 @@ unit() render_land = fn {
 	if (course == 0) {
 		quad(-480.0,0.0,-350.0,480.0,0.0,-350.0,480.0,0.0,570.0,-480.0,0.0,570.0,0.44,0.58,0.31);
 		fields(0);
+		forage_edges(0);
 		barn(145.0,97.0);
 		barn(-61.0,164.0);
 		box(164.0,0.0,112.0,5.5,14.0,5.5,0.57,0.53,0.44);
@@ -529,8 +672,23 @@ unit() render_land = fn {
 		city(0);
 		tower();
 		mail_landmarks();
+		river_boat(-212.0,60.0);
+		river_boat(285.0,300.0);
 	};
+	distant_hills(0,0);
+	distant_hills(1,0);
 	runway();
+	service_runway(pickup_x(),home_z(),pickup_w(),67.0);
+	service_runway(pickup_x(),pickup_z(),pickup_w(),pickup_l());
+	f32 stop_z = pickup_z()+pickup_l()-34.0;
+	ground_patch(pickup_x()-pickup_w()*0.46,stop_z,0.85*pickup_w(),0.83,0.26,0.94,0.56,0.26);
+	f32 sx = service_x();
+	f32 sz = service_z();
+	box(sx,0.0,sz,service_w(),service_h()-0.32,service_l(),0.38,0.38,0.31);
+	box(sx-0.4,service_h()-0.32,sz-0.4,service_w()+0.8,0.32,service_l()+0.8,0.41,0.61,0.54);
+	box(sx-0.1,0.2,sz+2.0,0.10,2.1,4.8,0.82,0.72,0.42);
+	if (course == 0) { crop_markers(0); };
+	timed_gates(0);
 	i32 count = vertex_count * 6;
 	unsafe { host.world(core.pointer_cast<*?u8>(&?scenery[0][0][0][0][0]), count); };
 };
@@ -717,13 +875,13 @@ i32(i32) canonical_input = fn(mask) {
 };
 
 unit(u64) spawn = fn(lane) {
-	poses[lane][0] = if (course == 0) { -15.0 } else { -61.0 };
-	poses[lane][1] = if (course == 0) { 17.5 } else { 10.0 };
-	poses[lane][2] = if (course == 0) { 0.0 } else { 100.0 };
-	poses[lane][3] = if (course == 0) { 0.0 } else { 0.96 };
+	poses[lane][0] = pickup_x();
+	poses[lane][1] = 1.0;
+	poses[lane][2] = home_z()+3.0;
+	poses[lane][3] = 0.0;
 	poses[lane][4] = 0.0;
 	poses[lane][5] = 0.0;
-	poses[lane][6] = 23.0;
+	poses[lane][6] = 0.0;
 	poses[lane][7] = 0.0;
 };
 
@@ -814,7 +972,8 @@ bool(f32,f32,f32) tower_hit = fn(px,y,pz) {
 };
 
 bool(f32,f32,f32) obstacle = fn(x,y,z) {
-	if (course == 0) {
+	bool supply = within(x,y,z,service_x()-0.4,service_z()-0.4,service_w()+0.8,service_l()+0.8,service_h());
+	if (supply) { true } else { if (course == 0) {
 		within(x,y,z,129.0,84.0,32.0,26.0,17.0) || within(x,y,z,-77.0,151.0,32.0,26.0,17.0) ||
 		within(x,y,z,163.0,111.0,7.0,7.0,17.0)
 	} else {
@@ -823,9 +982,9 @@ bool(f32,f32,f32) obstacle = fn(x,y,z) {
 		f32 bx = float_i(col)*56.0-344.0;
 		f32 bz = float_i(row)*59.0-205.0;
 		i32 lot = row*12+col;
-		bool buildings = col>=0 && col<12 && row>=0 && row<8 && city_lot(bx,bz) && within(x,y,z,bx-1.0,bz-1.0,30.0,29.0,float_i(8+lot*11%18)+2.8);
-		buildings || tower_hit(x,y,z) || within(x,y,z,54.0,172.0,10.0,119.0,9.35) || within(x,y,z,158.0,221.0,12.0,119.0,4.3)
-	}
+		bool buildings = col>=0 && col<12 && row>=0 && row<8 && city_lot(bx,bz) && within(x,y,z,bx-1.0,bz-1.0,30.0,29.0,float_i(8+lot*11%18)+roof_rise(lot)+(if (lot%6 == 1) { 0.91 } else { 0.02 }));
+		buildings || within(x,y,z,-216.0,48.0,8.0,27.0,5.8) || within(x,y,z,281.0,288.0,8.0,27.0,5.8) || tower_hit(x,y,z) || within(x,y,z,54.0,172.0,10.0,119.0,9.35) || within(x,y,z,158.0,221.0,12.0,119.0,4.3)
+	} }
 };
 
 f32(f32,f32,i32) gravity_root = fn(d,t,n) {
@@ -896,7 +1055,7 @@ i32(u64) landing_issue = fn(plane) {
 	}
 };
 
-unit(u64,u64,i32) roll_out = fn(plane,race,input) {
+unit(u64,u64,i32,bool) roll_out = fn(plane,race,input,pickup) {
 	f32 speed = poses[plane][6];
 	f32 brake = if (held(input,32)) { 7.3 } else { if (held(input,16)) { 0.65 } else { 2.6 } };
 	f32 heading = wrap(poses[plane][3] + bank_control(input)*clamp(speed,0.0,17.0)*0.00052);
@@ -906,9 +1065,72 @@ unit(u64,u64,i32) roll_out = fn(plane,race,input) {
 	poses[plane][2] = z;
 	poses[plane][3] = heading;
 	poses[plane][6] = clamp(speed-brake/30.0,0.0,45.0);
-	if (z < strip_z() || z >= strip_z()+strip_l()) { result[race] = 9; } else {
-		if (abs_f(x-strip_x()) >= strip_w()/2.0) { result[race] = 11; } else {
-			if (poses[plane][6] < 0.25) { result[race] = 1; };
+	f32 z0 = if (pickup) { pickup_z() } else { strip_z() };
+	f32 length = if (pickup) { pickup_l()-34.0 } else { strip_l() };
+	f32 w = if (pickup) { pickup_w() } else { strip_w() };
+	f32 cx = if (pickup) { pickup_x() } else { strip_x() };
+	if (z < z0 || z >= z0+length) { result[race] = 9; } else {
+		if (abs_f(x-cx) >= w/2.0) { result[race] = 11; } else {
+			if (poses[plane][6] < 0.25) {
+				poses[plane][6] = 0.0;
+				if (pickup) { phase[race] = 9; } else { result[race] = 1; };
+			};
+		};
+	};
+};
+
+unit(u64,u64,i32,bool) take_off = fn(plane,race,input,loaded) {
+	f32 speed = poses[plane][6];
+	f32 force = if (held(input,32)) { -8.0 } else { if (held(input,16)) { 9.2 } else { -2.8 } };
+	f32 next = clamp(speed+force/30.0,0.0,29.0);
+	f32 bearing = wrap(poses[plane][3]+bank_control(input)*clamp(speed,0.0,17.0)*0.00075);
+	poses[plane][3] = bearing;
+	poses[plane][0] = poses[plane][0]+next*sin_small(bearing)/30.0;
+	poses[plane][2] = poses[plane][2]+next*cos_small(bearing)/30.0;
+	poses[plane][6] = next;
+	f32 end = if (loaded) { pickup_z()+pickup_l() } else { home_z()+67.0 };
+	f32 begin = if (loaded) { pickup_z() } else { home_z() };
+	f32 pitch = if (held(input,64)) { float_i(((input>>12)&15)-7)/7.0 } else { axis(input,4,8) };
+	if (poses[plane][2] >= end || poses[plane][2] < begin) { result[race] = 9; } else {
+		if (abs_f(poses[plane][0]-pickup_x()) >= pickup_w()*0.5) { result[race] = 11; } else {
+			if (next > 17.0 && pitch > 0.12) {
+				poses[plane][1] = 1.16;
+				poses[plane][4] = 0.12;
+				poses[plane][7] = 2.6;
+				phase[race] = if (loaded) { if (course == 0) { 11 } else { 0 } } else { 7 };
+			};
+		};
+	};
+};
+
+i32(u64,u64) spray_status = fn(plane,race) {
+	f32 y = poses[plane][1];
+	f32 z = poses[plane][2];
+	f32 dx = poses[plane][0]-pickup_x();
+	f32 start = crop_z(spray_count[race]);
+	if (y > 12.5) { 5 } else {
+		if (y < 3.0) { 6 } else {
+			if (abs_f(dx) > 13.0 || abs_f(poses[plane][5]) > 0.36) { 7 } else {
+				if (z >= start && z < start+27.0) { 9 } else { 8 }
+			}
+		}
+	}
+};
+
+unit(u64,u64,f32,f32,f32) score_gate = fn(plane,race,x0,y0,z0) {
+	i32 n = next_gate[race];
+	if (n < 3) {
+		f32 z = poses[plane][2];
+		f32 target = gate_z(n);
+		if (z0 < target && z >= target) {
+			f32 fraction = (target-z0)/(z-z0);
+			f32 x = blend(x0,poses[plane][0],fraction);
+			f32 dy = (blend(y0,poses[plane][1],fraction)-gate_y(n))/5.0;
+			f32 dx = (x-gate_x(n))/9.1;
+			if (dx*dx+dy*dy <= 1.0) {
+				ring_score[race] = ring_score[race]+1;
+				next_gate[race] = n+1;
+			};
 		};
 	};
 };
@@ -959,7 +1181,7 @@ unit() store_record = fn {
 		best_ticks = record_ticks;
 		set_best_byte(0,87);
 		set_best_byte(1,70);
-		set_best_byte(2,3);
+		set_best_byte(2,4);
 		set_best_byte(3,core.int_trunc<u8>(course));
 		set_best_byte(4,core.int_trunc<u8>(record_ticks % 256));
 		set_best_byte(5,core.int_trunc<u8>(record_ticks / 256));
@@ -976,7 +1198,7 @@ unit() ghost_begin = fn {
 
 unit(i32) ghost_byte = fn(b) {
 	i32 i = incoming_count;
-	if (i < 14406 && b >= 0 && b <= 255) {
+	if (i < 16206 && b >= 0 && b <= 255) {
 		incoming_log[ix(i/4096)][ix(i/256%16)][ix(i/16%16)][ix(i%16)] = core.int_trunc<u8>(b);
 		incoming_count = i+1;
 	} else {
@@ -986,12 +1208,33 @@ unit(i32) ghost_byte = fn(b) {
 
 unit(u64,u64,i32) step_course = fn(plane,race,input) {
 	stage_tick[race] = stage_tick[race]+1;
-	if (phase[race] == 3) { roll_out(plane,race,input); } else {
+	i32 gate = next_gate[race];
+	if (gate < 3 && stage_tick[race] > gate_deadline(gate)) { next_gate[race] = gate+1; };
+	i32 current = phase[race];
+	if (current == 6 || current == 10) { take_off(plane,race,input,current==10); } else {
+	if (current == 9) {
+		if (held(input,128)) { phase[race] = 10; event_code[race] = 0; };
+	} else {
+	if (current == 3 || current == 8) { roll_out(plane,race,input,current==8); } else {
 		f32 x = poses[plane][0];
+		f32 y0 = poses[plane][1];
+		f32 z0 = poses[plane][2];
 		fly(plane,input);
 		f32 next_x = poses[plane][0];
 		f32 y = poses[plane][1];
 		f32 z = poses[plane][2];
+		score_gate(plane,race,x,y0,z0);
+		if (current == 7 && held(input,128)) { event_code[race] = 12; };
+		if (current == 11 && held(input,128)) {
+			i32 status = spray_status(plane,race);
+			if (status == 9) {
+				i32 count = spray_count[race]+1;
+				spray_count[race] = count;
+				if (race == 0) { spray_tick = stage_tick[race]; };
+				event_code[race] = 0;
+				if (count == 3) { phase[race] = 2; };
+			} else { event_code[race] = status; };
+		};
 		if (course == 1) {
 			if (phase[race] == 0) {
 				if (x < 27.0 && next_x >= 27.0 && abs_f(z-161.0) < 15.0 && y < 8.8) { route[race] = 1; };
@@ -1009,10 +1252,12 @@ unit(u64,u64,i32) step_course = fn(plane,race,input) {
 		if (y <= 1.0) {
 			poses[plane][1] = 1.0;
 			i32 issue = landing_issue(plane);
-			if (course == 1 && phase[race] != 2) { result[race] = 7; } else {
-				if (!in_strip(next_x,z)) { result[race] = 4; } else {
+			bool pickup = current == 7;
+			bool in_pickup = abs_f(next_x-pickup_x()) < pickup_w()*0.5 && z >= pickup_z() && z < pickup_z()+pickup_l()-34.0;
+			if (!pickup && phase[race] != 2) { result[race] = 7; } else {
+				if (!(if (pickup) { in_pickup } else { in_strip(next_x,z) })) { result[race] = 4; } else {
 					if (issue != 0) { result[race] = if (issue == 3) { 10 } else { 4+issue }; } else {
-						phase[race] = 3;
+						phase[race] = if (pickup) { 8 } else { 3 };
 						poses[plane][4] = 0.0;
 						poses[plane][5] = 0.0;
 						poses[plane][7] = 0.0;
@@ -1025,12 +1270,17 @@ unit(u64,u64,i32) step_course = fn(plane,race,input) {
 			};
 		};
 	};
-	if (stage_tick[race] >= 7200 && result[race] == 0) { result[race] = 3; };
+	};
+	};
+	if (stage_tick[race] >= 8100 && result[race] == 0) { result[race] = 3; };
 };
 
 unit(u64) reset_mission = fn(lane) {
 	stage_tick[lane] = 0;
-	phase[lane] = if (course == 0) { 2 } else { 0 };
+	phase[lane] = 6;
+	spray_count[lane] = 0;
+	next_gate[lane] = 0;
+	ring_score[lane] = 0;
 	result[lane] = 0;
 	route[lane] = 0;
 	event_code[lane] = 0;
@@ -1085,7 +1335,7 @@ unit() ghost_end = fn {
 	    packet_byte(3)==core.int_trunc<u8>(course)) {
 		i32 version = core.int_extend<i32>(packet_byte(2));
 		i32 length = core.int_extend<i32>(packet_byte(4)) + 256*core.int_extend<i32>(packet_byte(5));
-		if (version == 3 && length >= 180 && length <= 7200 && length*2+6 == incoming_count &&
+		if (version == 4 && length >= 180 && length <= 8100 && length*2+6 == incoming_count &&
 		    stage_tick[0] == 0 && (best_ticks == 0 || length < best_ticks) && validate_replay(length)) {
 			best_ticks = length;
 			copy_packet(0,incoming_count);
@@ -1119,9 +1369,33 @@ unit(i32,i32) advance = fn(input,left) {
 	};
 };
 
+unit(i32) paint_crops = fn(n) {
+	if (n < spray_count[0]) {
+		f32 z = crop_z(n);
+		ground_patch(-30.0,z+3.2,30.0,21.5,0.166,0.39+float_i(n)*0.018,0.72,0.43);
+		paint_crops(n+1);
+	};
+};
+
+unit(i32,i32) spray_mist = fn(n,age) {
+	if (n < 7) {
+		f32 t = float_i(n);
+		f32 x = presented_pose[0][0] - 4.2 + t*1.4;
+		f32 z = presented_pose[0][2]-2.5-t*0.9;
+		f32 y = presented_pose[0][1] - clamp(float_i(age)*0.105+t*0.11,0.0,5.0);
+		if (y > 0.30) { diamond(x,y,z,0.35+t*0.047,0.59,0.77,0.91,0.73); };
+		spray_mist(n+1,age);
+	};
+};
+
 unit(f32) draw_aircraft = fn(alpha) {
 	vertex_count = 0;
 	drawing_world = false;
+	if (course == 0) {
+		paint_crops(0);
+		i32 age = stage_tick[0]-spray_tick;
+		if (age < 36) { spray_mist(0,age); };
+	};
 	if (phase[0] == 5) {
 		box(mail[0][0]-0.30,mail[0][1],mail[0][2]-0.30,0.60,0.54,0.60,0.92,0.50,0.18);
 	};
@@ -1178,27 +1452,27 @@ unit() frame = fn {
 	display[18] = poses[0][6];
 	display[19] = poses[0][1];
 	display[20] = float_i(phase[0]);
-	display[21] = if (course == 1 && phase[0] == 1) { float_i(drop_status(0)) } else { 0.0 };
+	display[21] = if (course == 1 && phase[0] == 1) { float_i(drop_status(0)) } else { if (phase[0] == 11) { float_i(spray_status(0,0)) } else { 0.0 } };
 	display[22] = float_i(result[0]);
 	display[23] = float_i(best_ticks)/30.0;
-	i32 remaining = if (stage_tick[0] < 7200) { 7200-stage_tick[0] } else { 0 };
-	display[24] = float_i(if (result[0] == 1) { 250+remaining/9+(if (route[0] == 1) { 150 } else { 0 }) } else { 0 });
+	i32 remaining = if (stage_tick[0] < 8100) { 8100-stage_tick[0] } else { 0 };
+	display[24] = float_i(if (result[0] == 1) { 250+remaining/9+ring_score[0]*80+(if (route[0] == 1) { 150 } else { 0 }) } else { 0 });
 	display[25] = float_i(route[0]);
 	display[26] = float_i(event_code[0]);
 	i32 stage = phase[0];
 	f32 x = poses[0][0];
 	f32 z = poses[0][2];
-	f32 target_x = if (stage == 0) { if (x < 27.0) { 38.0 } else { 67.0 } } else {
-		if (stage == 1 || stage == 5) { drop_x() } else { strip_x() }
+	f32 target_x = if (stage == 0) { if (z < 100.0) { pickup_x() } else { if (x < 27.0) { 38.0 } else { 67.0 } } } else {
+		if (stage == 1 || stage == 5) { drop_x() } else { if (stage >= 6) { pickup_x() } else { strip_x() } }
 	};
-	f32 target_z = if (stage == 0) { if (x < 27.0) { 169.0 } else { 189.0 } } else {
-		if (stage == 1 || stage == 5) { drop_z() } else { strip_z()+9.0 }
+	f32 target_z = if (stage == 0) { if (z < 100.0) { 120.0 } else { if (x < 27.0) { 169.0 } else { 189.0 } } } else {
+		if (stage == 1 || stage == 5) { drop_z() } else { if (stage == 11) { crop_z(spray_count[0])+10.0 } else { if (stage >= 6) { pickup_z()+8.0 } else { strip_z()+9.0 } } }
 	};
 	f32 steer_x = target_x-x;
 	f32 steer_z = target_z-z;
 	f32 mx = abs_f(steer_x);
 	f32 mz = abs_f(steer_z);
-	display[27] = if (stage == 3) { strip_z()+strip_l()-z } else {
+	display[27] = if (stage == 3 || stage == 8) { (if (stage == 8) { pickup_z()+pickup_l()-34.0 } else { strip_z()+strip_l() })-z } else {
 		if (mx > mz) { mx+0.41*mz } else { mz+0.41*mx }
 	};
 	f32 right = steer_x*hz-steer_z*hx;
@@ -1206,16 +1480,20 @@ unit() frame = fn {
 	display[28] = if (ahead <= 0.0) {
 		if (right < 0.0) { -1.0 } else { 1.0 }
 	} else { clamp(right*1.6/ahead,-1.0,1.0) };
-	display[29] = if (stage == 2 && result[0] == 0) {
+	display[29] = if ((stage == 2 || stage == 7) && result[0] == 0) {
 		i32 issue = landing_issue(0);
-		if (mx > strip_w()*0.42 || issue == 1) { 1.0 } else {
+		if (mx > (if (stage == 7) { pickup_w() } else { strip_w() })*0.42 || issue == 1) { 1.0 } else {
 			if (issue == 0) { 4.0 } else { float_i(issue) }
 		}
 	} else { 0.0 };
 	display[30] = if (stage == 0 && x > 25.0 && x < 54.0 && z >= 154.0 && poses[0][1] < 11.5) { 1.0 } else { 0.0 };
-	display[31] = if (stage == 2 && course == 1) { 1.0 } else { 0.0 };
+	display[31] = if (course == 0) { float_i(spray_count[0]) } else { if (stage == 2 || stage == 3) { 1.0 } else { 0.0 } };
 
-	unsafe { host.frame(core.pointer_cast<*?u8>(&?display[0]),32); };
+	display[32] = float_i(ring_score[0]);
+	i32 gate = next_gate[0];
+	display[33] = float_i(gate);
+	display[34] = if (gate < 3) { clamp(float_i(gate_deadline(gate)-stage_tick[0])/30.0,0.0,31.0) } else { 0.0 };
+	unsafe { host.frame(core.pointer_cast<*?u8>(&?display[0]),35); };
 };
 
 unit(i32) reset = fn(requested) {
@@ -1223,6 +1501,7 @@ unit(i32) reset = fn(requested) {
 	if (course != next) { best_ticks = 0; world_ready = false; };
 	course = next;
 	cancel_drop();
+	spray_tick = -50;
 	reset_mission(0);
 	reset_mission(1);
 	accumulator = 0.0;

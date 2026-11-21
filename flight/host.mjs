@@ -6,9 +6,9 @@ const KEYS = new Map([
   ["KeyW", STEER.dive], ["ArrowUp", STEER.dive],
   ["KeyE", STEER.power], ["KeyQ", STEER.brake],
 ]);
-const COURSES = ["Pasture Landing", "Paris Air Mail"];
-const STORAGE_KEY = "wosy-flying-low/missions-v3/";
-const MISSION_FRAME_FLOATS = 32;
+const COURSES = ["Crop Patrol", "Paris Air Mail"];
+const STORAGE_KEY = "wosy-flying-low/missions-v4/";
+const MISSION_FRAME_FLOATS = 35;
 const LANDING_CUES = [
   "Land in the marked strip", "Level wings and align with the strip", "Brake to slow down",
   "Ease your descent", "Aligned · ease onto the strip",
@@ -22,7 +22,7 @@ const FAILURE_CUES = [
   "You touched down outside the marked strip. Aim for the near end.",
   "Touchdown was crooked. Line up and level your wings.",
   "You were too fast at touchdown. Brake earlier.",
-  "The mail must reach the drop zone before you land.",
+  "Finish the delivery before landing at the final strip.",
   "You hit the bridge. Climb before the deck, or go around the amber side.",
   "You ran out of strip. Touch down earlier and hold Brake until stopped.",
   "You descended too hard. Ease the stick before touchdown.",
@@ -128,21 +128,59 @@ layout(location=0) in vec3 position;
 layout(location=1) in vec3 color;
 uniform mat4 viewProjection;
 out vec3 tint;
+out vec3 surface;
 out float depth;
 void main() {
   tint = color;
+  surface = position;
   gl_Position = viewProjection * vec4(position, 1.0);
   depth = gl_Position.w;
 }`;
 const WORLD_FRAGMENT = `#version 300 es
-precision mediump float;
+precision highp float;
 in vec3 tint;
+in vec3 surface;
 in float depth;
 uniform vec3 atmosphere;
 out vec4 fragment;
+float detailHash(vec2 v) {
+  vec3 p=fract(vec3(v.xyx)*.1031);
+  p += dot(p,p.yzx+33.33);
+  return fract((p.x+p.y)*p.z);
+}
+float detailNoise(vec2 p) {
+  vec2 c=floor(p), f=fract(p);
+  vec2 q=f*f*(3.0-2.0*f);
+  return mix(mix(detailHash(c),detailHash(c+vec2(1,0)),q.x),mix(detailHash(c+vec2(0,1)),detailHash(c+1.0),q.x),q.y);
+}
+float aaNoise(vec2 p, vec2 footprint) {
+  float band=max(footprint.x,footprint.y);
+  return mix(detailNoise(p),.5,smoothstep(.20,.95,band));
+}
 void main() {
-  float haze = smoothstep(85.0, 550.0, depth);
-  fragment = vec4(mix(tint, atmosphere, haze * 0.84), 1.0);
+  vec3 color = tint;
+  vec2 xz = surface.xz;
+  vec2 facade = xz*.27 + vec2(surface.y)*.43;
+  vec2 water = vec2(xz.x*.25+xz.y*.11,xz.y*1.16-xz.x*.29);
+  vec2 groundFootprint = fwidth(xz), facadeFootprint = fwidth(facade), waterFootprint = fwidth(water);
+  bool river = distance(tint,vec3(.29,.52,.67)) < .003;
+  if (river) {
+    float broad = aaNoise(water*.17,waterFootprint*.17);
+    float chop = aaNoise(water + vec2(broad*3.9,-broad*1.5),waterFootprint*1.4);
+    float sheen = smoothstep(.53,.78,chop)*(.25+.75*broad);
+    float gleam = exp(-abs(surface.x-61.0)*.013);
+    color = mix(vec3(.16,.36,.43),vec3(.36,.54,.57),.26+.23*broad);
+    color += sheen*mix(vec3(.085,.14,.15),vec3(.34,.24,.10),gleam)
+      * (1.0-smoothstep(130.0,370.0,depth));
+  } else {
+    float ground = 1.0-smoothstep(.22,1.48,surface.y);
+    float fields = aaNoise(xz*.31,groundFootprint*.31)*.58 + aaNoise(xz*1.73,groundFootprint*1.73)*.42;
+    float material = mix(aaNoise(facade,facadeFootprint),fields,ground);
+    color *= 1.0+(material-.5)*mix(.087,.21,ground);
+  }
+  float haze = smoothstep(60.0, 580.0, depth);
+  vec3 horizon = mix(atmosphere,vec3(.89,.82,.69),.28);
+  fragment = vec4(mix(color,horizon,haze*.89),1.0);
 }`;
 const SKY_VERTEX = `#version 300 es
 out vec2 uv;
@@ -166,15 +204,33 @@ vec3 skyRay(mat4 matrix, vec2 screen) {
   if (r == 0.0 || u == 0.0) return normalize(vec3(screen, -1.9));
   return normalize(forward + screen.x*right/r + screen.y*up/u);
 }
+float hash(vec2 v) {
+  vec3 v3 = fract(vec3(v.xyx)*.1031);
+  v3 += dot(v3,v3.yzx+33.33);
+  return fract((v3.x+v3.y)*v3.z);
+}
+float noise(vec2 p) {
+  vec2 c=floor(p), f=fract(p);
+  vec2 q=f*f*(3.0-2.0*f);
+  return mix(mix(hash(c),hash(c+vec2(1,0)),q.x),mix(hash(c+vec2(0,1)),hash(c+1.0),q.x),q.y);
+}
 void main() {
   vec3 ray = skyRay(skyProjection, uv*2.0-1.0);
-  vec3 zenith = atmosphere * vec3(0.54, 0.79, 0.93);
-  vec3 tone = mix(atmosphere, zenith, smoothstep(0.0, .82, ray.y));
+  vec3 horizon = mix(atmosphere,vec3(.93,.83,.68),.42);
+  vec3 zenith = atmosphere * vec3(.31,.64,.94);
+  vec3 tone = mix(horizon, zenith, smoothstep(-.06,.79,ray.y));
   vec3 sunDirection = normalize(vec3(.35,.31,.88));
   float d = length(ray-sunDirection);
-  tone = mix(tone, vec3(.99,.90,.68), .27*exp(-8.0*d));
-  tone = mix(tone, vec3(1.0,.95,.81), 1.0-smoothstep(.017,.020,d));
-  fragment = vec4(tone, 1.0);
+  tone = mix(tone,vec3(1.0,.72,.40),.43*exp(-5.2*d));
+  tone = mix(tone,vec3(1.0,.97,.83),1.0-smoothstep(.017,.023,d));
+  if (ray.y > .024) {
+    vec2 p = ray.xz/max(.09,ray.y+.13)*vec2(1.56,2.12)+vec2(2.6,7.4);
+    float wisps = noise(p*.77)*.55+noise(p*1.61)*.26+noise(p*4.4)*.13+noise(p*8.1)*.06;
+    float cover = smoothstep(.57,.75,wisps)*smoothstep(.024,.155,ray.y);
+    vec3 cloud = mix(vec3(.83,.82,.81),vec3(1.0,.91,.73),exp(-2.4*d));
+    tone = mix(tone,cloud,cover*.88);
+  }
+  fragment = vec4(tone,1.0);
 }
 `;
 function program(gl, vertexSource, fragmentSource) {
@@ -248,7 +304,7 @@ export function bootFlight(win, doc) {
   const callout = get("callout"), flightCue = get("flight-cue"), buttons = Array.from(doc.querySelectorAll("[data-course]"));
   const actionButtons = Array.from(doc.querySelectorAll("[data-action]"));
   const stick = get("flight-stick");
-  const instruments = ["time", "mission-phase", "speed", "altitude", "best"].map(get);
+  const instruments = ["time", "mission-phase", "speed", "altitude", "best", "gates"].map(get);
   const controls = makeControls(), replays = replayStore(() => win.localStorage);
   const field = { pointer: 0, length: 0, version: 0 }, moving = { pointer: 0, length: 0, version: 0 };
   const gl = canvas.getContext("webgl2", { alpha: false, antialias: true });
@@ -297,10 +353,10 @@ export function bootFlight(win, doc) {
     hud.hidden = mode === "menu";
     keys.hidden = touch.hidden = !active;
     if (dropButton) {
-      dropButton.hidden = !active || current !== 1;
+      dropButton.hidden = !active || !dropAvailable;
       dropButton.disabled = !active || !dropAvailable;
     }
-    if (dropKey) dropKey.hidden = !active || current !== 1;
+    if (dropKey) dropKey.hidden = !active || !dropAvailable;
     if (!active) { callout.hidden = true; setText(flightCue, ""); }
     hud.inert = Boolean(modal);
   }
@@ -352,21 +408,42 @@ export function bootFlight(win, doc) {
     setText(instruments[0], clockText(frame[17]));
     setText(instruments[2], roundText(frame[18], "m/s"));
     setText(instruments[3], roundText(frame[19], "m"));
+    setText(instruments[5], frame[33] < 3 && frame[34] > 0 ? `${frame[32]}/3 · ${Math.ceil(frame[34])}s` : `${frame[32]}/3`);
     setText(instruments[4], frame[23] > 0 ? clockText(frame[23]) : "—");
     const phase = frame[20], dropStatus = frame[21], route = frame[25];
-    dropAvailable = phase === 1;
+    dropAvailable = phase === 1 || phase === 9 || phase === 11;
     if (dropButton) {
-      dropButton.hidden = current !== 1 || phase > 1;
+      dropButton.hidden = !dropAvailable;
       dropButton.disabled = !dropAvailable;
-      dropButton.classList.toggle("drop-ready", dropStatus === 9);
+      const action = phase === 9 ? (current === 1 ? "Load mail" : "Load spray") : phase === 11 ? "Spray row" : "Drop mail";
+      setText(dropButton, action.toUpperCase());
+      if (dropButton.getAttribute("aria-label") !== action) dropButton.setAttribute("aria-label", action);
+      dropButton.classList.toggle("drop-ready", phase === 9 || dropStatus === 9);
     }
+    if (dropKey) dropKey.hidden = !dropAvailable;
     const turn = frame[28];
     const bearing = turn < -.14 ? "←" : turn > .14 ? "→" : "↑";
     const meters = roundText(frame[27], "m");
     let label, cue;
-    if (phase === 0) {
+    if (phase === 6 || phase === 10) {
+      label = phase === 6 ? "Take off" : "Depart with cargo";
+      cue = "Hold throttle · pull down to lift off";
+    } else if (phase === 7) {
+      label = "Land at the supply strip";
+      cue = `${bearing} ${LANDING_CUES[frame[29]] ?? LANDING_CUES[0]} · ${meters}`;
+    } else if (phase === 8) {
+      label = "Stop at the supply strip";
+      cue = `Brake to load cargo · ${meters} left to stop`;
+    } else if (phase === 9) {
+      label = current === 1 ? "Pick up the mail pouch" : "Pick up the spray";
+      cue = "Press Space or tap Load to collect cargo";
+    } else if (phase === 11) {
+      label = `Spray the marked rows · ${frame[31]}/3`;
+      const sprayCues = {5:"Descend toward the row", 6:"Climb above the row", 7:"Level the wings and center on the row", 8:"Approach the next marked row", 9:"Spray now"};
+      cue = `${bearing} ${sprayCues[dropStatus] ?? sprayCues[8]} · ${meters}`;
+    } else if (phase === 0) {
       label = "Cross the Seine";
-      cue = frame[30] ? "Climb now to clear the bridge" : "Cyan: low then climb · Amber: wider around";
+      cue = frame[30] ? "Climb now to clear the bridge" : `${bearing} Follow the bearing to the Seine · ${meters}`;
     } else if (phase === 1) {
       label = "Deliver mail";
       cue = RELEASE_CUES[dropStatus] ?? RELEASE_CUES[8];
@@ -378,7 +455,7 @@ export function bootFlight(win, doc) {
       label = "Rollout";
       cue = `Steer gently and brake · ${meters} left`;
     } else {
-      label = frame[31] || current === 1 ? "Mail delivered · land" : "Land in the pasture";
+      label = current === 1 ? "Mail delivered · land" : "Land in the pasture";
       cue = `${bearing} ${LANDING_CUES[frame[29]] ?? LANDING_CUES[0]} · ${meters}`;
     }
     setText(instruments[1], label);
@@ -400,7 +477,7 @@ export function bootFlight(win, doc) {
     } else {
       const landed = frame[22] === 1;
       setText(summaryKicker, landed ? "FLIGHT REPORT" : "RUN ENDED");
-      setText(summaryTitle, landed ? (current === 1 ? "Mail delivered" : "Precision landing") : "Flight ended");
+      setText(summaryTitle, landed ? (current === 1 ? "Mail delivered" : "Fields treated") : "Flight ended");
       setText(summaryDetail, landed
         ? `${clockText(frame[17])} · ${frame[24]} points${frame[23] > 0 ? ` · Best ${clockText(frame[23])}` : ""}`
         : (FAILURE_CUES[frame[22]] ?? "Retry the mission for a cleaner flight."));
@@ -538,7 +615,7 @@ export function bootFlight(win, doc) {
     const action = STEER[event.target?.dataset?.action];
     const virtual = action && (event.code === "Enter" || event.code === "Space");
     if ((virtual && action === STEER.drop) || (event.code === "Space" && !event.target?.closest?.("button"))) {
-      if (current === 1 && dropAvailable) {
+      if (dropAvailable) {
         event.preventDefault();
         if (!event.repeat) dropPending = true;
       }
@@ -569,7 +646,7 @@ export function bootFlight(win, doc) {
     button.addEventListener("contextmenu", (event) => event.preventDefault());
   }
   dropButton?.addEventListener("click", (event) => {
-    if (event.detail === 0 && mode === "playing" && !modal && !lost && current === 1 && dropAvailable) dropPending = true;
+    if (event.detail === 0 && mode === "playing" && !modal && !lost && dropAvailable) dropPending = true;
   });
   stick.addEventListener("pointerdown", (event) => {
     if (event.button !== 0 || activeStick || modal || mode !== "playing" || lost) return;
@@ -645,7 +722,7 @@ export function bootFlight(win, doc) {
     if (!gl) { failure("This game needs WebGL 2. Try a current browser with hardware acceleration enabled."); return; }
     try {
       gpu = graphics(gl);
-      const wasm = await win.fetch(new URL("./flight.wasm?v=missions-v5", import.meta.url));
+      const wasm = await win.fetch(new URL("./flight.wasm?v=sortie-v1", import.meta.url));
       if (!wasm.ok) throw new Error("The flight engine could not be downloaded.");
       const { instance } = await win.WebAssembly.instantiate(await wasm.arrayBuffer(), imports);
       engine = instance.exports;

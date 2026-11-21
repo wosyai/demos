@@ -33,14 +33,14 @@ engine = new WebAssembly.Instance(module, { flight: {
         aircraft = readFloats(pointer, length, 18, 12288);
     },
     frame(pointer, length) {
-        frame = readFloats(pointer, length, 1, 32);
-        assert.equal(frame.length, 32);
+        frame = readFloats(pointer, length, 1, 35);
+        assert.equal(frame.length, 35);
         assert(frame[28] >= -1 && frame[28] <= 1, "turn cue is bounded");
         assert([0, 1, 2, 3, 4].includes(frame[29]), "landing enum is recognized");
         assert(frame[30] === 0 || frame[30] === 1, "shortcut availability is Boolean");
     },
     record(pointer, length) {
-        assert(length >= 186 && length <= 14406);
+        assert(length >= 186 && length <= 16206);
         assert(pointer >= 0 && pointer + length <= engine.memory.buffer.byteLength);
         packet = new Uint8Array(engine.memory.buffer, pointer, length).slice();
     },
@@ -59,7 +59,7 @@ function reset(course) {
     tick(0, 0);
     assert.equal(frame[16], course);
     assert.equal(frame[17], 0);
-    assert.equal(frame[20], course === 0 ? 2 : 0);
+    assert.equal(frame[20], 6);
     assert.equal(frame[21], 0);
     assert.equal(frame[22], 0);
     assert(aircraft.length >= 1000);
@@ -72,15 +72,15 @@ assert(worldPointer + world.length * 4 <= aircraftPointer || aircraftPointer + a
     "persistent static and streamed moving meshes have disjoint backing");
 const farmAircraft = aircraft;
 const startFrame = frame;
-for (let i = 0; i < 108; i++) tick(16);
+for (let i = 0; i < 58; i++) tick(16);
 assert(frame[18] > startFrame[18], "throttle accelerates");
-assert.equal(frame[20], 2, "farm starts directly on the landing approach");
+assert.equal(frame[20], 6, "holding throttle alone does not lift off");
 assert.deepEqual(new Float32Array(engine.memory.buffer, worldPointer, world.length), farmWorld,
     "moving frames never mutate static geometry needed on graphics restore");
 const allForward = [frame, aircraft];
 reset(0);
 assert.equal(worldUploads, 1, "retrying the same course does not rebuild or reupload terrain");
-for (let i = 0; i < 108; i++) tick(16);
+for (let i = 0; i < 58; i++) tick(16);
 assert.deepEqual([frame, aircraft], allForward, "fixed control replay is deterministic");
 
 // At the neutral spawn, the plane's cloth and framing are axis aligned. Check
@@ -168,7 +168,8 @@ assert.equal(packet, undefined, "never publishes a record before landing");
 const hostAnalog = (bank, pitch, power = 0) => 64 | (power & 176) | ((bank & 255) << 8) | ((pitch & 255) << 16);
 function headingAfter(input) {
     reset(0);
-    for (let i = 0; i < 21; i++) tick(input);
+    for (let i = 0; i < 59; i++) tick(20);
+    for (let i = 0; i < 21; i++) tick(input | 4);
     return frame[3];
 }
 const weakRight = headingAfter(hostAnalog(63, 0));
@@ -197,132 +198,119 @@ function pilot(p, bearing, height, slope, power) {
     const pitch = raw(127 * (climb + glide) / (.34 * p.speed));
     return hostAnalog(bank, pitch, power);
 }
-function pasture(mode) {
-    reset(1); reset(0);
-    packet = undefined;
-    let rollout = false, rolloutTicks = 0, rolloutHeading = 0;
-    for (let i = 0; i < 1400 && frame[22] === 0; i++) {
-        const p = aircraftPose();
-        if (frame[20] === 3) {
-            rollout = true;
-            rolloutHeading = Math.max(rolloutHeading, Math.abs(p.angle));
-            rolloutTicks++;
-            const rolling = mode === "overrun" ? 16 : mode === "side" ? (16 | 2) :
-                mode === "steer" && rolloutTicks < 20 ? (32 | 2) : 32;
-            tick(rolling);
-        } else if (mode === "rough" && p.z > 151) {
-            tick(8 | 32);
-        } else {
-            const height = mode === "rough" ? Math.max(5, 17.5 - .084*p.z) : 17.5 - .094*p.z;
-            tick(pilot(p, 0, height, -.094, p.z > 115 ? 32 : 0));
-        }
-    }
-    return {result: frame[22], rollout, rolloutHeading, time: frame[17], data: packet};
-}
-const goodFarm = pasture("stop");
-assert.equal(goodFarm.result, 1, "farm requires a flare and a completed rollout");
-assert(goodFarm.rollout && goodFarm.data);
-assert.equal(pasture("overrun").result, 9, "a valid touchdown can still run out of pasture");
-assert.equal(pasture("side").result, 11, "a lateral rollout exit has a different outcome");
-const steeredFarm = pasture("steer");
-assert.equal(steeredFarm.result, 1, "small ground corrections can still stop inside the strip");
-assert(steeredFarm.rolloutHeading > .055 && steeredFarm.rolloutHeading < .21, "airborne bank becomes gentle rollout steering");
-const rough = pasture("rough");
-assert([6, 10].includes(rough.result) && !rough.rollout, "steep/fast touchdown never starts rollout");
-
-function paris(mode) {
-    reset(0); reset(1);
-    packet = undefined;
-    let sawClimbWarning = false, launched = false, landedMail = false, tried = false;
-    for (let i = 0; i < 1900 && frame[22] === 0; i++) {
-        const p = aircraftPose();
-        const phase = frame[20], status = frame[21];
-        sawClimbWarning ||= frame[30] === 1;
-        if (phase === 0) {
-            const detour = mode === "wide" || mode === "high";
-            if (detour) {
-                const bearing = Math.atan2(1, clamp((158-p.z)/(69-p.x), .26, .72));
-                const target = mode === "high" ? 20 : 12.3;
-                tick(pilot(p, bearing, target, 0, 0));
-            } else {
-                const slope = mode === "strike" || p.x >= 49 ? 0 : p.x > 24 ? .23 : 0;
-                const height = mode === "strike" ? 7.8 : p.x < 24 ? 7.9 : Math.min(13.5, 7.9 + (p.x-24)*.23);
-                tick(pilot(p, Math.atan2(67-p.x,190-p.z), height, slope, 0));
-            }
-        } else if (phase === 1) {
-            if (mode === "high" || mode === "skew") {
-                const expectation = mode === "high" ? 5 : 7;
-                const heading = mode === "high" ? .9 : -.35;
-                const input = pilot(p, heading, mode === "high" ? 20 : 12.3, 0, 32);
-                if (frame[26] === expectation) {
-                    assert.equal(frame[20], 1, "invalid release cannot count mail as delivered");
-                    return {event: frame[26], launched: false};
-                }
-                if (!tried && status === expectation) {
-                    const frozen = frame[17];
-                    tick(input | 128, 0);
-                    engine.cancel_drop();
-                    tick(input, 0);
-                    assert.equal(frame[17], frozen, "canceling a release cannot move simulation");
-                    tick(input);
-                    assert.equal(frame[26], 0, "canceled release cannot fire upon the next real step");
-                    tick(input | 128, 0);
-                    tick(input);
-                    tried = true;
-                } else tick(input);
-            } else {
-                const bearing = Math.atan2(109-p.x, 218-p.z);
-                const input = pilot(p, bearing, 11.0, 0, 32);
-                if (status === 9 && !tried) {
-                    const frozen = frame[17];
-                    tick(input | 128, 0);
-                    assert.equal(frame[17], frozen, "a tap before a physics step queues exactly one release");
-                    tick(input);
-                    tried = true;
-                } else tick(input);
-            }
-        } else if (phase === 5 || phase === 2) {
-            launched ||= phase === 5;
-            landedMail ||= phase === 2 && frame[31] === 1;
-            // Align early and level before touchdown instead of chasing the strip center.
-            const bearing = p.z >= 277 ? 0 : clamp(Math.atan2(125-p.x, Math.max(22, 298-p.z)), -.38, .38);
-            const slope = p.z > 249 ? -.207 : 0;
-            const height = Math.min(12.3, 1.0 + (305-p.z)*.207);
-            tick(pilot(p, bearing, height, slope, 32));
-        } else if (phase === 3) tick(32);
-    }
-    return {result: frame[22], route: frame[25], launched, landedMail,
-        sawClimbWarning, time: frame[17], data: packet};
-}
-assert.equal(paris("strike").result, 8, "the low lane really hits the bridge without a climb");
-assert.equal(paris("high").event, 5, "a high release is rejected");
-assert.equal(paris("skew").event, 7, "a misaligned release is rejected");
-const lowParis = paris("low");
-assert.equal(lowParis.result, 1, "the cyan climb and mail delivery can succeed");
-assert.equal(lowParis.route, 1);
-assert(lowParis.launched && lowParis.landedMail && lowParis.sawClimbWarning && lowParis.data);
-const wideParis = paris("wide");
-assert.equal(wideParis.result, 1, "a wider route can deliver without clearing artificial gates");
-assert.equal(wideParis.route, 2);
-assert(wideParis.launched && wideParis.landedMail && wideParis.data);
-for (const [course, { time, data }] of [[0,goodFarm], [1,lowParis], [1,wideParis]]) {
+function sortie(course, mode = "normal") {
     reset(1-course); reset(course);
-    assert.equal(data[2], 3);
-    assert.equal(data.length, 6 + 2 * (data[4] + data[5] * 256));
-    if (course === 1) {
-        const withoutDrop = data.slice();
-        for (let i = 6; i < withoutDrop.length; i += 2) withoutDrop[i] &= 127;
-        load(withoutDrop);
-        tick(0, 0);
-        assert.equal(frame[23], 0, "the same trajectory cannot validate if the mail action is removed");
+    packet = undefined;
+    const supply = course ? -71 : 68;
+    const visited = new Set();
+    let premature = false, canceled = false, wrongWindow = false;
+    for (let i = 0; i < 1700 && frame[22] === 0; i++) {
+        const p = aircraftPose(), phase = frame[20], status = frame[21];
+        visited.add(phase);
+        let input = 0;
+        if (phase === 6 || phase === 10) input = 20;
+        if (phase === 7) {
+            const distance = supply+12-p.z;
+            const height = Math.min(6.5,1+distance*.064);
+            input = pilot(p,0,height,distance>80 ? 0 : -.064,p.z>supply-43 ? 32 : 0);
+            if (!premature) {
+                tick(input | 128);
+                assert.equal(frame[20], 7);
+                assert.equal(frame[26], 12, "airborne cargo pickup is rejected");
+                premature = true;
+                continue;
+            }
+        }
+        if (phase === 8) input = mode === "overrun" ? 16 : 32;
+        if (phase === 3) input = 32;
+        if (phase === 9) {
+            if (!canceled) {
+                assert.equal(p.speed, 0);
+                tick(128,0);
+                engine.cancel_drop();
+                tick(0);
+                assert.equal(frame[20],9,"a canceled load cannot relaunch");
+                canceled = true;
+                continue;
+            }
+            input = mode === "no cargo" ? 20 : 128;
+        }
+        if (phase === 11) {
+            input = pilot(p,0,7,0,0);
+            if (!wrongWindow) {
+                assert.notEqual(status,9);
+                tick(input|128);
+                assert.equal(frame[31],0,"spray outside the marked pass changes no coverage");
+                assert.notEqual(frame[26],0);
+                wrongWindow = true;
+                continue;
+            }
+            if (status === 9) input |= 128;
+        }
+        if (phase === 0) {
+            const target = p.z < 100 ? [-111,160] : [67,190];
+            const slope = mode === "cyan" && p.x >= 24 && p.x < 49 ? .23 : 0;
+            const height = mode === "high" && p.z > 140 ? 19 :
+                mode === "strike" ? 7.9 :
+                mode === "cyan" ? clamp(7.9+(p.x-24)*.23,7.9,13.5) : 13;
+            input = pilot(p,Math.atan2(target[0]-p.x,target[1]-p.z),height,slope,0);
+        }
+        if (phase === 1) {
+            input = pilot(p,Math.atan2(109-p.x,218-p.z),mode === "high" ? 20 : 11,0,32);
+            if (mode === "high" && status === 5) {
+                tick(input|128);
+                assert.equal(frame[26],5);
+                assert.equal(frame[20],1,"late/high mail cannot be scored in flight");
+                return {result:"invalid release"};
+            }
+            if (status === 9) input |= 128;
+        }
+        if (phase === 5 || phase === 2) {
+            const final = course ? 290 : 331, endX = course ? 125 : -15;
+            const bearing = p.z >= final-13 ? 0 : clamp(Math.atan2(endX-p.x,Math.max(22,final+8-p.z)),-.38,.38);
+            const target = final+(course?15:10), slope = course?-.207:-.133;
+            const height = Math.min(12.3,1+(p.z-target)*slope);
+            input = pilot(p,bearing,height,height<12.3?slope:0,p.z>final-50?32:0);
+        }
+        tick(input);
     }
-    load(data);
-    tick(0, 0);
-    assert.equal(frame[23], time, "authentic mission replay retains the exact timer");
+    return {result:frame[22], course, visited, time:frame[17], data:packet, actions:frame[31], gates:frame[32], route:frame[25]};
 }
+const goodFarm = sortie(0), goodParis = sortie(1), cyanParis = sortie(1,"cyan");
+assert.equal(goodParis.route,2,"the higher, wider Paris route earns the amber route outcome");
+assert.equal(cyanParis.route,1,"the low Paris departure earns the cyan route outcome");
+assert.equal(sortie(1,"strike").result,8,"failing to climb out of the low route hits the bridge");
+assert.equal(sortie(0,"overrun").result,9,"pickup overrun remains an explicit failure");
+const noCargo = sortie(0,"no cargo");
+assert(noCargo.visited.has(9) && !noCargo.visited.has(10) && !noCargo.data,"throttling without loading cargo never advances the mission");
+assert.equal(sortie(1,"high").result,"invalid release");
+for (const {course, visited, result, time, data, actions, gates} of [goodFarm,goodParis,cyanParis]) {
+    assert.equal(result,1,"complete delivery plus final stop earns a successful sortie");
+    for (const phase of [6,7,8,9,10,2,3,...(course?[0,1,5]:[11])]) assert(visited.has(phase),`sortie passed phase ${phase}`);
+    assert.equal(actions,course?1:3);
+    assert(gates>0 && gates<=3,"timed gate score is earned by a real flight path");
+    reset(1-course); reset(course);
+    assert.equal(data[2],4);
+    assert.equal(data.length,6+2*(data[4]+data[5]*256));
+    const noActions = data.slice();
+    for (let i=6;i<noActions.length;i+=2) noActions[i] &= 127;
+    load(noActions);
+    tick(0,0);
+    assert.equal(frame[23],0,"controls without mission actions cannot be accepted as a replay");
+    load(data);
+    tick(0,0);
+    assert.equal(frame[23],time,"authentic full sortie replay retains the exact timer");
+}
+reset(1); reset(0);
+for (let i=0;i<235;i++) tick(0);
+assert.equal(frame[32],0,"waiting does not earn a gate");
+assert.equal(frame[33],0,"first timed gate stays available through its deadline");
+for (let i=0;i<8;i++) tick(0);
+assert.equal(frame[33],1,"expired gate advances without points or changing the mission phase");
+assert.equal(frame[20],6);
 function visibleGhost(rejectedCandidate) {
     reset(1); reset(0);
-    for (const oldVersion of [1, 2]) {
+    for (const oldVersion of [1, 2, 3]) {
         const oldPacket = goodFarm.data.slice();
         oldPacket[2] = oldVersion;
         load(oldPacket);
@@ -343,7 +331,7 @@ function visibleGhost(rejectedCandidate) {
     }
     let diverged = null;
     for (let i = 0; i < 160 && frame[22] === 0; i++) {
-        tick(16 | 2);
+        tick(i<58 ? 0 : (16|4|2));
         if (aircraft.length > farmAircraft.length) diverged = aircraft;
     }
     assert(diverged, "a restored mission ghost actually draws after the routes diverge");
@@ -370,12 +358,13 @@ for (const hz of [60, 90, 120]) {
     for (const steering of [0, 2]) {
         reset(1);
         reset(0);
-        for (let i = 0; i < 26; i++) tick(steering);
+        for (let i = 0; i < 62; i++) tick(20);
+        for (let i = 0; i < 14; i++) tick(steering|4);
         const fixedClock = frame[17];
         let wing = playerWingCorner();
         const relative = screenPoint(wing);
         for (let i = 1; i < hz / 30; i++) {
-            tick(steering, 1 / hz);
+            tick(steering|4, 1 / hz);
             assert.equal(frame[17], fixedClock, "presentation never advances the simulation clock");
             const next = playerWingCorner();
             assert(distance(next, wing) > 0.08, `aircraft interpolates a substep at ${hz} Hz`);
@@ -391,9 +380,10 @@ for (const hz of [60, 90, 120]) {
 
 reset(1);
 reset(0);
+for (let i = 0; i < 62; i++) tick(20);
 let previousHeading = 0, wrapped = false;
 for (let i = 0; i < 800 && !wrapped; i++) {
-    tick(2, 1 / 120);
+    tick(2|4, 1 / 120);
     const heading = Math.atan2(frame[3], frame[11]);
     const raw = heading - previousHeading;
     const signed = Math.atan2(Math.sin(raw), Math.cos(raw));
@@ -406,8 +396,9 @@ assert(wrapped, "the bank trace actually crosses the yaw wrap");
 function catchUp(increments) {
     reset(1);
     reset(0);
-    for (let i = 0; i < 12; i++) tick(2);
-    for (const dt of increments) tick(2, dt);
+    for (let i = 0; i < 66; i++) tick(20);
+    for (let i = 0; i < 12; i++) tick(6);
+    for (const dt of increments) tick(6, dt);
     return { time: frame[17], point: playerWingCorner(), camera: screenPoint(playerWingCorner()) };
 }
 const afterHitch = catchUp([0.125]);
