@@ -1,0 +1,517 @@
+const STEER = Object.freeze({ left: 1, right: 2, climb: 4, dive: 8, power: 16, brake: 32 });
+const KEYS = new Map([
+  ["KeyA", STEER.left], ["ArrowLeft", STEER.left],
+  ["KeyD", STEER.right], ["ArrowRight", STEER.right],
+  ["KeyS", STEER.climb], ["ArrowDown", STEER.climb],
+  ["KeyW", STEER.dive], ["ArrowUp", STEER.dive],
+  ["KeyE", STEER.power], ["KeyQ", STEER.brake],
+]);
+const COURSES = ["Barnstorm Run", "Seine Sprint"];
+const STORAGE_KEY = "wosy-flying-low/v1/";
+const FRAME_FLOATS = 28;
+const FLOATS_PER_VERTEX = 6;
+const MAX_REPLAY = 65536;
+const FIELD_COLORS = [[.64, .79, .84], [.72, .79, .83]];
+
+export function makeControls() {
+  const keys = new Map(), pointers = new Map();
+  return {
+    keys, pointers,
+    get mask() {
+      let result = 0;
+      for (const value of keys.values()) result |= value;
+      for (const value of pointers.values()) result |= value;
+      return result;
+    },
+    clear() { keys.clear(); pointers.clear(); },
+  };
+}
+
+export function memoryRange(memory, pointer, length, ArrayType) {
+  const width = ArrayType.BYTES_PER_ELEMENT;
+  const buffer = memory?.buffer;
+  if (!buffer || !Number.isInteger(pointer) || pointer < 0 || pointer % width
+      || !Number.isSafeInteger(length) || length < 0
+      || length > Math.floor((buffer.byteLength - pointer) / width)) {
+    throw new Error("The flight engine returned unreadable data.");
+  }
+  return new ArrayType(buffer, pointer, length);
+}
+
+export function replayStore(storage) {
+  return {
+    load(course) {
+      try {
+        const encoded = storage()?.getItem(STORAGE_KEY + course);
+        if (!encoded || encoded.length > Math.ceil(MAX_REPLAY / 3) * 4) return null;
+        const decoded = atob(encoded);
+        return decoded.length <= MAX_REPLAY ? decoded : null;
+      } catch { return null; }
+    },
+    save(course, bytes) {
+      if (bytes.length === 0 || bytes.length > MAX_REPLAY) return;
+      try {
+        let binary = "";
+        for (let n = 0; n < bytes.length; n += 4096)
+          binary += String.fromCharCode(...bytes.subarray(n, n + 4096));
+        storage()?.setItem(STORAGE_KEY + course, btoa(binary));
+      } catch { /* Private/quota-restricted browsing still supports local play. */ }
+    },
+  };
+}
+
+function clockText(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return "—";
+  const centiseconds = Math.floor(seconds * 100);
+  const minutes = Math.floor(centiseconds / 6000);
+  const display = (number) => String(number).padStart(2, "0");
+  return `${minutes}:${display(Math.floor(centiseconds / 100) % 60)}.${display(centiseconds % 100)}`;
+}
+function setText(node, next) {
+  const value = String(next);
+  if (node.textContent !== value) node.textContent = value;
+}
+function roundText(value, unit) {
+  return Number.isFinite(value) ? `${Math.round(value)} ${unit}` : "—";
+}
+function sizedCanvas(canvas, ratio) {
+  const width = Math.max(1, Math.round(canvas.clientWidth * ratio));
+  const height = Math.max(1, Math.round(canvas.clientHeight * ratio));
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
+  return width / height;
+}
+
+const WORLD_VERTEX = `#version 300 es
+layout(location=0) in vec3 position;
+layout(location=1) in vec3 color;
+uniform mat4 viewProjection;
+out vec3 tint;
+out float depth;
+void main() {
+  tint = color;
+  gl_Position = viewProjection * vec4(position, 1.0);
+  depth = gl_Position.w;
+}`;
+const WORLD_FRAGMENT = `#version 300 es
+precision mediump float;
+in vec3 tint;
+in float depth;
+uniform vec3 atmosphere;
+out vec4 fragment;
+void main() {
+  float haze = smoothstep(85.0, 550.0, depth);
+  fragment = vec4(mix(tint, atmosphere, haze * 0.84), 1.0);
+}`;
+const SKY_VERTEX = `#version 300 es
+out vec2 uv;
+void main() {
+  vec2 p = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+  uv = p;
+  gl_Position = vec4(p * 2.0 - 1.0, 0.0, 1.0);
+}`;
+const SKY_FRAGMENT = `#version 300 es
+precision mediump float;
+uniform vec3 atmosphere;
+uniform float aspect;
+in vec2 uv;
+out vec4 fragment;
+void main() {
+  vec3 zenith = atmosphere * vec3(0.54, 0.79, 0.93);
+  vec3 tone = mix(atmosphere, zenith, smoothstep(0.08, 1.0, uv.y));
+  float d = length((uv - vec2(.78, .79)) * vec2(aspect, 1.0));
+  tone = mix(tone, vec3(.99, .90, .68), .30 * exp(-9.0 * d));
+  tone = mix(tone, vec3(1.0, .94, .75), 1.0 - smoothstep(.028, .034, d));
+  fragment = vec4(tone, 1.0);
+}`;
+function program(gl, vertexSource, fragmentSource) {
+  function shader(type, source) {
+    const shader = gl.createShader(type);
+    gl.shaderSource(shader, source);
+    gl.compileShader(shader);
+    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+      const detail = gl.getShaderInfoLog(shader);
+      gl.deleteShader(shader);
+      throw new Error(detail || "WebGL could not compile the graphics.");
+    }
+    return shader;
+  }
+  const vertex = shader(gl.VERTEX_SHADER, vertexSource);
+  const fragment = shader(gl.FRAGMENT_SHADER, fragmentSource);
+  const linked = gl.createProgram();
+  gl.attachShader(linked, vertex);
+  gl.attachShader(linked, fragment);
+  gl.linkProgram(linked);
+  gl.deleteShader(vertex);
+  gl.deleteShader(fragment);
+  if (!gl.getProgramParameter(linked, gl.LINK_STATUS)) {
+    const detail = gl.getProgramInfoLog(linked);
+    gl.deleteProgram(linked);
+    throw new Error(detail || "WebGL could not link the graphics.");
+  }
+  return linked;
+}
+function batch(gl, usage) {
+  const vao = gl.createVertexArray(), buffer = gl.createBuffer();
+  gl.bindVertexArray(vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+  gl.enableVertexAttribArray(0);
+  gl.enableVertexAttribArray(1);
+  gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 24, 0);
+  gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 24, 12);
+  gl.bindVertexArray(null);
+  return { vao, buffer, usage, sent: 0, count: 0 };
+}
+function graphics(gl) {
+  const scene = program(gl, WORLD_VERTEX, WORLD_FRAGMENT);
+  const sky = program(gl, SKY_VERTEX, SKY_FRAGMENT);
+  return {
+    scene, sky, skyVao: gl.createVertexArray(),
+    matrix: gl.getUniformLocation(scene, "viewProjection"),
+    fog: gl.getUniformLocation(scene, "atmosphere"),
+    skyColor: gl.getUniformLocation(sky, "atmosphere"),
+    aspect: gl.getUniformLocation(sky, "aspect"),
+    field: batch(gl, gl.STATIC_DRAW),
+    moving: batch(gl, gl.DYNAMIC_DRAW),
+  };
+}
+function updateBatch(gl, item, source, memory) {
+  if (item.sent === source.version) return;
+  if (source.length !== 0) {
+    const values = memoryRange(memory, source.pointer, source.length, Float32Array);
+    gl.bindBuffer(gl.ARRAY_BUFFER, item.buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, values, item.usage);
+  }
+  item.count = source.length / FLOATS_PER_VERTEX;
+  item.sent = source.version;
+}
+
+export function bootFlight(win, doc) {
+  const get = (name) => doc.getElementById(name);
+  const shell = get("game"), canvas = get("view"), menu = get("menu"), hud = get("hud");
+  const status = get("engine"), problem = get("problem"), keys = get("keys"), touch = get("touch");
+  const summary = get("summary"), summaryTitle = get("summary-title"), summaryDetail = get("summary-detail");
+  const summaryKicker = get("summary-kicker"), again = get("again"), choose = get("choose");
+  const callout = get("callout"), flightCue = get("flight-cue"), buttons = Array.from(doc.querySelectorAll("[data-course]"));
+  const actionButtons = Array.from(doc.querySelectorAll("[data-action]"));
+  const instruments = ["time", "gates", "speed", "altitude", "best"].map(get);
+  const controls = makeControls(), replays = replayStore(() => win.localStorage);
+  const field = { pointer: 0, length: 0, version: 0 }, moving = { pointer: 0, length: 0, version: 0 };
+  const gl = canvas.getContext("webgl2", { alpha: false, antialias: true });
+  let gpu, engine, memory, framePointer = null;
+  let raf = 0, previous = null, current = 0, mode = "menu", modal = null;
+  let loading = true, error = false, lost = false, hudTick = 0, dirty = true;
+
+  function syncButtons() {
+    const mask = controls.mask;
+    for (const button of actionButtons) button.classList.toggle("active", Boolean(mask & STEER[button.dataset.action]));
+  }
+  function clearInput() {
+    const captured = Array.from(controls.pointers.keys());
+    controls.clear();
+    for (const button of actionButtons) for (const id of captured) {
+      if (button.hasPointerCapture?.(id)) button.releasePointerCapture(id);
+    }
+    syncButtons();
+  }
+  function capability() {
+    const active = mode === "playing" && !modal && !lost && !error;
+    const canSelect = !loading && !error && !lost;
+    buttons.forEach((button) => { button.disabled = !canSelect; });
+    get("restart").disabled = !canSelect;
+    get("pause").disabled = !canSelect;
+    again.disabled = !canSelect;
+    shell.classList.toggle("is-playing", mode !== "menu");
+    menu.hidden = mode !== "menu";
+    hud.hidden = mode === "menu";
+    keys.hidden = touch.hidden = !active;
+    if (!active) { callout.hidden = true; setText(flightCue, ""); }
+    hud.inert = Boolean(modal);
+  }
+  function failure(message) {
+    error = true;
+    clearInput();
+    modal = null;
+    mode = "menu";
+    summary.hidden = true;
+    setText(problem, message);
+    problem.hidden = false;
+    setText(status, "Engine unavailable");
+    capability();
+  }
+  function provide(buffer) {
+    return (pointer, length) => {
+      if (length % (FLOATS_PER_VERTEX * 3) !== 0) throw new Error("The flight engine returned an incomplete mesh.");
+      if (length !== 0) memoryRange(memory, pointer, length, Float32Array);
+      buffer.pointer = pointer;
+      buffer.length = length;
+      buffer.version += 1;
+    };
+  }
+  const imports = {
+    wasi_snapshot_preview1: {
+      proc_exit(code) { throw new Error(`Flight engine exited (${code}).`); },
+    },
+    flight: {
+      world: provide(field),
+      aircraft: provide(moving),
+      frame(pointer, length) {
+        if (length !== FRAME_FLOATS) throw new Error("The flight engine returned an invalid frame.");
+        memoryRange(memory, pointer, length, Float32Array);
+        framePointer = pointer;
+      },
+      record(pointer, length) {
+        if (!Number.isSafeInteger(length) || length < 1 || length > MAX_REPLAY) return;
+        replays.save(current, memoryRange(memory, pointer, length, Uint8Array));
+      },
+    },
+  };
+  function state() {
+    return framePointer === null ? null : memoryRange(memory, framePointer, FRAME_FLOATS, Float32Array);
+  }
+  function updateHud(frame) {
+    setText(instruments[0], clockText(frame[17]));
+    setText(instruments[1], `${frame[20]} / ${frame[21]}`);
+    setText(instruments[2], roundText(frame[18], "m/s"));
+    setText(instruments[3], roundText(frame[19], "m"));
+    setText(instruments[4], frame[23] > 0 ? clockText(frame[23]) : "—");
+    const cue = frame[26] ? "LAND IN THE MARKED STRIP" : `NEXT GATE · ${roundText(frame[27], "m")}`;
+    setText(callout, cue);
+    callout.hidden = false;
+    setText(flightCue, frame[26] ? "Land in the marked strip." :
+      `Gates cleared: ${frame[20]} of ${frame[21]}.`);
+  }
+  function showSummary(type, frame) {
+    modal = type;
+    clearInput();
+    capability();
+    summary.hidden = false;
+    if (type === "pause") {
+      setText(summaryKicker, "FLIGHT CONTROL");
+      setText(summaryTitle, "Flight paused");
+      setText(summaryDetail, "Resume where you left off, or pick another course.");
+      setText(again, "Resume flight");
+    } else {
+      const landed = frame[22] === 1;
+      setText(summaryKicker, landed ? "FLIGHT REPORT" : "RUN ENDED");
+      setText(summaryTitle, landed ? "Run complete" : "Flight ended");
+      setText(summaryDetail, landed
+        ? `${clockText(frame[17])} · ${frame[24]} points${frame[23] > 0 ? ` · Best ${clockText(frame[23])}` : ""}`
+        : `Cleared ${frame[20]} of ${frame[21]} gates. Fly again for a cleaner line.`);
+      setText(again, "Fly again");
+    }
+    again.focus();
+  }
+  function finishModal() {
+    modal = null;
+    summary.hidden = true;
+    previous = null;
+    capability();
+  }
+  function reset(course, playing) {
+    if (loading || error || lost || !engine || !Number.isInteger(course) || course < 0 || course >= COURSES.length) return;
+    try {
+      current = course;
+      clearInput();
+      engine.reset(course);
+      const replay = replays.load(course);
+      if (replay) {
+        engine.ghost_begin();
+        for (let index = 0; index < replay.length; index += 1) engine.ghost_byte(replay.charCodeAt(index));
+        engine.ghost_end();
+      }
+      framePointer = null;
+      const aspect = sizedCanvas(canvas, Math.min(win.devicePixelRatio || 1, 2));
+      engine.tick(0, 0, aspect);
+      dirty = true;
+      mode = playing ? "playing" : "menu";
+      finishModal();
+      setText(get("track"), COURSES[course]);
+      if (playing) {
+        const frame = state();
+        if (frame) updateHud(frame);
+        shell.focus({ preventScroll: true });
+      } else {
+        buttons[course]?.focus({ preventScroll: true });
+      }
+    } catch {
+      failure("Could not restart the flight engine. Try reloading this page.");
+    }
+  }
+  function draw(aspect, frame) {
+    const tint = FIELD_COLORS[current];
+    gl.viewport(0, 0, canvas.width, canvas.height);
+    gl.clearColor(...tint, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+    gl.disable(gl.DEPTH_TEST);
+    gl.useProgram(gpu.sky);
+    gl.bindVertexArray(gpu.skyVao);
+    gl.uniform3fv(gpu.skyColor, tint);
+    gl.uniform1f(gpu.aspect, aspect);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    if (!frame) return;
+    updateBatch(gl, gpu.field, field, memory);
+    updateBatch(gl, gpu.moving, moving, memory);
+    gl.enable(gl.DEPTH_TEST);
+    gl.useProgram(gpu.scene);
+    gl.uniformMatrix4fv(gpu.matrix, false, frame.subarray(0, 16));
+    gl.uniform3fv(gpu.fog, tint);
+    for (const item of [gpu.field, gpu.moving]) {
+      if (item.count === 0) continue;
+      gl.bindVertexArray(item.vao);
+      gl.drawArrays(gl.TRIANGLES, 0, item.count);
+    }
+  }
+  function loop(timestamp) {
+    raf = 0;
+    if (error || lost || doc.hidden) return;
+    try {
+      const aspect = sizedCanvas(canvas, Math.min(win.devicePixelRatio || 1, 2));
+      const elapsed = previous === null ? 0 : Math.max(0, (timestamp - previous) / 1000);
+      previous = timestamp;
+      const active = mode === "playing" && !modal;
+      const resized = aspect !== loop.aspect || canvas.width !== loop.width || canvas.height !== loop.height;
+      if (active) engine.tick(elapsed, controls.mask, aspect);
+      else if (resized) engine.tick(0, 0, aspect);
+      loop.aspect = aspect;
+      loop.width = canvas.width;
+      loop.height = canvas.height;
+      const frame = state();
+      if (active || dirty || resized) { draw(aspect, frame); dirty = false; }
+      if (active && frame) {
+        if (frame[22] !== 0) {
+          updateHud(frame);
+          showSummary("result", frame);
+        } else if (timestamp >= hudTick) {
+          updateHud(frame);
+          hudTick = timestamp + 90;
+        }
+      }
+      raf = win.requestAnimationFrame(loop);
+    } catch {
+      failure("The game could not render this flight. Try reloading this page.");
+    }
+  }
+  function resumeLoop() {
+    previous = null;
+    if (!raf && engine && gpu && !lost && !error && !doc.hidden) raf = win.requestAnimationFrame(loop);
+  }
+  function togglePause() {
+    if (mode !== "playing" || lost || loading) return;
+    if (modal === "pause") { finishModal(); shell.focus({ preventScroll: true }); }
+    else if (!modal) showSummary("pause");
+  }
+  function press(event, down) {
+    if (event.altKey || event.ctrlKey || event.metaKey) {
+      if (!down && controls.keys.delete(event.code)) syncButtons();
+      return;
+    }
+    if (down && event.code === "Tab" && modal) {
+      const target = doc.activeElement;
+      if ((event.shiftKey && target === again) || (!event.shiftKey && target === choose)) {
+        event.preventDefault();
+        (event.shiftKey ? choose : again).focus();
+      }
+      return;
+    }
+    if (down && !event.repeat && event.code === "Escape") { togglePause(); return; }
+    if (down && !event.repeat && event.code === "KeyR" && mode === "playing" && !lost && modal !== "pause") {
+      event.preventDefault();
+      reset(current, true);
+      return;
+    }
+    if (!down) {
+      if (controls.keys.delete(event.code)) { event.preventDefault(); syncButtons(); }
+      return;
+    }
+    if (mode !== "playing" || modal || lost) return;
+    const action = STEER[event.target?.dataset?.action];
+    const virtual = action && (event.code === "Enter" || event.code === "Space");
+    const code = virtual ? action : KEYS.get(event.code);
+    if (!code) return;
+    event.preventDefault();
+    if (event.repeat) return;
+    controls.keys.set(event.code, code);
+    syncButtons();
+  }
+  for (const button of actionButtons) {
+    button.addEventListener("pointerdown", (event) => {
+      if (event.button !== 0 || modal || mode !== "playing" || lost) return;
+      event.preventDefault();
+      controls.pointers.set(event.pointerId, STEER[button.dataset.action]);
+      button.setPointerCapture?.(event.pointerId);
+      syncButtons();
+    });
+    button.addEventListener("lostpointercapture", (event) => {
+      if (controls.pointers.delete(event.pointerId)) syncButtons();
+    });
+    button.addEventListener("contextmenu", (event) => event.preventDefault());
+  }
+  for (const type of ["pointerup", "pointercancel"]) win.addEventListener(type, (event) => {
+    if (controls.pointers.delete(event.pointerId)) syncButtons();
+  }, true);
+  buttons.forEach((button) => button.addEventListener("click", () => reset(Number(button.dataset.course), true)));
+  get("restart").addEventListener("click", () => reset(current, true));
+  get("pause").addEventListener("click", togglePause);
+  again.addEventListener("click", () => { if (modal === "pause") togglePause(); else reset(current, true); });
+  choose.addEventListener("click", () => reset(current, false));
+  win.addEventListener("keydown", (event) => press(event, true));
+  win.addEventListener("keyup", (event) => press(event, false));
+  win.addEventListener("blur", () => { clearInput(); previous = null; });
+  doc.addEventListener("visibilitychange", () => {
+    clearInput();
+    if (doc.hidden) {
+      if (raf) win.cancelAnimationFrame(raf);
+      raf = 0;
+      previous = null;
+    } else resumeLoop();
+  });
+  canvas.addEventListener("webglcontextlost", (event) => {
+    event.preventDefault();
+    lost = true;
+    clearInput();
+    if (raf) win.cancelAnimationFrame(raf);
+    raf = 0;
+    setText(status, "Restoring graphics");
+    capability();
+  });
+  canvas.addEventListener("webglcontextrestored", () => {
+    if (error) return;
+    try {
+      gpu = graphics(gl);
+      lost = false;
+      dirty = true;
+      if (engine && !loading && framePointer === null) reset(current, mode === "playing");
+      if (error) return;
+      setText(status, loading ? "Loading flight engine" : "Wosy engine ready");
+      capability();
+      resumeLoop();
+    } catch { failure("Your browser could not restore WebGL. Reload to try again."); }
+  });
+
+  const ready = (async () => {
+    if (!gl) { failure("This game needs WebGL 2. Try a current browser with hardware acceleration enabled."); return; }
+    try {
+      gpu = graphics(gl);
+      const wasm = await win.fetch(new URL("./flight.wasm", import.meta.url));
+      if (!wasm.ok) throw new Error("The flight engine could not be downloaded.");
+      const { instance } = await win.WebAssembly.instantiate(await wasm.arrayBuffer(), imports);
+      engine = instance.exports;
+      memory = engine.memory;
+      for (const name of ["_start", "reset", "tick", "ghost_begin", "ghost_byte", "ghost_end"])
+        if (typeof engine[name] !== "function") throw new Error("The flight engine is incomplete.");
+      engine._start();
+      loading = false;
+      if (!lost) reset(0, false);
+      if (error) return;
+      setText(status, lost ? "Restoring graphics" : "Wosy engine ready");
+      capability();
+      resumeLoop();
+    } catch {
+      failure("Could not load the game. Check your connection and reload this page.");
+    }
+  })();
+  return { ready, controls };
+}
+
+if (typeof window !== "undefined" && typeof document !== "undefined") bootFlight(window, document);
