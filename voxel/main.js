@@ -23,9 +23,13 @@ const keyActions = new Map([
   ["KeyA",2], ["ArrowLeft",2], ["KeyD",3], ["ArrowRight",3],
   ["Space",4], ["KeyC",5], ["ShiftLeft",6], ["ShiftRight",6], ["KeyF",7],
 ]);
+const editKeys = new Map([["KeyQ",0], ["KeyE",1]]);
 const pressed = new Set();
 const dpad = new Map();
 const downActions = new Set();
+const editMouse = new Set();
+const downEdits = new Set();
+const atlas = { data: null, width: 0, height: 0 };
 const layers = {
   mesh: { data: null, count: 0, version: 0 },
   water: { data: null, count: 0, version: 0 },
@@ -55,6 +59,7 @@ uniform vec3 eye;
 uniform vec3 fog;
 uniform float time;
 uniform int pass;
+uniform sampler2D terrainAtlas;
 out vec4 pixel;
 void main() {
   vec3 col=rgb;
@@ -66,9 +71,7 @@ void main() {
     float ray=smoothstep(0.38,0.93,normalize(point-eye).z)*0.14;
     col=vec3(0.19,0.49,0.49)+vec3(0.03,0.11,0.10)*wave+vec3(0.86,0.95,0.68)*(strip+ray);
   } else if (pass==0) {
-    vec3 normal=normalize(cross(dFdx(point),dFdy(point)));
-    float sun=max(dot(normal,normalize(vec3(-0.38,0.84,0.39))),0.0);
-    col=rgb*(0.77+0.25*sun)+vec3(0.06,0.053,0.035)*sun;
+    col=texture(terrainAtlas,rgb.xy).rgb*rgb.z;
   }
   float haze=clamp((distance(eye,point)-23.0)/110.0,0.0,1.0);
   pixel=vec4(mix(col,fog,pow(haze,1.08)*0.94),1.0);
@@ -136,13 +139,21 @@ function geometry(values, usage) {
 
 function newGraphics() {
   const world = makeProgram(vertex, fragment), sky = makeProgram(skyVertex, skyFragment);
+  const terrainAtlas = gl.createTexture();
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, terrainAtlas);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+  if (atlas.data) uploadAtlas(terrainAtlas);
   const locations = (program, names) => Object.fromEntries(names.map((name) => [name, gl.getUniformLocation(program, name)]));
   gpu = {
-    world, sky, skyVao: gl.createVertexArray(),
+    world, sky, terrainAtlas, skyVao: gl.createVertexArray(),
     mesh: geometry(layers.mesh.data, gl.DYNAMIC_DRAW),
     water: geometry(layers.water.data, gl.STATIC_DRAW),
     outline: geometry(layers.outline.data, gl.DYNAMIC_DRAW),
-    main: locations(world, ["projection", "eye", "fog", "time", "pass"]),
+    main: locations(world, ["projection", "eye", "fog", "time", "pass", "terrainAtlas"]),
     background: locations(sky, ["aspect", "pitch", "fog"]),
   };
 }
@@ -153,6 +164,23 @@ function memoryFloats(pointer, length) {
     throw new Error("O motor enviou dados inválidos.");
   }
   return new Float32Array(memory.buffer, pointer, length);
+}
+
+function uploadAtlas(texture) {
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8, atlas.width, atlas.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, atlas.data);
+}
+
+function bindAtlas(pointer, width, height) {
+  const bytes = width * height * 4;
+  if (!memory || !Number.isInteger(pointer) || pointer < 0 || width !== 128 || height !== 16 ||
+      pointer + bytes > memory.buffer.byteLength) {
+    throw new Error("O motor enviou um atlas inválido.");
+  }
+  atlas.width = width;
+  atlas.height = height;
+  atlas.data = new Uint8Array(memory.buffer, pointer, bytes).slice();
+  if (gpu && !contextLost) uploadAtlas(gpu.terrainAtlas);
 }
 
 function bindLayer(name, stride) {
@@ -234,7 +262,7 @@ function generate(seed) {
   const previousMesh = layers.mesh.version, previousWater = layers.water.version;
   if (loaded) clearInputs();
   engine.generate(seed);
-  if (previousMesh === layers.mesh.version || previousWater === layers.water.version) {
+  if (!atlas.data || previousMesh === layers.mesh.version || previousWater === layers.water.version) {
     throw new Error("O motor não enviou a malha da nova ilha.");
   }
   try { localStorage.setItem("wosy-voxel-seed", String(seed)); } catch {}
@@ -248,11 +276,12 @@ async function boot() {
   }
   try {
     prepareGraphics();
-    const response = await fetch(new URL("./engine.wasm?v=creative-3", import.meta.url));
+    const response = await fetch(new URL("./engine.wasm?v=creative-4", import.meta.url));
     if (!response.ok) throw new Error(`Motor não encontrado (HTTP ${response.status}).`);
     const bytes = await response.arrayBuffer();
     const api = {
       showcase: {
+        atlas: bindAtlas,
         mesh: bindLayer("mesh", 3),
         water: bindLayer("water", 3),
         outline: bindLayer("outline", 2),
@@ -267,8 +296,8 @@ async function boot() {
     engine = instance.exports;
     memory = engine.memory;
     const required = [
-      "_start", "generate", "control", "pulse_control", "clear_controls", "look", "tick", "edit_view",
-      "select_material", "cycle_material", "place_selected",
+      "_start", "generate", "control", "pulse_control", "clear_controls", "look", "tick", "edit_control",
+      "select_material", "cycle_material",
       "seed_begin", "seed_code_unit", "seed_end", "default_seed",
     ];
     if (!(memory instanceof WebAssembly.Memory) || required.some((name) => typeof engine[name] !== "function")) {
@@ -332,6 +361,9 @@ function present(pointer, hit) {
     gl.drawArrays(gl.TRIANGLES, 0, layers.water.count);
   }
   if (layers.mesh.count > 0) {
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, gpu.terrainAtlas);
+    gl.uniform1i(gpu.main.terrainAtlas, 0);
     gl.uniform1i(gpu.main.pass, 0);
     gl.bindVertexArray(gpu.mesh.vao);
     gl.drawArrays(gl.TRIANGLES, 0, layers.mesh.count);
@@ -373,6 +405,21 @@ function syncAction(action) {
   catch (e) { fail("O motor Wosy não conseguiu receber um comando.", e); }
 }
 
+function syncInput(code) {
+  if (editKeys.has(code)) syncEdit(editKeys.get(code));
+  else syncAction(keyActions.get(code));
+}
+
+function syncEdit(mode) {
+  if (!playing || !loaded || contextLost) return;
+  const active = editMouse.has(mode) || [...pressed].some((key) => editKeys.get(key) === mode) ||
+    [...dpad.values()].some((button) => editKeys.get(button.dataset.move) === mode);
+  if (active === downEdits.has(mode)) return;
+  if (active) downEdits.add(mode);
+  else downEdits.delete(mode);
+  sendEdit(mode, active ? 1 : 0);
+}
+
 function pulseControl(action) {
   if (!playing || !loaded || contextLost) return;
   try { engine.pulse_control(action); }
@@ -383,6 +430,8 @@ function clearInputs() {
   pressed.clear();
   dpad.clear();
   downActions.clear();
+  editMouse.clear();
+  downEdits.clear();
   pointerLook = null;
   if (loaded) {
     try { engine.clear_controls(); }
@@ -404,10 +453,10 @@ function selectMaterial(material, cycle = false) {
   } catch (e) { fail("O motor Wosy não conseguiu selecionar o material.", e); }
 }
 
-function edit(place) {
+function sendEdit(mode, state) {
   if (!playing || !loaded || contextLost) return;
   try {
-    const result = place ? engine.place_selected() : engine.edit_view(0);
+    const result = engine.edit_control(mode, state);
     if (result === -1) toast("Aponte a mira para um bloco.");
     if (result === -2) toast("Aqui é o limite da ilha.");
     if (result === -3) toast("Esse bloco ficaria no seu caminho.");
@@ -475,23 +524,22 @@ get("fullscreen").addEventListener("click", async () => {
 document.addEventListener("keydown", (e) => {
   if (!playing || e.target instanceof HTMLInputElement) return;
   if (e.code === "Space" && e.target?.nodeName === "BUTTON") return;
-  const action = keyActions.get(e.code);
-  if (action !== undefined) {
-    pressed.add(e.code);
-    syncAction(action);
+  if (keyActions.has(e.code) || editKeys.has(e.code)) {
     e.preventDefault();
+    if (!e.repeat) {
+      pressed.add(e.code);
+      syncInput(e.code);
+    }
   }
   if (e.code === "Escape") stopPlaying();
-  if (e.code === "KeyQ" && !e.repeat) edit(false);
-  if (e.code === "KeyE" && !e.repeat) edit(true);
   const slot = /^(?:Digit|Numpad)([1-6])$/.exec(e.code);
-  if (slot && !e.repeat) {
-    selectMaterial(Number(slot[1]));
+  if (slot) {
     e.preventDefault();
+    if (!e.repeat) selectMaterial(Number(slot[1]));
   }
 });
 document.addEventListener("keyup", (e) => {
-  if (pressed.delete(e.code)) syncAction(keyActions.get(e.code));
+  if (pressed.delete(e.code)) syncInput(e.code);
 });
 window.addEventListener("blur", clearInputs);
 document.addEventListener("visibilitychange", () => {
@@ -505,53 +553,76 @@ document.addEventListener("pointerlockchange", () => {
   }
   if (!playing) return;
   const fullscreenButton = document.activeElement === get("fullscreen");
-  if (!fullscreenButton) stopPlaying();
+  if (fullscreenButton) clearInputs();
+  else stopPlaying();
 });
 document.addEventListener("pointerlockerror", () => toast("Arraste a cena para olhar."));
 document.addEventListener("mousemove", (e) => {
   if (playing && document.pointerLockElement === canvas) look(e.movementX, e.movementY);
 });
-canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+document.addEventListener("contextmenu", (e) => {
+  if (e.target === canvas || document.pointerLockElement === canvas) e.preventDefault();
+});
+document.addEventListener("mousedown", (e) => {
+  const mode = e.button === 0 ? 0 : e.button === 2 ? 1 : undefined;
+  if (!playing || !loaded || contextLost || mode === undefined ||
+      (document.pointerLockElement !== canvas && !(mode === 1 && e.target === canvas))) return;
+  e.preventDefault();
+  editMouse.add(mode);
+  syncEdit(mode);
+});
+document.addEventListener("mouseup", (e) => {
+  const mode = e.button === 0 ? 0 : e.button === 2 ? 1 : undefined;
+  if (editMouse.delete(mode)) syncEdit(mode);
+});
 canvas.addEventListener("pointerdown", (e) => {
   if (!playing || !loaded) return;
   canvas.focus({ preventScroll: true });
-  if (e.pointerType !== "touch" &&
-      (document.pointerLockElement === canvas || e.button === 2)) {
-    if (e.button === 0 || e.button === 2) edit(e.button === 2);
-    return;
-  }
-  if (e.pointerType !== "touch" && e.button !== 0) return;
+  const tapBreak = e.pointerType !== "touch";
+  if (tapBreak && (document.pointerLockElement === canvas || e.button !== 0)) return;
   if (pointerLook || dpad.has(e.pointerId)) return;
-  pointerLook = { id: e.pointerId, x: e.clientX, y: e.clientY };
+  pointerLook = { id: e.pointerId, x: e.clientX, y: e.clientY, tapBreak };
   canvas.setPointerCapture(e.pointerId);
 });
 canvas.addEventListener("pointermove", (e) => {
   if (pointerLook?.id !== e.pointerId || document.pointerLockElement === canvas) return;
-  look(e.clientX - pointerLook.x, e.clientY - pointerLook.y);
+  const dx = e.clientX - pointerLook.x, dy = e.clientY - pointerLook.y;
+  if (pointerLook.tapBreak && Math.abs(dx) + Math.abs(dy) < 4) return;
+  pointerLook.tapBreak = false;
+  look(dx, dy);
   if (pointerLook) { pointerLook.x = e.clientX; pointerLook.y = e.clientY; }
 });
 for (const event of ["pointerup","pointercancel","lostpointercapture"]) {
   canvas.addEventListener(event, (e) => {
-    if (pointerLook?.id === e.pointerId) pointerLook = null;
+    if (pointerLook?.id !== e.pointerId) return;
+    const lookInput = pointerLook;
+    pointerLook = null;
+    if (event !== "pointerup" || !lookInput.tapBreak || document.pointerLockElement === canvas ||
+        Math.abs(e.clientX - lookInput.x) + Math.abs(e.clientY - lookInput.y) >= 4) return;
+    const bounds = canvas.getBoundingClientRect();
+    if (e.clientX >= bounds.left && e.clientX < bounds.right &&
+        e.clientY >= bounds.top && e.clientY < bounds.bottom) sendEdit(0, 2);
   });
 }
 for (const btn of document.querySelectorAll("[data-move]")) {
-  const action = keyActions.get(btn.dataset.move);
+  const code = btn.dataset.move;
   btn.addEventListener("click", (e) => {
-    if (e.detail === 0) pulseControl(action);
+    if (e.detail !== 0) return;
+    if (editKeys.has(code)) sendEdit(editKeys.get(code), 2);
+    else pulseControl(keyActions.get(code));
   });
   btn.addEventListener("pointerdown", (e) => {
     if (!playing || e.pointerId === pointerLook?.id || dpad.has(e.pointerId)) return;
     e.preventDefault();
     dpad.set(e.pointerId, btn);
     btn.setPointerCapture(e.pointerId);
-    syncAction(action);
+    syncInput(code);
   });
   for (const event of ["pointerup","pointercancel","lostpointercapture"]) {
     btn.addEventListener(event, (e) => {
       if (dpad.get(e.pointerId) !== btn) return;
       dpad.delete(e.pointerId);
-      syncAction(action);
+      syncInput(code);
     });
   }
 }
@@ -566,8 +637,6 @@ document.addEventListener("wheel", (e) => {
   selectMaterial(Math.sign(e.deltaY), true);
   e.preventDefault();
 }, { passive: false });
-get("remove").addEventListener("click", () => edit(false));
-get("place").addEventListener("click", () => edit(true));
 canvas.addEventListener("webglcontextlost", (e) => {
   e.preventDefault();
   loseGraphics();

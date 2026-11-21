@@ -6,8 +6,8 @@
 <meta name="theme-color" content="#152a24">
 <meta name="description" content="Explore e transforme uma pequena ilha de blocos, gerada em Wosy e renderizada no navegador.">
 <title>Ilha de Bolso • Wosy</title>
-<link rel="stylesheet" href="./style.css?v=creative-3">
-<script type="module" src="./main.js?v=creative-3"></script>
+<link rel="stylesheet" href="./style.css?v=creative-4">
+<script type="module" src="./main.js?v=creative-4"></script>
 </head>
 <body>
 <main class="shell" id="game">
@@ -27,8 +27,21 @@
   <section class="intro" id="intro" aria-labelledby="title">
     <span class="eyebrow"><i></i> SANDBOX EM WEBASSEMBLY</span>
     <h1 id="title">Ilha<br>de Bolso<span>.</span></h1>
-    <p>Um pedaço de mundo que cabe no navegador. Explore o terreno e mude tudo, um bloco por vez.</p>
-    <button class="primary" id="enter" type="button" disabled><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m7 4 9 6-9 6V4Z" fill="currentColor"/></svg>Explorar a ilha</button>
+    <p>Explore, construa e voe por um mundo de blocos.</p>
+    <button class="primary" id="enter" type="button" disabled><svg viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="m7 4 9 6-9 6V4Z" fill="currentColor"/></svg>Jogar</button>
+    <div class="entry-guide" aria-label="Controles">
+      <p class="entry-keys"><kbd>WASD</kbd> mover <kbd>Espaço</kbd> pular <kbd>F</kbd> voar<br><kbd>Q</kbd> ou esquerdo: quebrar · <kbd>E</kbd> ou direito: colocar<br><kbd>1–6</kbd> escolher bloco</p>
+      <p class="entry-touch">Arraste para olhar e use as setas para mover. Segure − para quebrar ou + para colocar.</p>
+    </div>
+    <details class="world-options">
+      <summary>Opções do mundo</summary>
+      <form class="seed" id="seed-form">
+        <label for="seed">SEMENTE</label>
+        <input id="seed" name="seed" type="text" inputmode="numeric" autocomplete="off">
+        <button type="submit" id="apply-seed" disabled>Gerar</button>
+        <button type="button" class="random" id="random-seed" title="Nova semente aleatória" aria-label="Nova semente aleatória" disabled><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 7h3c4 0 6 10 10 10h5m-3-3 3 3-3 3M3 17h3c1.3 0 2.4-1 3.4-2.5M14 8.9C14.7 7.7 15.3 7 16 7h5m-3-3 3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      </form>
+    </details>
     <p class="error" id="error" role="alert" hidden></p>
   </section>
   <span class="reticle" aria-hidden="true"></span>
@@ -55,25 +68,9 @@
       <button id="jump-touch" data-move="Space" type="button">Pular</button>
       <button id="descend-touch" data-move="KeyC" type="button" hidden>Descer</button>
       <button id="flight-touch" type="button" aria-pressed="false">Voar</button>
-      <div class="touch-edit" role="group" aria-label="Editar blocos"><button id="remove" type="button" aria-label="Remover bloco">−</button><button id="place" type="button" aria-label="Colocar bloco selecionado">+</button></div>
+      <div class="touch-edit" role="group" aria-label="Editar blocos"><button id="remove" data-move="KeyQ" type="button" aria-label="Remover bloco">−</button><button id="place" data-move="KeyE" type="button" aria-label="Colocar bloco selecionado">+</button></div>
     </div>
   </section>
-  <footer class="dock">
-    <div class="desktop-guide" aria-label="Controles por teclado">
-      <span title="WASD ou setas"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> mover</span>
-      <span title="Botão esquerdo remove e botão direito coloca"><kbd>mouse</kbd> olhar</span>
-      <span><kbd>Espaço</kbd> pular <kbd>F</kbd> voo</span>
-      <span><kbd>Q</kbd><kbd>E</kbd> editar</span>
-      <span><kbd>Esc</kbd> liberar</span>
-    </div>
-    <span class="mobile-guide">Arraste para olhar. Escolha uma semente e explore.</span>
-    <form class="seed" id="seed-form">
-      <label for="seed">SEMENTE</label>
-      <input id="seed" name="seed" type="text" inputmode="numeric" autocomplete="off">
-      <button type="submit" id="apply-seed" disabled>Gerar</button>
-      <button type="button" class="random" id="random-seed" title="Nova semente aleatória" aria-label="Nova semente aleatória" disabled><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 7h3c4 0 6 10 10 10h5m-3-3 3 3-3 3M3 17h3c1.3 0 2.4-1 3.4-2.5M14 8.9C14.7 7.7 15.3 7 16 7h5m-3-3 3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-    </form>
-  </footer>
 </main>
 </body>
 </html>
