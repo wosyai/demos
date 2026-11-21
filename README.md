@@ -2,20 +2,30 @@
 
 Playable examples built with the [Wosy language](https://github.com/wosyai/lang).
 
+## Last Ferry
+
+Pick up a tape at a coastal drive-in and reach the last ferry before it leaves.
+Drive a longer boulevard around traffic, take an alley, or get out and cut
+through on foot. Try the district without a time limit in **Free roam**.
+The town and its moving objects are full 3D; Wosy runs the vehicle, traffic,
+pedestrians, collisions, and mission. See the [build guide](ferry/BUILD.md).
+
 ## Flying Low
 
-A third-person flight game with two short fictional courses inspired by early aviation. In **Barnstorm Run**, the Wright Flyer banks around farm buildings and lines up for a landing. In **Seine Sprint**, Santos-Dumont’s plane races along the Paris riverfront. Choose a faster or more forgiving line, finish on the landing strip, and chase a ghost of your best flight.
+A third-person game with two early-aviation missions. In **Pasture Landing**, bring the Wright Flyer down gently and stop before the short field ends. In **Paris Air Mail**, take the low cyan approach over the bridge or the wider amber detour, release the pouch over its target, then land. Fly again against a ghost of your best completed mission.
 
-The game runs in English in a WebGL 2 browser on desktop or mobile. A Wosy WebAssembly engine owns flight dynamics, courses, the chase camera, scoring, and the replay. The browser handles input, drawing to the screen, and saving replay data on the device.
+Flying Low runs in English on desktop and mobile in a WebGL 2 browser. Wosy owns flight dynamics, the chase camera, mission geometry and outcome, scoring, and replay. The browser handles input, drawing, and storing replays on the device.
 
-See the [Flying Low build guide](flight/BUILD.md). The complete route and replay tests run with `node tools/verify-flight-wasm.mjs`.
+See the [build guide](flight/BUILD.md). Verify both missions and replay behavior with `node tools/verify-flight-wasm.mjs`.
 
 ## Pocket Island
 
-Start on foot in a seeded voxel landscape or switch to creative flight. Jump, break blocks, and build with six materials and original pixel textures. Terrain, texture pixels and face UVs, collision, movement, targeting, and edit timing run in Wosy compiled to WebAssembly. The browser host handles input and submits the mesh to WebGL 2, without a 3D framework.
+Explore a seeded island in **Creative**, or carry a flame to the lighthouse in **Beacon Run**. Take the longer dry ridge, build across the channel, or risk a shortcut through the tidal cut. Waves affect buoyancy and drag, and the tide can submerge the flame. Your creative terrain is restored when you leave the mission.
 
-- Desktop: WASD or arrows to move, Space to jump, and F to toggle flight. In flight, Space and C rise and descend. Select with 1–6 or the wheel, and use Q/E to remove/place. With mouse capture, left/right click also break/place; hold either action to repeat. Drag to look when capture is unavailable.
-- Touch: drag the left joystick to move and the world on the right to look. Use the larger jump, flight, and editing buttons with your other thumb. Pick a building material from the hotbar. To set a seed manually, pause and open World options.
+Wosy owns terrain, texture pixels, collisions, water geometry and swimming, camera and editable targets, and all mission rules. The browser only handles input and submits the meshes to WebGL 2.
+
+- Desktop: WASD or arrows to move, Space to jump or swim up, V to switch perspective, and F to toggle creative flight. In flight, Space and C rise and descend. Select with 1–6 or the wheel, and use Q/E to remove/place. With mouse capture, left/right click also break/place; hold either action to repeat. Drag to look when capture is unavailable.
+- Touch: drag the left joystick to move and the world on the right to look. Use the jump, view, and editing buttons with your other thumb. Flight is available in Creative. Pick a building material from the hotbar. To set a seed manually, pause and open World options.
 
 This is an experimental demo, not a claim that all game logic is statically verified.
 

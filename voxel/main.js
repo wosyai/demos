@@ -2,6 +2,10 @@ const get = (id) => document.getElementById(id);
 const shell = get("game");
 const canvas = get("scene");
 const enter = get("enter");
+const missionStart = get("mission-start"), missionRetry = get("mission-retry");
+const missionHud = get("mission-hud"), missionResult = get("mission-result");
+const missionReadouts = get("mission-readouts"), flameMeter = get("flame");
+const tideLevel = get("tide-level"), bridgeStock = get("bridge-stock");
 const seedInput = get("seed");
 const applySeed = get("apply-seed");
 const randomSeed = get("random-seed");
@@ -14,6 +18,7 @@ const movementState = get("player-state");
 const jumpTouch = get("jump-touch");
 const descendTouch = get("descend-touch");
 const flightTouch = get("flight-touch");
+const viewButtons = [get("camera-view"), get("view-touch")];
 const moveStick = get("move-stick");
 const materials = Array.from(document.querySelectorAll("[data-material]"));
 
@@ -34,13 +39,16 @@ const downEdits = new Set();
 const atlas = { data: null, width: 0, height: 0 };
 const layers = {
   mesh: { data: null, count: 0, version: 0 },
-  water: { data: null, count: 0, version: 0 },
+  water: { pointer: 0, count: 0, version: 0 },
   outline: { data: null, count: 0, version: 0 },
+  player: { data: null, count: 0, version: 0 },
 };
 
 let engine, memory, gpu, playing = false, loaded = false, failed = false, contextLost = false;
 let pointerLook = null, stick = null, axes = 0, toastTimer = 0, previous = 0, raf = 0;
 let displayedMaterial, displayedFlight, displayedGrounded;
+let aimX = 0, aimY = 0;
+let beaconState = 0, shownFlame = -1, shownTide = -1, shownWood = -1;
 
 const vertex = `#version 300 es
 layout(location=0) in vec3 position;
@@ -59,24 +67,29 @@ in vec3 rgb;
 in vec3 point;
 uniform vec3 eye;
 uniform vec3 fog;
-uniform float time;
 uniform int pass;
 uniform sampler2D terrainAtlas;
 out vec4 pixel;
 void main() {
   vec3 col=rgb;
-  if (pass==1) {
-    vec2 p=point.xz;
-    float wave=sin(0.34*p.x+0.23*p.y+1.05*time);
-    float crest=sin(0.61*p.x-0.37*p.y-0.76*time+0.48*wave);
-    float strip=smoothstep(0.85,1.0,crest)*0.08;
-    float ray=smoothstep(0.38,0.93,normalize(point-eye).z)*0.14;
-    col=vec3(0.19,0.49,0.49)+vec3(0.03,0.11,0.10)*wave+vec3(0.86,0.95,0.68)*(strip+ray);
-  } else if (pass==0) {
-    col=texture(terrainAtlas,rgb.xy).rgb*rgb.z;
-  }
+  float alpha=1.0;
   float haze=clamp((distance(eye,point)-23.0)/110.0,0.0,1.0);
-  pixel=vec4(mix(col,fog,pow(haze,1.08)*0.94),1.0);
+  if (pass==1) {
+    vec3 normal=normalize(cross(dFdx(point),dFdy(point)));
+    vec3 view=normalize(eye-point);
+    float fresnel=pow(1.0-clamp(abs(dot(normal,view)),0.0,1.0),4.0);
+    float ripple=sign(normal.y)*dot(normal.xz,vec2(-0.72,0.69));
+    vec3 water=vec3(0.07,0.38,0.43)+vec3(0.15,0.28,0.26)*ripple;
+    col=mix(water,fog,0.72*fresnel);
+    alpha=mix(0.55+0.37*fresnel,1.0,haze);
+  } else if (pass==0) {
+    if (rgb.z > 1.0) {
+      col = rgb.z > 1.5 ? vec3(1.0,0.83,0.30) : vec3(0.88,0.39,0.09);
+    } else {
+      col=texture(terrainAtlas,rgb.xy).rgb*rgb.z;
+    }
+  }
+  pixel=vec4(mix(col,fog,pow(haze,1.08)*0.94),alpha);
 }`;
 const skyVertex = `#version 300 es
 out vec2 uv;
@@ -86,22 +99,31 @@ void main() {
   gl_Position=vec4(p*2.0-1.0,0.0,1.0);
 }`;
 const skyFragment = `#version 300 es
-precision mediump float;
+precision highp float;
 in vec2 uv;
-uniform float aspect;
-uniform float pitch;
+uniform mat4 skyProjection;
 uniform vec3 fog;
 out vec4 pixel;
+vec3 skyRay(mat4 matrix, vec2 screen) {
+  vec3 right = vec3(matrix[0].x, matrix[1].x, matrix[2].x);
+  vec3 up = vec3(matrix[0].y, matrix[1].y, matrix[2].y);
+  vec3 forward = vec3(matrix[0].w, matrix[1].w, matrix[2].w);
+  float r = dot(right,right);
+  float u = dot(up,up);
+  if (r == 0.0 || u == 0.0) return normalize(vec3(screen, -1.9));
+  return normalize(forward + screen.x*right/r + screen.y*up/u);
+}
 void main() {
-  float horizon=0.44-pitch*0.96;
-  float height=clamp((uv.y-horizon)/max(0.2,1.0-horizon),0.0,1.0);
-  vec3 col=mix(fog,vec3(0.33,0.60,0.69),pow(height,0.62));
-  vec2 pt=(uv-vec2(0.79,0.74-pitch*0.50))*vec2(aspect,1.0);
-  float sun=length(pt);
-  col=mix(col,vec3(0.98,0.89,0.66),0.39*exp(-sun*5.9));
-  col=mix(col,vec3(1.0,0.94,0.75),1.0-smoothstep(0.039,0.043,sun));
-  pixel=vec4(col,1.0);
-}`;
+  vec3 ray = skyRay(skyProjection, uv*2.0-1.0);
+  float height = max(0.0,ray.y);
+  vec3 col = mix(fog,vec3(.33,.60,.69),pow(height,.62));
+  vec3 sunDirection = normalize(vec3(-.83,.49,-.27));
+  float d = length(ray-sunDirection);
+  col = mix(col,vec3(.98,.89,.66),.31*exp(-6.0*d));
+  col = mix(col,vec3(1.0,.95,.81),1.0-smoothstep(.019,.022,d));
+  pixel = vec4(col,1.0);
+}
+`;
 
 function makeProgram(vs, fs) {
   function shader(kind, src) {
@@ -153,10 +175,11 @@ function newGraphics() {
   gpu = {
     world, sky, terrainAtlas, skyVao: gl.createVertexArray(),
     mesh: geometry(layers.mesh.data, gl.DYNAMIC_DRAW),
-    water: geometry(layers.water.data, gl.STATIC_DRAW),
+    water: waterGeometry(),
     outline: geometry(layers.outline.data, gl.DYNAMIC_DRAW),
-    main: locations(world, ["projection", "eye", "fog", "time", "pass", "terrainAtlas"]),
-    background: locations(sky, ["aspect", "pitch", "fog"]),
+    player: geometry(layers.player.data, gl.DYNAMIC_DRAW),
+    main: locations(world, ["projection", "eye", "fog", "pass", "terrainAtlas"]),
+    background: locations(sky, ["skyProjection", "fog"]),
   };
 }
 
@@ -196,8 +219,31 @@ function bindLayer(name, stride) {
     layer.version++;
     if (count === 0 || !gpu || contextLost) return;
     gl.bindBuffer(gl.ARRAY_BUFFER, gpu[name].buffer);
-    gl.bufferData(gl.ARRAY_BUFFER, layer.data, name === "water" ? gl.STATIC_DRAW : gl.DYNAMIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, layer.data, gl.DYNAMIC_DRAW);
   };
+}
+
+function waterGeometry() {
+  const { pointer, count } = layers.water;
+  return { ...geometry(count ? memoryFloats(pointer, count * 6) : null, gl.DYNAMIC_DRAW), count };
+}
+
+function bindWater(pointer, count) {
+  if (!Number.isInteger(count) || count < 0 || count % 3 !== 0) {
+    throw new Error("The engine returned invalid water geometry.");
+  }
+  const data = count ? memoryFloats(pointer, count * 6) : null;
+  layers.water.pointer = pointer;
+  layers.water.count = count;
+  layers.water.version++;
+  if (!data || !gpu || contextLost) return;
+  gl.bindBuffer(gl.ARRAY_BUFFER, gpu.water.buffer);
+  if (gpu.water.count === count) {
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, data);
+  } else {
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+    gpu.water.count = count;
+  }
 }
 
 function setStatus(text, kind = "") {
@@ -207,7 +253,7 @@ function setStatus(text, kind = "") {
 
 function refreshAvailability() {
   const ready = !failed && loaded && !contextLost && Boolean(gpu);
-  enter.disabled = applySeed.disabled = randomSeed.disabled = !ready;
+  enter.disabled = missionStart.disabled = missionRetry.disabled = applySeed.disabled = randomSeed.disabled = !ready;
   if (failed) return;
   if (contextLost) setStatus("Restoring graphics");
   else if (!ready) setStatus("Loading engine");
@@ -248,7 +294,7 @@ function fail(message, detail) {
   loaded = false;
   stopPlaying();
   if (document.pointerLockElement === canvas) document.exitPointerLock();
-  enter.disabled = applySeed.disabled = randomSeed.disabled = true;
+  enter.disabled = missionStart.disabled = missionRetry.disabled = applySeed.disabled = randomSeed.disabled = true;
   setStatus("Engine unavailable", "failed");
   error.textContent = message;
   error.hidden = false;
@@ -278,15 +324,17 @@ async function boot() {
   }
   try {
     prepareGraphics();
-    const response = await fetch(new URL("./engine.wasm?v=creative-5", import.meta.url));
+    const response = await fetch(new URL("./engine.wasm?v=beacon-1", import.meta.url));
     if (!response.ok) throw new Error(`Engine not found (HTTP ${response.status}).`);
     const bytes = await response.arrayBuffer();
     const api = {
       showcase: {
         atlas: bindAtlas,
         mesh: bindLayer("mesh", 3),
-        water: bindLayer("water", 3),
+        water: bindWater,
         outline: bindLayer("outline", 2),
+        player: bindLayer("player", 3),
+        aim: positionAim,
         frame: present,
       },
       wasi_snapshot_preview1: {
@@ -299,7 +347,7 @@ async function boot() {
     memory = engine.memory;
     const required = [
       "_start", "generate", "control", "pulse_control", "clear_controls", "look", "tick", "edit_control",
-      "select_material", "cycle_material",
+      "select_material", "cycle_material", "cycle_camera", "start_beacon", "leave_beacon",
       "seed_begin", "seed_code_unit", "seed_end", "default_seed",
     ];
     if (!(memory instanceof WebAssembly.Memory) || required.some((name) => typeof engine[name] !== "function")) {
@@ -335,9 +383,42 @@ function renderControls(flight, grounded, material) {
   flightTouch.setAttribute("aria-pressed", String(flight));
 }
 
+function renderMission(state, flame, tide, stock) {
+  if (state !== beaconState) {
+    beaconState = state;
+    shell.classList.toggle("beacon", state !== 0);
+    shell.classList.toggle("beacon-finished", state >= 2);
+    missionHud.hidden = state === 0;
+    missionReadouts.hidden = state !== 1;
+    missionResult.hidden = missionRetry.hidden = state < 2;
+    missionStart.textContent = state === 1 ? "Resume Beacon Run" : "Beacon Run";
+    if (state >= 2) {
+      clearInputs();
+      missionResult.textContent = state === 2 ? "Beacon lit!" : "The sea put out the flame.";
+      if (document.pointerLockElement === canvas) document.exitPointerLock();
+    }
+  }
+  if (state !== 1) return;
+  const flamePercent = Math.round(flame * 100);
+  if (shownFlame !== flamePercent) {
+    shownFlame = flamePercent;
+    flameMeter.value = flamePercent / 100;
+  }
+  const stage = tide <= 0 ? 0 : tide >= 1 ? 2 : 1;
+  if (shownTide !== stage) {
+    shownTide = stage;
+    tideLevel.textContent = ["Low tide", "Rising tide", "High tide"][stage];
+  }
+  if (shownWood !== stock) {
+    shownWood = stock;
+    bridgeStock.textContent = `Wood: ${stock}`;
+  }
+}
+
 function present(pointer, hit) {
   if (!gpu || contextLost || document.hidden) return;
-  const data = memoryFloats(pointer, 25);
+  const data = memoryFloats(pointer, 29);
+  renderMission(data[25], data[26], data[27], data[28]);
   if (playing) renderControls(data[22] === 1, data[23] === 1, data[24]);
   reticle.classList.toggle("target", hit >= 0);
 
@@ -345,23 +426,17 @@ function present(pointer, hit) {
   gl.disable(gl.CULL_FACE);
   gl.clear(gl.DEPTH_BUFFER_BIT);
   gl.useProgram(gpu.sky);
-  gl.uniform1f(gpu.background.aspect, data[20]);
-  gl.uniform1f(gpu.background.pitch, data[19]);
+  const projection = data.subarray(0, 16);
+  gl.uniformMatrix4fv(gpu.background.skyProjection, false, projection);
   gl.uniform3fv(gpu.background.fog, fogColor);
   gl.bindVertexArray(gpu.skyVao);
   gl.drawArrays(gl.TRIANGLES,0,3);
 
   gl.enable(gl.DEPTH_TEST);
   gl.useProgram(gpu.world);
-  gl.uniformMatrix4fv(gpu.main.projection, false, data.subarray(0, 16));
+  gl.uniformMatrix4fv(gpu.main.projection, false, projection);
   gl.uniform3f(gpu.main.eye, data[16], data[17], data[18]);
   gl.uniform3fv(gpu.main.fog, fogColor);
-  gl.uniform1f(gpu.main.time, data[21]);
-  if (layers.water.count > 0) {
-    gl.uniform1i(gpu.main.pass, 1);
-    gl.bindVertexArray(gpu.water.vao);
-    gl.drawArrays(gl.TRIANGLES, 0, layers.water.count);
-  }
   if (layers.mesh.count > 0) {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, gpu.terrainAtlas);
@@ -370,10 +445,23 @@ function present(pointer, hit) {
     gl.bindVertexArray(gpu.mesh.vao);
     gl.drawArrays(gl.TRIANGLES, 0, layers.mesh.count);
   }
+  if (layers.player.count > 0) {
+    gl.uniform1i(gpu.main.pass, 2);
+    gl.bindVertexArray(gpu.player.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, layers.player.count);
+  }
   if (hit >= 0 && layers.outline.count > 0) {
     gl.uniform1i(gpu.main.pass, 2);
     gl.bindVertexArray(gpu.outline.vao);
     gl.drawArrays(gl.LINES, 0, layers.outline.count);
+  }
+  if (layers.water.count > 0) {
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.uniform1i(gpu.main.pass, 1);
+    gl.bindVertexArray(gpu.water.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, layers.water.count);
+    gl.disable(gl.BLEND);
   }
 }
 
@@ -497,6 +585,7 @@ function sendEdit(mode, state) {
     if (result === -1) toast("Aim at a block.");
     if (result === -2) toast("You reached the island boundary.");
     if (result === -3) toast("That block would be in your way.");
+    if (result === -4 && beaconState === 1) toast("Dig the sand gate or build across the marked channel.");
   } catch (e) { fail("The engine could not update the island.", e); }
 }
 
@@ -506,10 +595,33 @@ function requestLook() {
   catch { toast("Drag the scene to look around."); }
 }
 
-function startPlaying() {
+function positionAim(x, y) {
+  if (aimX === x && aimY === y) return;
+  aimX = x;
+  aimY = y;
+  reticle.style.setProperty("--aim-x", `${(1 + x) * 50}%`);
+  reticle.style.setProperty("--aim-y", `${(1 - y) * 50}%`);
+}
+
+function cycleCamera() {
+  if (!loaded || !playing || contextLost) return;
+  try {
+    const third = engine.cycle_camera() === 1;
+    for (const button of viewButtons) {
+      button.textContent = third ? "View: 3rd" : "View: 1st";
+      button.setAttribute("aria-pressed", String(third));
+    }
+  } catch (e) { fail("The engine could not change the view.", e); }
+}
+
+function startPlaying(presentTransition = false) {
   if (!loaded || contextLost) return;
   playing = true;
   shell.classList.add("playing");
+  if (presentTransition) {
+    const aspect = Math.max(1, canvas.clientWidth) / Math.max(1, canvas.clientHeight);
+    engine.tick(0, aspect, 1);
+  }
   canvas.focus({ preventScroll: true });
   requestLook();
 }
@@ -537,7 +649,34 @@ function changeSeed(seed) {
   catch (e) { fail("The engine could not generate this island.", e); }
 }
 
-enter.addEventListener("click", startPlaying);
+function playSandbox() {
+  if (!loaded || contextLost) return;
+  try {
+    const switched = beaconState !== 0;
+    if (switched) {
+      clearInputs();
+      engine.leave_beacon();
+    }
+    startPlaying(switched);
+  } catch (e) { fail("The engine could not open the sandbox.", e); }
+}
+
+function playBeacon(restart) {
+  if (!loaded || contextLost) return;
+  try {
+    const restarted = restart || beaconState !== 1;
+    if (restarted) {
+      clearInputs();
+      engine.start_beacon();
+    }
+    startPlaying(restarted);
+  } catch (e) { fail("The engine could not start Beacon Run.", e); }
+}
+
+enter.addEventListener("click", playSandbox);
+missionStart.addEventListener("click", () => playBeacon(false));
+missionRetry.addEventListener("click", () => playBeacon(true));
+for (const button of viewButtons) button.addEventListener("click", cycleCamera);
 get("pause").addEventListener("click", () => {
   if (document.pointerLockElement === canvas) document.exitPointerLock();
   stopPlaying();
@@ -569,6 +708,10 @@ document.addEventListener("keydown", (e) => {
     }
   }
   if (e.code === "Escape") stopPlaying();
+  if (e.code === "KeyV" && !e.altKey && !e.ctrlKey && !e.metaKey) {
+    e.preventDefault();
+    if (!e.repeat) cycleCamera();
+  }
   const slot = /^(?:Digit|Numpad)([1-6])$/.exec(e.code);
   if (slot) {
     e.preventDefault();
@@ -587,10 +730,10 @@ document.addEventListener("visibilitychange", () => {
 });
 document.addEventListener("pointerlockchange", () => {
   if (document.pointerLockElement === canvas) {
-    if (!playing) document.exitPointerLock();
+    if (!playing || beaconState >= 2) document.exitPointerLock();
     return;
   }
-  if (!playing) return;
+  if (!playing || beaconState >= 2) return;
   const fullscreenButton = document.activeElement === get("fullscreen");
   if (fullscreenButton) clearInputs();
   else stopPlaying();

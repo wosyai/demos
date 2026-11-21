@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#102726">
+<meta name="description" content="Last Ferry, a playable third-person seaside game made in Wosy.">
+<title>Last Ferry | Wosy Arcade</title>
+<link rel="stylesheet" href="./style.css?v=ferry-1">
+</head>
+<body>
+<main class="stage" aria-label="Last Ferry">
+  <canvas id="view" aria-label="Third-person game view"></canvas>
+  <header class="deck" aria-label="Game information">
+    <div class="badge"><i aria-hidden="true"></i><span>WOSY / ARCADE</span></div>
+    <div class="trip"><strong id="objective">Find the ferry</strong><span id="status">Waiting to depart</span></div>
+    <div class="departure"><span>TIME LEFT</span><strong id="clock">--:--</strong></div>
+    <button id="pause" type="button" class="quiet" aria-label="Pause game" disabled>Pause</button>
+  </header>
+  <p id="hint" class="hint" hidden></p>
+  <div id="touch" class="touch" hidden>
+    <div id="wheel" class="wheel" aria-label="Drag to steer or move"><div class="ring"><span id="thumb"></span></div></div>
+    <div class="pedals">
+      <button id="power" type="button">Gas</button>
+      <button id="brake" type="button">Brake</button>
+      <button id="action" type="button">Action</button>
+    </div>
+  </div>
+  <section id="panel" class="lobby" data-intro="true" aria-labelledby="title">
+    <div class="panel-inner">
+      <p class="eyebrow"><i aria-hidden="true"></i> AFTER HOURS · COASTAL TERMINAL</p>
+      <h1 id="title">LAST<br>FERRY<span>.</span></h1>
+      <p id="summary">The last sailing is about to leave. Make it to the ferry before the clock runs out.</p>
+      <div class="launch"><button id="start" type="button" disabled>Loading…</button><button id="roam" type="button" disabled>Free roam</button></div>
+      <p class="keys" id="guide">WASD / arrows to steer and move · Space to brake or sprint · E to act · Esc to pause</p>
+      <a href="../">← Wosy Arcade</a>
+    </div>
+  </section>
+  <span id="announce" class="sr-only" aria-live="polite"></span>
+</main>
+<script type="module" src="./host.mjs?v=ferry-1"></script>
+</body>
+</html>

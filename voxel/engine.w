@@ -5,6 +5,8 @@ host = extern wasm "showcase" {
 	unsafe unit(*?u8, i32) frame;
 	unsafe unit(*?u8, i32) outline;
 	unsafe unit(*?u8, i32) water;
+	unsafe unit(*?u8, i32) player;
+	unit(f32, f32) aim;
 };
 
 f32[6] blank_vertex = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
@@ -32,6 +34,7 @@ f32[6][24][24][24] blank_mesh_layer = [
 	blank_mesh_row, blank_mesh_row, blank_mesh_row, blank_mesh_row, blank_mesh_row, blank_mesh_row, blank_mesh_row, blank_mesh_row, blank_mesh_row, blank_mesh_row, blank_mesh_row, blank_mesh_row,
 	blank_mesh_row, blank_mesh_row, blank_mesh_row, blank_mesh_row, blank_mesh_row, blank_mesh_row, blank_mesh_row, blank_mesh_row, blank_mesh_row, blank_mesh_row, blank_mesh_row, blank_mesh_row
 ];
+f32[6][24][24] avatar_vertices = blank_mesh_row;
 f32[6][24][24][24][12] vertices = [
 	blank_mesh_layer, blank_mesh_layer, blank_mesh_layer, blank_mesh_layer, blank_mesh_layer, blank_mesh_layer, blank_mesh_layer, blank_mesh_layer, blank_mesh_layer, blank_mesh_layer, blank_mesh_layer, blank_mesh_layer
 ];
@@ -55,9 +58,10 @@ u8[4][16][8][16] block_atlas = [
 	blank_atlas_line, blank_atlas_line, blank_atlas_line, blank_atlas_line, blank_atlas_line, blank_atlas_line, blank_atlas_line, blank_atlas_line
 ];
 bool atlas_ready = false;
-f32[25] frame_values = [
+f32[29] frame_values = [
 	0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-	0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+	0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+	0.0, 1.0, 0.0, 0.0
 ];
 i32 write_position = 0;
 i32 wire_position = 0;
@@ -80,6 +84,15 @@ bool grounded = false;
 bool ground_contact_dirty = false;
 bool jump_pending = false;
 f32 vertical_speed = 0.0;
+bool third_person = false;
+bool avatar_visible = false;
+bool aim_was_offset = false;
+i32 avatar_position = 0;
+f32 avatar_x = 0.0;
+f32 avatar_y = 0.0;
+f32 avatar_z = 0.0;
+f32 avatar_yaw = 0.0;
+f32 view_scale = 1.920982127;
 f32 player_radius = 0.30;
 f32 player_feet = 1.62;
 f32 player_head = 0.18;
@@ -90,6 +103,40 @@ f32 camera_z = 34.5;
 f32 yaw = -0.72664234;
 f32 pitch = -0.379571;
 f32 clock_seconds = 0.0;
+f32 sea_phase = 0.0;
+f32 sea_level = 2.55;
+f32 sea_low = 2.55;
+f32 tide_span = 1.85;
+f32 lamp_offset = 0.90;
+f32 lamp_limit = 3.2;
+i32 beacon_state = 0;
+i32 bridge_blocks = 7;
+i32 sandbox_material = 2;
+f32 beacon_elapsed = 0.0;
+f32 lamp_wet = 0.0;
+f32 tide_progress = 0.0;
+u8[24][24][16] sandbox_cells = world;
+f32 swell = 0.18;
+f32 chop = 0.10;
+bool sea_mesh_ready = false;
+f32[19] blank_sea_samples = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+f32[19][19] sea_samples = [
+	blank_sea_samples, blank_sea_samples, blank_sea_samples, blank_sea_samples, blank_sea_samples,
+	blank_sea_samples, blank_sea_samples, blank_sea_samples, blank_sea_samples, blank_sea_samples,
+	blank_sea_samples, blank_sea_samples, blank_sea_samples, blank_sea_samples, blank_sea_samples,
+	blank_sea_samples, blank_sea_samples, blank_sea_samples, blank_sea_samples
+];
+f32[6][6] blank_sea_quad = [blank_vertex, blank_vertex, blank_vertex, blank_vertex, blank_vertex, blank_vertex];
+f32[6][6][18] blank_sea_row = [
+	blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad,
+	blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad,
+	blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad
+];
+f32[6][6][18][18] sea_vertices = [
+	blank_sea_row, blank_sea_row, blank_sea_row, blank_sea_row, blank_sea_row, blank_sea_row,
+	blank_sea_row, blank_sea_row, blank_sea_row, blank_sea_row, blank_sea_row, blank_sea_row,
+	blank_sea_row, blank_sea_row, blank_sea_row, blank_sea_row, blank_sea_row, blank_sea_row
+];
 
 u64(i32) index_of = fn(value) { core.int_extend<u64>(value) };
 
@@ -145,6 +192,13 @@ i32(i32, i32, i32) height_at = fn(x, z, seed) {
 	}
 };
 
+i32(i32, i32) min_i = fn(a, b) { if (a < b) { a } else { b } };
+
+i32(i32, i32, i32) coastal_height = fn(x, z, seed) {
+	i32 d = min_i(min_i(x, 23 - x), min_i(z, 23 - z));
+	if (d < 3) { d } else { min_i(height_at(x, z, seed), d) }
+};
+
 bool(i32, i32, i32, i32) has_tree = fn(x, z, seed, height) {
 	if ((x == 8 && z == 8) || (x == 5 && z == 11)) { true } else {
 		if (x < 2 || x > 21 || z < 2 || z > 21 || height < 5 || (x >= 5 && x <= 16 && z >= 9 && z <= 19)) { false } else {
@@ -176,8 +230,8 @@ unit(i32, i32, i32, i32, bool, bool) fill_column = fn(x, y, z, height, tree, san
 
 unit(i32, i32, i32) fill_row = fn(x, z, seed) {
 	if (x >= 24) { } else {
-		i32 height = height_at(x, z, seed);
-		bool sandy = height <= 5 && terrain_pattern(x / 3, z / 3, seed, 204) % 4 == 0;
+		i32 height = coastal_height(x, z, seed);
+		bool sandy = height <= 2 || (height <= 5 && terrain_pattern(x / 3, z / 3, seed, 204) % 4 == 0);
 		fill_column(x, 0, z, height, has_tree(x, z, seed, height), sandy);
 		fill_row(x + 1, z, seed)
 	}
@@ -208,7 +262,7 @@ unit(i32, i32, i32, i32, i32, bool) crown_layer = fn(x, y, z, dz, radius, trim) 
 
 unit(i32, i32, i32) leaf_row = fn(x, z, seed) {
 	if (x >= 24) { } else {
-		i32 height = height_at(x, z, seed);
+		i32 height = coastal_height(x, z, seed);
 		if (has_tree(x, z, seed, height)) {
 			crown_layer(x, height + 3, z, -2, 2, true);
 			crown_layer(x, height + 4, z, -1, 1, false);
@@ -343,7 +397,11 @@ unit(i32, i32, i32, i32, u8) face = fn(ix, iy, iz, side, material) {
 	f32 u1 = tile * 0.125 + 0.12109375;
 	f32 v0 = 0.03125;
 	f32 v1 = 0.96875;
-	f32 light = if (side == 3) { 1.00 } else { if (side == 2) { 0.57 } else { if (side < 2) { 0.79 } else { 0.89 } } };
+	f32 light = if (material == 7) { 1.18 } else {
+		if (material == 8) { 1.85 } else {
+			if (side == 3) { 1.00 } else { if (side == 2) { 0.57 } else { if (side < 2) { 0.79 } else { 0.89 } } }
+		}
+	};
 	if (side == 0) {
 		vertex(x, y, z, u0, v0, light);
 		vertex(x, y, z + 1.0, u1, v0, light);
@@ -431,17 +489,139 @@ i32() rebuild = fn {
 	count
 };
 
-i32(i32) generate = fn(seed) {
-	i32 bounded = seed % 16381;
-	fill_terrain(0, bounded);
-	fill_leaves(0, bounded);
-	reset_camera();
+i32(i32, i32) beacon_ground = fn(x, z) {
+	i32 base = if (x >= 1 && x <= 22 && ((z >= 17 && z <= 22) || (z >= 1 && z <= 8))) { 4 } else { 0 };
+	if ((x >= 10 && x <= 13 && z == 16) || (x >= 18 && x <= 20 && z >= 15 && z <= 16)) { 4 } else {
+		if (x >= 19 && x <= 21 && z >= 13 && z <= 14) { 5 } else {
+			if (x >= 20 && x <= 22 && z >= 11 && z <= 12) { 6 } else {
+				if (x >= 19 && x <= 21 && z >= 9 && z <= 10) { 4 } else {
+					if (x >= 3 && x <= 6 && (z == 8 || z == 16)) { 3 } else {
+						if (x >= 3 && x <= 6 && z >= 9 && z <= 15) { 2 } else {
+							if (x == 11 && (z == 10 || z == 12 || z == 14)) { 3 } else {
+								if (x >= 10 && x <= 13 && z >= 2 && z <= 5) { 5 } else { base }
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+};
+
+bool(i32, i32, i32) soft_plug = fn(x, y, z) {
+	x >= 4 && x <= 5 && z == 12 && (y == 3 || y == 4)
+};
+
+bool(i32, i32, i32) bridge_slot = fn(x, y, z) {
+	x >= 10 && x <= 13 && y == 4 && z >= 9 && z <= 15
+};
+
+u8(i32, i32, i32, i32) beacon_tile = fn(x, y, z, ground) {
+	if (x >= 10 && x <= 13 && z >= 2 && z <= 4 && y >= 6 && y <= 11) {
+		if (y == 11 && x >= 11 && x <= 12 && z == 3) { 7 } else {
+			bool wall = x == 10 || x == 13 || z == 2;
+			if (y == 9 || (y == 10 && x >= 11 && x <= 12 && z == 3)) { 3 } else {
+				if (y < 9 && wall) { if (y == 7) { 4 } else { 3 } } else { 0 }
+			}
+		}
+	} else {
+		if (soft_plug(x, y, z)) { 4 } else {
+			bool cut_wall = (x == 3 || x == 6) && (z == 11 || z == 12) && (y == 3 || y == 4);
+			bool cut_top = x >= 3 && x <= 6 && (z == 11 || z == 12) && y == 5;
+			if (cut_wall || cut_top) { 3 } else {
+				if (y > ground) { 0 } else {
+					if (y == ground) {
+						if (y <= 3 || (x >= 10 && x <= 13 && z >= 2 && z <= 5)) { 4 } else {
+							if (z >= 9 && z <= 16 && x >= 18) { 3 } else { 1 }
+						}
+					} else { if (y >= ground - 2) { 2 } else { 3 } }
+				}
+			}
+		}
+	}
+};
+
+unit(i32, i32, i32, i32) beacon_column = fn(x, y, z, ground) {
+	if (y < 16) {
+		world[index_of(y)][index_of(z)][index_of(x)] = beacon_tile(x, y, z, ground);
+		beacon_column(x, y + 1, z, ground);
+	};
+};
+
+unit(i32, i32) beacon_row = fn(x, z) {
+	if (x < 24) {
+		beacon_column(x, 0, z, beacon_ground(x, z));
+		beacon_row(x + 1, z);
+	};
+};
+
+unit(i32) build_beacon_island = fn(z) {
+	if (z < 24) {
+		beacon_row(0, z);
+		build_beacon_island(z + 1);
+	};
+};
+
+i32() start_beacon = fn {
+	if (beacon_state == 0) {
+		sandbox_cells = world;
+		sandbox_material = selected_material;
+	};
+	beacon_state = 1;
+	beacon_elapsed = 0.0;
+	lamp_wet = 0.0;
+	tide_progress = 0.0;
+	bridge_blocks = 7;
+	sea_level = sea_low;
+	sea_phase = 0.0;
+	build_beacon_island(0);
+	clear_controls();
+	camera_x = 11.5;
+	camera_y = 5.0 + player_feet;
+	camera_z = 21.5;
+	yaw = 0.0;
+	pitch = -0.10;
+	orientation_dirty = true;
+	target_dirty = true;
+	selected_hit = -2;
+	grounded = true;
+	flying = false;
+	ground_contact_dirty = false;
+	vertical_speed = 0.0;
+	selected_material = 5;
 	prepare_atlas();
 	publish_water();
 	rebuild()
 };
 
-i32(i32, i32, i32, i32) edit = fn(x, y, z, material) {
+i32() leave_beacon = fn {
+	if (beacon_state == 0) { 0 } else {
+		beacon_state = 0;
+		world = sandbox_cells;
+		selected_material = sandbox_material;
+		sea_level = sea_low;
+		sea_phase = 0.0;
+		reset_camera();
+		publish_water();
+		rebuild()
+	}
+};
+
+i32(i32) generate = fn(seed) {
+	if (beacon_state != 0) { selected_material = sandbox_material; };
+	beacon_state = 0;
+	sea_level = sea_low;
+	i32 bounded = seed % 16381;
+	fill_terrain(0, bounded);
+	fill_leaves(0, bounded);
+	reset_camera();
+	prepare_atlas();
+	sea_phase = 0.0;
+	publish_water();
+	rebuild()
+};
+
+i32(i32, i32, i32, i32) write_cell = fn(x, y, z, material) {
 	if (inside(x, y, z) && material >= 0 && material < 7) {
 		u8 new_material = core.int_trunc<u8>(material);
 		u64 ix = index_of(x);
@@ -454,6 +634,10 @@ i32(i32, i32, i32, i32) edit = fn(x, y, z, material) {
 			1
 		}
 	} else { 0 }
+};
+
+i32(i32, i32, i32, i32) edit = fn(x, y, z, material) {
+	if (beacon_state == 0) { write_cell(x, y, z, material) } else { -4 }
 };
 
 i32(f32) floor_i = fn(value) {
@@ -606,11 +790,13 @@ unit() reset_camera = fn {
 };
 
 unit() toggle_flight = fn {
-	flying = !flying;
-	grounded = false;
-	ground_contact_dirty = !flying;
-	jump_pending = false;
-	vertical_speed = 0.0;
+	if (beacon_state == 0) {
+		flying = !flying;
+		grounded = false;
+		ground_contact_dirty = !flying;
+		jump_pending = false;
+		vertical_speed = 0.0;
+	};
 };
 
 unit(i32, i32) control = fn(action, down) {
@@ -730,7 +916,10 @@ unit(f32, f32, f32) move_camera = fn(dt, sy, cy) {
 		i32 axes = forward * forward + right * right + up * up;
 		f32 normal = if (axes == 3) { 0.577350269 } else { if (axes == 2) { 0.707106781 } else { 1.0 } };
 		f32 speed = if (active(64) == 1) { 8.0 } else { 4.8 };
-		f32 stride = dt * speed * normal;
+		f32 immersion = if (!flying && camera_y - player_feet < sea_level + swell + chop) {
+			clamp_f((sea_surface(camera_x, camera_z) - (camera_y - player_feet)) / (player_feet + player_head), 0.0, 1.0)
+		} else { 0.0 };
+		f32 stride = dt * speed * normal * (1.0 - 0.65 * immersion);
 		f32 f = core.sint_to_float<f32>(forward);
 		f32 r = core.sint_to_float<f32>(right);
 		f32 dx = (sy * f + cy * r) * stride;
@@ -740,8 +929,21 @@ unit(f32, f32, f32) move_camera = fn(dt, sy, cy) {
 				grounded = vertical_speed <= 0.0 && player_collides(camera_x, camera_y - 0.018, camera_z);
 				ground_contact_dirty = false;
 			};
-			if (jump_pending && grounded) { vertical_speed = 7.4; grounded = false; };
-			vertical_speed = if (grounded) { 0.0 } else { clamp_f(vertical_speed - 22.0 * dt, -18.0, 8.0) };
+			if (jump_pending) {
+				if (grounded) {
+					vertical_speed = 7.4 - 2.0 * immersion;
+					grounded = false;
+				} else {
+					if (immersion >= 0.15 && vertical_speed < 3.8) { vertical_speed = 3.8; };
+				};
+			};
+			f32 lift = if (immersion > 0.0 && active(16) == 1) { 48.0 } else { 35.0 };
+			f32 acceleration = lift * immersion - 22.0;
+			if (acceleration > 0.0) { grounded = false; };
+			vertical_speed = if (grounded) { 0.0 } else {
+				f32 damped = vertical_speed * (1.0 - 4.0 * immersion * dt);
+				clamp_f(damped + acceleration * dt, -18.0, 8.0)
+			};
 		};
 		jump_pending = false;
 		f32 dy = if (flying) { core.sint_to_float<f32>(up) * stride } else { vertical_speed * dt };
@@ -806,12 +1008,91 @@ unit(i32) publish_outline = fn(hit) {
 	};
 };
 
+f32(i32) sea_coordinate = fn(index) {
+	if (index == 0) { -192.0 } else {
+		if (index == 18) { 192.0 } else { core.sint_to_float<f32>(index - 1) * 4.0 - 20.0 }
+	}
+};
+
+f32(f32, f32) sea_wave = fn(x, z) {
+	sea_level + swell * sine(0.23 * x + 0.19 * z - sea_phase)
+		+ chop * sine(-0.35 * x + 0.24 * z - 2.0 * sea_phase)
+};
+
+unit(i32, i32, f32) sample_sea_row = fn(x, z, pz) {
+	if (x < 19) {
+		sea_samples[index_of(z)][index_of(x)] = sea_wave(sea_coordinate(x), pz);
+		sample_sea_row(x + 1, z, pz);
+	};
+};
+
+unit(i32) sample_sea = fn(z) {
+	if (z < 19) {
+		sample_sea_row(0, z, sea_coordinate(z));
+		sample_sea(z + 1);
+	};
+};
+
+f32(f32, f32) sea_surface = fn(x, z) {
+	f32 gx = (clamp_f(x, -20.0, 44.0) + 20.0) * 0.25;
+	f32 gz = (clamp_f(z, -20.0, 44.0) + 20.0) * 0.25;
+	i32 ix = min_i(floor_i(gx), 15);
+	i32 iz = min_i(floor_i(gz), 15);
+	f32 u = gx - core.sint_to_float<f32>(ix);
+	f32 v = gz - core.sint_to_float<f32>(iz);
+	u64 left = index_of(ix + 1);
+	u64 right = left + 1;
+	u64 near = index_of(iz + 1);
+	u64 far = near + 1;
+	f32 b = sea_samples[near][right];
+	f32 c = sea_samples[far][left];
+	if (u + v <= 1.0) {
+		f32 a = sea_samples[near][left];
+		a + (b - a) * u + (c - a) * v
+	} else {
+		f32 d = sea_samples[far][right];
+		d + (c - d) * (1.0 - u) + (b - d) * (1.0 - v)
+	}
+};
+
+unit(i32, i32, u64, i32, i32) write_sea_vertex = fn(x, z, corner, sx, sz) {
+	u64 ix = index_of(x);
+	u64 iz = index_of(z);
+	if (!sea_mesh_ready) {
+		sea_vertices[iz][ix][corner][0] = sea_coordinate(sx);
+		sea_vertices[iz][ix][corner][2] = sea_coordinate(sz);
+	};
+	sea_vertices[iz][ix][corner][1] = sea_samples[index_of(sz)][index_of(sx)];
+};
+
+unit(i32, i32) sea_mesh_row = fn(x, z) {
+	if (x < 18) {
+		write_sea_vertex(x, z, 0, x, z);
+		write_sea_vertex(x, z, 1, x, z + 1);
+		write_sea_vertex(x, z, 2, x + 1, z);
+		write_sea_vertex(x, z, 3, x + 1, z + 1);
+		write_sea_vertex(x, z, 4, x + 1, z);
+		write_sea_vertex(x, z, 5, x, z + 1);
+		sea_mesh_row(x + 1, z);
+	};
+};
+
+unit(i32) sea_mesh = fn(z) {
+	if (z < 18) {
+		sea_mesh_row(0, z);
+		sea_mesh(z + 1);
+	};
+};
+
 unit() publish_water = fn {
-	unsafe { host.water(core.pointer_cast<*?u8>(&?wire[0][0]), 0); };
+	sample_sea(0);
+	sea_mesh(0);
+	sea_mesh_ready = true;
+	unsafe { host.water(core.pointer_cast<*?u8>(&?sea_vertices[0][0][0][0]), 1944); };
 };
 
 unit(f32, f32, f32, f32, f32, f32, f32, f32, i32) publish_frame = fn(x, y, z, sy, cy, sp, cp, view_pitch, hit) {
-	f32 q = 1.920982127;
+	f32 q = view_scale;
 	f32 qw = q / frame_values[20];
 	f32 depth = -1.00170358;
 	f32 near = -0.32027257;
@@ -840,6 +1121,10 @@ unit(f32, f32, f32, f32, f32, f32, f32, f32, i32) publish_frame = fn(x, y, z, sy
 	frame_values[22] = if (flying) { 1.0 } else { 0.0 };
 	frame_values[23] = if (grounded) { 1.0 } else { 0.0 };
 	frame_values[24] = core.sint_to_float<f32>(selected_material);
+	frame_values[25] = core.sint_to_float<f32>(beacon_state);
+	frame_values[26] = 1.0 - lamp_wet / lamp_limit;
+	frame_values[27] = tide_progress;
+	frame_values[28] = core.sint_to_float<f32>(bridge_blocks);
 	unsafe { host.frame(core.pointer_cast<*?u8>(&?frame_values[0]), hit); };
 };
 
@@ -864,6 +1149,213 @@ i32() current_view_target = fn {
 	target_hit
 };
 
+i32() cycle_camera = fn {
+	third_person = !third_person;
+	if (third_person) { 1 } else { 0 }
+};
+
+unit(f32, f32, f32, f32, f32, f32) avatar_vertex = fn(x, y, z, r, g, b) {
+	u64 row = index_of(avatar_position / 24);
+	u64 col = index_of(avatar_position % 24);
+	avatar_vertices[row][col][0] = camera_x + cos_yaw * x + sin_yaw * z;
+	avatar_vertices[row][col][1] = camera_y + y;
+	avatar_vertices[row][col][2] = camera_z + sin_yaw * x - cos_yaw * z;
+	avatar_vertices[row][col][3] = r;
+	avatar_vertices[row][col][4] = g;
+	avatar_vertices[row][col][5] = b;
+	avatar_position = avatar_position + 1;
+};
+
+unit(f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32) avatar_face = fn(ax, ay, az, bx, by, bz, cx, cy, cz, dx, dy, dz, r, g, b) {
+	avatar_vertex(ax, ay, az, r, g, b);
+	avatar_vertex(bx, by, bz, r, g, b);
+	avatar_vertex(cx, cy, cz, r, g, b);
+	avatar_vertex(ax, ay, az, r, g, b);
+	avatar_vertex(cx, cy, cz, r, g, b);
+	avatar_vertex(dx, dy, dz, r, g, b);
+};
+
+unit(f32, f32, f32, f32, f32, f32, f32, f32, f32) avatar_box = fn(x0, x1, y0, y1, z0, z1, r, g, b) {
+	avatar_face(x0,y0,z0, x0,y0,z1, x0,y1,z1, x0,y1,z0, r*0.82,g*0.82,b*0.82);
+	avatar_face(x1,y0,z1, x1,y0,z0, x1,y1,z0, x1,y1,z1, r*0.94,g*0.94,b*0.94);
+	avatar_face(x0,y0,z1, x0,y0,z0, x1,y0,z0, x1,y0,z1, r*0.64,g*0.64,b*0.64);
+	avatar_face(x0,y1,z0, x0,y1,z1, x1,y1,z1, x1,y1,z0, r,g,b);
+	avatar_face(x1,y0,z0, x0,y0,z0, x0,y1,z0, x1,y1,z0, r*0.89,g*0.89,b*0.89);
+	avatar_face(x0,y0,z1, x1,y0,z1, x1,y1,z1, x0,y1,z1, r*0.75,g*0.75,b*0.75);
+};
+
+unit(bool) publish_avatar = fn(visible) {
+	if (visible) {
+		if (!avatar_visible || avatar_x != camera_x || avatar_y != camera_y || avatar_z != camera_z || avatar_yaw != yaw) {
+			avatar_x = camera_x;
+			avatar_y = camera_y;
+			avatar_z = camera_z;
+			avatar_yaw = yaw;
+			avatar_position = 0;
+			avatar_box(-0.19,0.19, -0.23,0.15, -0.18,0.18, 0.91,0.66,0.39);
+			avatar_box(-0.2,0.2, -0.84,-0.23, -0.13,0.13, 0.21,0.53,0.39);
+			avatar_box(-0.28,-0.202, -0.79,-0.25, -0.095,0.095, 0.63,0.42,0.26);
+			avatar_box(0.202,0.28, -0.79,-0.25, -0.095,0.095, 0.63,0.42,0.26);
+			avatar_box(-0.17,-0.021, -1.59,-0.84, -0.13,0.13, 0.22,0.32,0.45);
+			avatar_box(0.021,0.17, -1.59,-0.84, -0.13,0.13, 0.22,0.32,0.45);
+			avatar_box(-0.2,0.2, 0.151,0.178, -0.19,0.19, 0.29,0.17,0.09);
+			avatar_box(-0.131,0.131, -0.69,-0.36, -0.193,-0.132, 0.76,0.42,0.21);
+			unsafe { host.player(core.pointer_cast<*?u8>(&?avatar_vertices[0][0][0]), avatar_position); };
+		};
+	} else {
+		if (avatar_visible) {
+			unsafe { host.player(core.pointer_cast<*?u8>(&?avatar_vertices[0][0][0]), 0); };
+		};
+	};
+	avatar_visible = visible;
+};
+
+f32(i32, f32, f32, f32, f32, f32, f32) ray_hit_distance = fn(hit, ox, oy, oz, dx, dy, dz) {
+	i32 side = hit / 16384;
+	f32 x = core.sint_to_float<f32>(hit % 32);
+	f32 y = core.sint_to_float<f32>((hit / 32) % 16);
+	f32 z = core.sint_to_float<f32>((hit / 512) % 32);
+	if (side < 2 && dx != 0.0) {
+		(x + (if (side == 1) { 1.0 } else { 0.0 }) - ox) / dx
+	} else {
+		if (side >= 4 && dz != 0.0) {
+			(z + (if (side == 5) { 1.0 } else { 0.0 }) - oz) / dz
+		} else {
+			if (dy != 0.0) { (y + (if (side == 3) { 1.0 } else { 0.0 }) - oy) / dy } else { 0.0 }
+		}
+	}
+};
+
+unit() center_aim = fn {
+	if (aim_was_offset) {
+		host.aim(0.0, 0.0);
+		aim_was_offset = false;
+	};
+};
+
+f32(f32, f32, f32, f32, f32, f32, f32) camera_boom_probe = fn(ox, oy, oz, dx, dy, dz, reach) {
+	f32 ex = ox + dx * reach;
+	f32 ey = oy + dy * reach;
+	f32 ez = oz + dz * reach;
+	bool outside = (ox < 0.0 && ex < 0.0) || (ox >= 24.0 && ex >= 24.0)
+		|| (oy < 0.0 && ey < 0.0) || (oy >= 16.0 && ey >= 16.0)
+		|| (oz < 0.0 && ez < 0.0) || (oz >= 24.0 && ez >= 24.0);
+	if (reach <= 0.0 || outside) { reach } else {
+		i32 hit = pick_in_range(ox, oy, oz, dx, dy, dz, reach);
+		if (hit < 0) { reach } else {
+			bool starts_in_hit = hit % 32 == floor_i(ox) && (hit / 32) % 16 == floor_i(oy)
+				&& (hit / 512) % 32 == floor_i(oz);
+			if (starts_in_hit) { 0.0 } else {
+				clamp_f(ray_hit_distance(hit, ox, oy, oz, dx, dy, dz) - 0.29, 0.0, reach)
+			}
+		}
+	}
+};
+
+f32(f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32) camera_corner = fn(near_x, near_y, near_z, ux, uy, uz, sx, sz, dx, dy, dz, reach) {
+	camera_boom_probe(near_x + ux + sx, near_y + uy, near_z + uz + sz, dx, dy, dz, reach)
+};
+
+bool(i32, f32, f32, f32, f32, f32, f32) camera_sees_target = fn(hit, view_x, view_y, view_z, target_x, target_y, target_z) {
+	f32 dx = target_x - view_x;
+	f32 dy = target_y - view_y;
+	f32 dz = target_z - view_z;
+	f32 ax = if (dx < 0.0) { 0.0 - dx } else { dx };
+	f32 ay = if (dy < 0.0) { 0.0 - dy } else { dy };
+	f32 az = if (dz < 0.0) { 0.0 - dz } else { dz };
+	f32 xy = if (ax > ay) { ax } else { ay };
+	f32 reach = if (xy > az) { xy } else { az };
+	if (reach <= 0.0) { true } else {
+		i32 viewed = pick_in_range(view_x, view_y, view_z, dx / reach, dy / reach, dz / reach, reach);
+		viewed >= 0 && viewed % 16384 == hit % 16384
+	}
+};
+
+unit(i32) publish_play_frame = fn(hit) {
+	if (!third_person) {
+		publish_avatar(false);
+		center_aim();
+		publish_frame(camera_x, camera_y, camera_z, sin_yaw, cos_yaw, sin_pitch, cos_pitch, pitch, hit);
+	} else {
+		f32 fx = sin_yaw * cos_pitch;
+		f32 fy = sin_pitch;
+		f32 fz = 0.0 - cos_yaw * cos_pitch;
+		f32 back = 0.967;
+		f32 shoulder = 0.18;
+		f32 lift = 0.18;
+		f32 dx = 0.0 - back * fx + shoulder * cos_yaw - lift * sin_yaw * sin_pitch;
+		f32 dy = 0.0 - back * fy + lift * cos_pitch;
+		f32 dz = 0.0 - back * fz + shoulder * sin_yaw + lift * cos_yaw * sin_pitch;
+		f32 center = camera_boom_probe(camera_x, camera_y, camera_z, dx, dy, dz, 3.9);
+		f32 near_x = camera_x + fx * 0.16;
+		f32 near_y = camera_y + fy * 0.16;
+		f32 near_z = camera_z + fz * 0.16;
+		f32 half_height = 0.16 / view_scale;
+		f32 half_width = half_height * frame_values[20];
+		f32 ux = 0.0 - sin_yaw * sin_pitch * half_height;
+		f32 uy = cos_pitch * half_height;
+		f32 uz = cos_yaw * sin_pitch * half_height;
+		f32 sx = cos_yaw * half_width;
+		f32 sz = sin_yaw * half_width;
+		f32 corner0 = camera_corner(near_x, near_y, near_z, ux, uy, uz, sx, sz, dx, dy, dz, center);
+		f32 corner1 = camera_corner(near_x, near_y, near_z, ux, uy, uz, 0.0 - sx, 0.0 - sz, dx, dy, dz, corner0);
+		f32 corner2 = camera_corner(near_x, near_y, near_z, 0.0 - ux, 0.0 - uy, 0.0 - uz, sx, sz, dx, dy, dz, corner1);
+		f32 distance = camera_corner(near_x, near_y, near_z, 0.0 - ux, 0.0 - uy, 0.0 - uz, 0.0 - sx, 0.0 - sz, dx, dy, dz, corner2);
+		f32 eye_x = camera_x + dx * distance;
+		f32 eye_y = camera_y + dy * distance;
+		f32 eye_z = camera_z + dz * distance;
+		f32 aim_distance = if (hit < 0) { 5.0 } else {
+			clamp_f(ray_hit_distance(hit, camera_x, camera_y, camera_z, fx, fy, fz), 0.0, 5.0)
+		};
+		f32 aim_check = aim_distance + 0.035;
+		bool visible = if (hit < 0) { true } else {
+			camera_sees_target(hit, eye_x, eye_y, eye_z,
+				camera_x + fx * aim_check, camera_y + fy * aim_check, camera_z + fz * aim_check)
+		};
+		if (visible) {
+			f32 depth = clamp_f(aim_distance + back * distance, 0.16, 9.0);
+			f32 projected = view_scale * distance / depth;
+			aim_was_offset = true;
+			host.aim(clamp_f(0.0 - shoulder * projected / frame_values[20], -0.94, 0.94),
+				clamp_f(0.0 - lift * projected, -0.94, 0.94));
+			publish_avatar(distance >= 1.42);
+			publish_frame(eye_x, eye_y, eye_z, sin_yaw, cos_yaw, sin_pitch, cos_pitch, pitch, hit);
+		} else {
+			publish_avatar(false);
+			center_aim();
+			publish_frame(camera_x, camera_y, camera_z, sin_yaw, cos_yaw, sin_pitch, cos_pitch, pitch, hit);
+		};
+	};
+};
+
+unit(f32) update_tide = fn(dt) {
+	beacon_elapsed = beacon_elapsed + dt;
+	tide_progress = clamp_f((beacon_elapsed - 3.0) / 13.0, 0.0, 1.0);
+	sea_level = sea_low + tide_span * tide_progress;
+};
+
+bool(f32) update_beacon = fn(dt) {
+	bool at_lamp = camera_x >= 11.0 && camera_x < 13.0 && camera_z >= 3.0 && camera_z < 4.0
+		&& grounded && camera_y - player_feet >= 5.99 && camera_y - player_feet <= 6.05;
+	if (at_lamp) {
+		beacon_state = 2;
+		world[11][3][11] = 8;
+		world[11][3][12] = 8;
+		clear_controls();
+		true
+	} else {
+		f32 lantern_y = camera_y - lamp_offset;
+		if (lantern_y < sea_level + swell + chop) {
+			bool wet = lantern_y < sea_surface(camera_x, camera_z);
+			lamp_wet = clamp_f(lamp_wet + (if (wet) { dt } else { 0.0 - 0.65 * dt }), 0.0, lamp_limit);
+		} else {
+			if (lamp_wet > 0.0) { lamp_wet = clamp_f(lamp_wet - 0.65 * dt, 0.0, lamp_limit); };
+		};
+		if (lamp_wet >= lamp_limit) { beacon_state = 3; clear_controls(); };
+		false
+	}
+};
+
 unit(f32, f32, i32) tick = fn(dt, aspect, playing) {
 	f32 zero = 0.0;
 	f32 upper_step = 0.06;
@@ -872,15 +1364,51 @@ unit(f32, f32, i32) tick = fn(dt, aspect, playing) {
 	clock_seconds = clock_seconds + step;
 	update_orientation();
 	if (playing != 0) {
-		move_camera(step, sin_yaw, cos_yaw);
-		advance_edits(step);
-		i32 hit = current_view_target();
+		if (beacon_state < 2) {
+			if (step > 0.0) {
+				if (beacon_state == 1) { update_tide(step); };
+				sea_phase = wrap_yaw(sea_phase + step * 0.92);
+				publish_water();
+			};
+			move_camera(step, sin_yaw, cos_yaw);
+			advance_edits(step);
+			if (beacon_state == 1 && step > 0.0 && update_beacon(step)) { rebuild(); };
+		};
+		i32 hit = if (beacon_state >= 2) { -1 } else { current_view_target() };
 		publish_outline(hit);
-		publish_frame(camera_x, camera_y, camera_z, sin_yaw, cos_yaw, sin_pitch, cos_pitch, pitch, hit);
+		publish_play_frame(hit);
 	} else {
 		publish_outline(-1);
+		publish_avatar(false);
+		center_aim();
 		publish_frame(camera_x, camera_y, camera_z, sin_yaw, cos_yaw, sin_pitch, cos_pitch, pitch, -1);
 	};
+};
+
+i32(i32, i32, i32, i32) edit_beacon = fn(x, y, z, material) {
+	if (beacon_state != 1) { -4 } else {
+		bool slot = bridge_slot(x, y, z);
+		u8 present = cell(x, y, z);
+		if (material == 0 && slot && present == 5) {
+			write_cell(x, y, z, 0);
+			bridge_blocks = bridge_blocks + 1;
+			rebuild();
+			1
+		} else {
+			if (material == 0 && soft_plug(x, y, z) && present == 4) {
+				write_cell(x, y, z, 0);
+				rebuild();
+				1
+			} else {
+				if (material == 5 && slot && present == 0 && bridge_blocks > 0) {
+					write_cell(x, y, z, 5);
+					bridge_blocks = bridge_blocks - 1;
+					rebuild();
+					1
+				} else { -4 }
+			}
+		}
+	}
 };
 
 i32(i32) edit_view = fn(material) {
@@ -901,9 +1429,11 @@ i32(i32) edit_view = fn(material) {
 		};
 		if (inside(x, y, z)) {
 			if (material > 0 && overlaps_player(x, y, z)) { -3 } else {
-				i32 changed = edit(x, y, z, material);
-				if (changed == 1) { rebuild(); };
-				changed
+				if (beacon_state == 0) {
+					i32 changed = write_cell(x, y, z, material);
+					if (changed == 1) { rebuild(); };
+					changed
+				} else { edit_beacon(x, y, z, material) }
 			}
 		} else { -2 }
 	}
@@ -949,14 +1479,14 @@ unit(f32) advance_edits = fn(dt) {
 };
 
 unit(i32) select_material = fn(material) {
-	if (material >= 1 && material <= 6) { selected_material = material; };
+	if (beacon_state == 0 && material >= 1 && material <= 6) { selected_material = material; };
 };
 
 unit(i32) cycle_material = fn(delta) {
-	if (delta > 0) {
+	if (beacon_state == 0 && delta > 0) {
 		selected_material = if (selected_material == 6) { 1 } else { selected_material + 1 };
 	};
-	if (delta < 0) {
+	if (beacon_state == 0 && delta < 0) {
 		selected_material = if (selected_material == 1) { 6 } else { selected_material - 1 };
 	};
 };

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const module = new WebAssembly.Module(readFileSync(process.argv[2]));
+const module = new WebAssembly.Module(readFileSync(process.argv[2] ?? new URL("flight.wasm", import.meta.url)));
 assert.deepEqual(WebAssembly.Module.imports(module).map(({ module, name }) => `${module}.${name}`).sort(), [
     "flight.aircraft", "flight.frame", "flight.record", "flight.world",
 ]);
@@ -33,8 +33,8 @@ engine = new WebAssembly.Instance(module, { flight: {
         aircraft = readFloats(pointer, length, 18, 12288);
     },
     frame(pointer, length) {
-        frame = readFloats(pointer, length, 1, 31);
-        assert.equal(frame.length, 31);
+        frame = readFloats(pointer, length, 1, 32);
+        assert.equal(frame.length, 32);
         assert(frame[28] >= -1 && frame[28] <= 1, "turn cue is bounded");
         assert([0, 1, 2, 3, 4].includes(frame[29]), "landing enum is recognized");
         assert(frame[30] === 0 || frame[30] === 1, "shortcut availability is Boolean");
@@ -59,8 +59,8 @@ function reset(course) {
     tick(0, 0);
     assert.equal(frame[16], course);
     assert.equal(frame[17], 0);
-    assert.equal(frame[20], 0);
-    assert.equal(frame[21], 11);
+    assert.equal(frame[20], course === 0 ? 2 : 0);
+    assert.equal(frame[21], 0);
     assert.equal(frame[22], 0);
     assert(aircraft.length >= 1000);
     assert(world.length >= 10000);
@@ -74,7 +74,7 @@ const farmAircraft = aircraft;
 const startFrame = frame;
 for (let i = 0; i < 108; i++) tick(16);
 assert(frame[18] > startFrame[18], "throttle accelerates");
-assert.equal(frame[20], 1, "first rural gate is reachable with throttle");
+assert.equal(frame[20], 2, "farm starts directly on the landing approach");
 assert.deepEqual(new Float32Array(engine.memory.buffer, worldPointer, world.length), farmWorld,
     "moving frames never mutate static geometry needed on graphics restore");
 const allForward = [frame, aircraft];
@@ -113,10 +113,15 @@ function overlapArea(left, right) {
     return Math.abs(doubledArea) / 2;
 }
 function assertNonOverlappingParisPanels(values) {
-    // Two 72-vertex gate meshes precede the player; no ghost at the start.
+    // Recover aircraft-local axes from the same Y-rotated Paris chase matrix.
+    const len = Math.hypot(frame[3], frame[11]);
+    const sx = frame[3] / len, cz = frame[11] / len;
     const triangles = [];
-    for (let i = 144 * 6; i < values.length; i += 18) {
-        const corners = [0, 6, 12].map((v) => Array.from(values.subarray(i + v, i + v + 3)));
+    for (let i = 0; i < values.length; i += 18) {
+        const corners = [0, 6, 12].map((v) => {
+            const [x,y,z] = values.subarray(i + v, i + v + 3);
+            return [cz*x-sx*z,y,sx*x+cz*z];
+        });
         const axis = [0, 1, 2].find((n) => corners.every((p) => Math.abs(p[n] - corners[0][n]) < 0.00005));
         if (axis === undefined) continue;
         const plane = corners[0][axis];
@@ -135,7 +140,7 @@ function assertNonOverlappingParisPanels(values) {
 reset(1);
 assert.equal(worldUploads, 2, "changing course publishes new terrain");
 assert.notDeepEqual(world, farmWorld, "courses draw different scenery");
-assert.notDeepEqual(aircraft, farmAircraft, "courses draw different airplanes and gates");
+assert.notDeepEqual(aircraft, farmAircraft, "courses draw different airplanes");
 assertNonOverlappingParisPanels(aircraft);
 const parisPose = [frame, aircraft];
 for (let i = 0; i < 4; i++) {
@@ -143,17 +148,16 @@ for (let i = 0; i < 4; i++) {
     assert.deepEqual([frame, aircraft], parisPose, "repeated presentation of a stationary pose is stable");
 }
 tick(0, 0, 0.55);
-assert(frame[0] > startFrame[0] && frame[3] === 0, "portrait changes projection rather than the camera mode");
-for (let i = 0; i < 140; i++) tick(16);
-assert.equal(frame[20], 1, "first city gate is reachable with throttle");
+assert(frame[0] > parisPose[0][0] && frame[3] === parisPose[0][3], "portrait changes projection rather than the camera mode");
 
 reset(1);
 const malformed = [
     [87, 70, 1, 1, 180, 0, ...Array(180).fill(0)],
-    [87, 70, 2, 1, 180, 0, ...Array(180).fill(0)],
-    [87, 70, 1, 0, 180, 0, ...Array(180).fill(0)],
-    [87, 70, 1, 1, 181, 0, ...Array(180).fill(0)],
-    [87, 70, 1, 1, 180, 0, ...Array(179).fill(0), 255],
+    [87, 70, 2, 1, 180, 0, ...Array(360).fill(0)],
+    [87, 70, 3, 0, 180, 0, ...Array(360).fill(0)],
+    [87, 70, 3, 1, 181, 0, ...Array(360).fill(0)],
+    [87, 70, 3, 1, 180, 0, ...Array(360).fill(0)],
+    [87, 70, 3, 1, 180, 0, 64, 255, ...Array(358).fill(0)],
 ];
 for (const bytes of malformed) {
     load(bytes);
@@ -161,7 +165,7 @@ for (const bytes of malformed) {
     assert.equal(frame[23], 0, "rejects corrupt, mismatched, or unfinished ghost runs");
 }
 assert.equal(packet, undefined, "never publishes a record before landing");
-const hostAnalog = (bank, pitch, power = 0) => 64 | (power & 48) | ((bank & 255) << 8) | ((pitch & 255) << 16);
+const hostAnalog = (bank, pitch, power = 0) => 64 | (power & 176) | ((bank & 255) << 8) | ((pitch & 255) << 16);
 function headingAfter(input) {
     reset(0);
     for (let i = 0; i < 21; i++) tick(input);
@@ -173,57 +177,184 @@ assert(weakRight > 0 && weakRight < digitalRight, "partial joystick motion banks
 assert.equal(headingAfter(hostAnalog(-127, 0) | 2), digitalRight, "keyboard wins on its own axis");
 assert(headingAfter(hostAnalog(-127, 0)) < 0, "signed joystick left is preserved");
 
-const route = JSON.parse(readFileSync(new URL("test/reference-controls.json", import.meta.url), "utf8"))
-    .find(({ course, shortcut }) => course === 0 && !shortcut);
-function analogEquivalent(mask) {
-    const bank = Number((mask & 2) !== 0) - Number((mask & 1) !== 0);
-    const pitch = Number((mask & 4) !== 0) - Number((mask & 8) !== 0);
-    return hostAnalog(bank * 127, pitch * 127, mask);
+// Play through the public input/projection ABI, with no exported test state or
+// ability to teleport. The chase offset is documented by the authored camera.
+function aircraftPose() {
+    const angle = Math.atan2(frame[3], frame[11]);
+    const hx = Math.sin(angle), hz = Math.cos(angle);
+    const right = -frame[12] / (1.61 / 1.65);
+    const y = frame[19], speed = frame[18];
+    const forward = (-frame[15] - frame[7] * (y + 5.3)) / Math.hypot(frame[3], frame[11]) + 17.5;
+    return {x: hx * forward + hz * right, y, z: hz * forward - hx * right, speed, angle};
 }
-function finishWith(convert, expectedVersion) {
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const raw = (v) => Math.round(clamp(v, -127, 127));
+const difference = (a, b) => Math.atan2(Math.sin(a - b), Math.cos(a - b));
+function pilot(p, bearing, height, slope, power) {
+    const bank = raw(440 * difference(bearing, p.angle));
+    const glide = Math.max(0, (15.5 - p.speed) * .82);
+    const climb = (height - p.y) * 1.22 + slope * p.speed;
+    const pitch = raw(127 * (climb + glide) / (.34 * p.speed));
+    return hostAnalog(bank, pitch, power);
+}
+function pasture(mode) {
+    reset(1); reset(0);
     packet = undefined;
-    reset(1);
-    reset(0);
-    assert.deepEqual(Array.from(frame.subarray(28)), [0, 0, 0]);
-    let sawShortcut = false, sawLanding = false;
-    for (const [mask, count] of route.controls) {
-        for (let i = 0; i < count; i++) {
-            tick(convert(mask));
-            if (frame[20] === 6) sawShortcut ||= frame[30] === 1;
-            else assert.equal(frame[30], 0, "shortcut offer is exclusive to that gate");
-            if (frame[26] && frame[22] === 0) sawLanding ||= frame[29] > 0;
+    let rollout = false, rolloutTicks = 0, rolloutHeading = 0;
+    for (let i = 0; i < 1400 && frame[22] === 0; i++) {
+        const p = aircraftPose();
+        if (frame[20] === 3) {
+            rollout = true;
+            rolloutHeading = Math.max(rolloutHeading, Math.abs(p.angle));
+            rolloutTicks++;
+            const rolling = mode === "overrun" ? 16 : mode === "side" ? (16 | 2) :
+                mode === "steer" && rolloutTicks < 20 ? (32 | 2) : 32;
+            tick(rolling);
+        } else if (mode === "rough" && p.z > 151) {
+            tick(8 | 32);
+        } else {
+            const height = mode === "rough" ? Math.max(5, 17.5 - .084*p.z) : 17.5 - .094*p.z;
+            tick(pilot(p, 0, height, -.094, p.z > 115 ? 32 : 0));
         }
     }
-    for (let i = 0; i < 15 && frame[22] === 0; i++) tick(convert(route.controls.at(-1)[0]));
-    assert.equal(frame[22], 1, "authored flight lands with the selected control style");
-    assert(sawShortcut && sawLanding, "flight visits actual shortcut and landing guidance");
-    assert(packet, "landing emits an authentic replay packet");
-    assert.equal(packet[2], expectedVersion);
-    assert.equal(packet.length, 6 + (packet[4] + packet[5] * 256) * expectedVersion);
-    return { time: frame[17], data: packet };
+    return {result: frame[22], rollout, rolloutHeading, time: frame[17], data: packet};
 }
-const classic = finishWith((mask) => mask, 1);
-const proportional = finishWith(analogEquivalent, 2);
-assert.equal(classic.time, proportional.time, "full deflection retains the legacy route exactly");
-for (const { time, data } of [classic, proportional]) {
-    reset(1);
-    reset(0);
-    if (data[2] === 2) {
-        const corrupt = data.slice();
-        corrupt[7] |= 0xf0;
-        load(corrupt);
+const goodFarm = pasture("stop");
+assert.equal(goodFarm.result, 1, "farm requires a flare and a completed rollout");
+assert(goodFarm.rollout && goodFarm.data);
+assert.equal(pasture("overrun").result, 9, "a valid touchdown can still run out of pasture");
+assert.equal(pasture("side").result, 11, "a lateral rollout exit has a different outcome");
+const steeredFarm = pasture("steer");
+assert.equal(steeredFarm.result, 1, "small ground corrections can still stop inside the strip");
+assert(steeredFarm.rolloutHeading > .055 && steeredFarm.rolloutHeading < .21, "airborne bank becomes gentle rollout steering");
+const rough = pasture("rough");
+assert([6, 10].includes(rough.result) && !rough.rollout, "steep/fast touchdown never starts rollout");
+
+function paris(mode) {
+    reset(0); reset(1);
+    packet = undefined;
+    let sawClimbWarning = false, launched = false, landedMail = false, tried = false;
+    for (let i = 0; i < 1900 && frame[22] === 0; i++) {
+        const p = aircraftPose();
+        const phase = frame[20], status = frame[21];
+        sawClimbWarning ||= frame[30] === 1;
+        if (phase === 0) {
+            const detour = mode === "wide" || mode === "high";
+            if (detour) {
+                const bearing = Math.atan2(1, clamp((158-p.z)/(69-p.x), .26, .72));
+                const target = mode === "high" ? 20 : 12.3;
+                tick(pilot(p, bearing, target, 0, 0));
+            } else {
+                const slope = mode === "strike" || p.x >= 49 ? 0 : p.x > 24 ? .23 : 0;
+                const height = mode === "strike" ? 7.8 : p.x < 24 ? 7.9 : Math.min(13.5, 7.9 + (p.x-24)*.23);
+                tick(pilot(p, Math.atan2(67-p.x,190-p.z), height, slope, 0));
+            }
+        } else if (phase === 1) {
+            if (mode === "high" || mode === "skew") {
+                const expectation = mode === "high" ? 5 : 7;
+                const heading = mode === "high" ? .9 : -.35;
+                const input = pilot(p, heading, mode === "high" ? 20 : 12.3, 0, 32);
+                if (frame[26] === expectation) {
+                    assert.equal(frame[20], 1, "invalid release cannot count mail as delivered");
+                    return {event: frame[26], launched: false};
+                }
+                if (!tried && status === expectation) {
+                    const frozen = frame[17];
+                    tick(input | 128, 0);
+                    engine.cancel_drop();
+                    tick(input, 0);
+                    assert.equal(frame[17], frozen, "canceling a release cannot move simulation");
+                    tick(input);
+                    assert.equal(frame[26], 0, "canceled release cannot fire upon the next real step");
+                    tick(input | 128, 0);
+                    tick(input);
+                    tried = true;
+                } else tick(input);
+            } else {
+                const bearing = Math.atan2(109-p.x, 218-p.z);
+                const input = pilot(p, bearing, 11.0, 0, 32);
+                if (status === 9 && !tried) {
+                    const frozen = frame[17];
+                    tick(input | 128, 0);
+                    assert.equal(frame[17], frozen, "a tap before a physics step queues exactly one release");
+                    tick(input);
+                    tried = true;
+                } else tick(input);
+            }
+        } else if (phase === 5 || phase === 2) {
+            launched ||= phase === 5;
+            landedMail ||= phase === 2 && frame[31] === 1;
+            // Align early and level before touchdown instead of chasing the strip center.
+            const bearing = p.z >= 277 ? 0 : clamp(Math.atan2(125-p.x, Math.max(22, 298-p.z)), -.38, .38);
+            const slope = p.z > 249 ? -.207 : 0;
+            const height = Math.min(12.3, 1.0 + (305-p.z)*.207);
+            tick(pilot(p, bearing, height, slope, 32));
+        } else if (phase === 3) tick(32);
+    }
+    return {result: frame[22], route: frame[25], launched, landedMail,
+        sawClimbWarning, time: frame[17], data: packet};
+}
+assert.equal(paris("strike").result, 8, "the low lane really hits the bridge without a climb");
+assert.equal(paris("high").event, 5, "a high release is rejected");
+assert.equal(paris("skew").event, 7, "a misaligned release is rejected");
+const lowParis = paris("low");
+assert.equal(lowParis.result, 1, "the cyan climb and mail delivery can succeed");
+assert.equal(lowParis.route, 1);
+assert(lowParis.launched && lowParis.landedMail && lowParis.sawClimbWarning && lowParis.data);
+const wideParis = paris("wide");
+assert.equal(wideParis.result, 1, "a wider route can deliver without clearing artificial gates");
+assert.equal(wideParis.route, 2);
+assert(wideParis.launched && wideParis.landedMail && wideParis.data);
+for (const [course, { time, data }] of [[0,goodFarm], [1,lowParis], [1,wideParis]]) {
+    reset(1-course); reset(course);
+    assert.equal(data[2], 3);
+    assert.equal(data.length, 6 + 2 * (data[4] + data[5] * 256));
+    if (course === 1) {
+        const withoutDrop = data.slice();
+        for (let i = 6; i < withoutDrop.length; i += 2) withoutDrop[i] &= 127;
+        load(withoutDrop);
         tick(0, 0);
-        assert.equal(frame[23], 0, "v2 packet rejects an out-of-range canonical axis");
+        assert.equal(frame[23], 0, "the same trajectory cannot validate if the mail action is removed");
     }
     load(data);
     tick(0, 0);
-    assert.equal(frame[23], time, "an authentic saved ghost survives either packet version");
+    assert.equal(frame[23], time, "authentic mission replay retains the exact timer");
 }
-// The tail is the player aircraft (farm: 582 XYZRGB vertices). A local
-// wing corner should translate in world space but not shake against its own
-// chase camera when the authoritative simulation has not stepped.
+function visibleGhost(rejectedCandidate) {
+    reset(1); reset(0);
+    for (const oldVersion of [1, 2]) {
+        const oldPacket = goodFarm.data.slice();
+        oldPacket[2] = oldVersion;
+        load(oldPacket);
+        tick(0, 0);
+        assert.equal(frame[23], 0, `mission engine refuses old format v${oldVersion}`);
+    }
+    load(goodFarm.data);
+    tick(0, 0);
+    assert.equal(frame[23], goodFarm.time);
+    if (rejectedCandidate) {
+        const truncated = goodFarm.data.slice(0, -2);
+        const ticks = (truncated.length - 6)/2;
+        truncated[4] = ticks & 255;
+        truncated[5] = ticks >> 8;
+        load(truncated);
+        tick(0, 0);
+        assert.equal(frame[23], goodFarm.time, "a shorter non-finish cannot replace an existing best");
+    }
+    let diverged = null;
+    for (let i = 0; i < 160 && frame[22] === 0; i++) {
+        tick(16 | 2);
+        if (aircraft.length > farmAircraft.length) diverged = aircraft;
+    }
+    assert(diverged, "a restored mission ghost actually draws after the routes diverge");
+    return diverged;
+}
+assert.deepEqual(visibleGhost(true), visibleGhost(false),
+    "rejected candidate validation never mutates a previously restored ghost's mission state");
+
+// Recheck that the plane and chase camera share the same presentation pose.
 function playerWingCorner() {
-    return Array.from(aircraft.subarray(aircraft.length - 582 * 6, aircraft.length - 582 * 6 + 3));
+    return Array.from(aircraft.subarray(aircraft.length - 6, aircraft.length - 3));
 }
 function screenPoint([x, y, z]) {
     const w = frame[3] * x + frame[7] * y + frame[11] * z + frame[15];
@@ -285,4 +416,4 @@ assert.equal(afterHitch.time, afterFrames.time, "catch-up traverses the same aut
 assert(distance(afterHitch.point, afterFrames.point) < 0.001, "catch-up retains the last step's prior pose");
 assert(distance(afterHitch.camera, afterFrames.camera) < 0.0001, "catch-up camera uses the same final substep");
 
-console.log("Flight WASM: geometry, 60/90/120 Hz cadence, fixed-step controls, replays, and guidance verified");
+console.log("Flight WASM: geometry, 60/90/120 Hz cadence, fixed-step controls, both missions, failure diagnostics, and replays verified");
