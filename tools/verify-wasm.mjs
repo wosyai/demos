@@ -18,6 +18,8 @@ for (const item of imports) {
 let engine;
 let frame, missionFlameFloor = 1;
 let mesh;
+const meshChunks = Array.from({ length: 16 }, () => ({count: 0, hash: "", lantern: []}));
+const meshPublications = [];
 let water;
 let outline;
 let avatar = {count:0}, avatarUploads = 0, aim = [0, 0];
@@ -57,18 +59,27 @@ engine = new WebAssembly.Instance(binary, {
       assert.equal(new Set(tileHashes).size, 8, 'surface material tiles must be distinct');
       atlasCount++;
     },
-    mesh(pointer, count) {
-      mesh = layer(pointer, count, 3, 165888);
+    mesh(pointer, count, chunk) {
+      assert(Number.isInteger(chunk) && chunk >= 0 && chunk < 16, 'valid terrain chunk id');
+      const current = layer(pointer, count, 3, 55296);
       const data = view(pointer, count * 6);
+      const lantern = new Set();
       for (let i = 0; i < data.length; i += 6) {
+        assert(data[i] >= (chunk % 4) * 12 && data[i] <= (chunk % 4 + 1) * 12);
+        assert(data[i + 2] >= Math.floor(chunk / 4) * 12 && data[i + 2] <= (Math.floor(chunk / 4) + 1) * 12);
         assert(data[i + 3] > 0 && data[i + 3] < 1, 'baked atlas U outside bounds');
         assert(data[i + 4] > 0 && data[i + 4] < 1, 'baked atlas V outside bounds');
         const light = data[i + 5];
         assert(light > 0 && (light <= 1 || Math.abs(light - 1.18) < .001 || Math.abs(light - 1.85) < .001),
           'baked light outside ordinary light or beacon signal bounds');
+        if (light > 1) lantern.add(light);
       }
+      meshChunks[chunk] = { ...current, lantern: Array.from(lantern) };
+      meshPublications.push({ chunk, count });
+      mesh = { pointer, count: meshChunks.reduce((sum, part) => sum + part.count, 0),
+        hash: meshChunks.map((part) => part.hash).join(':') };
     },
-    water(pointer, count) { water = layer(pointer, count, 3, 1944); },
+    water(pointer, count) { water = layer(pointer, count, 3, 3456); },
     outline(pointer, count) { outline = layer(pointer, count, 2, 24); },
     player(pointer, count) { avatar = layer(pointer, count, 3, 576); avatarUploads++; },
     aim(x, y) {
@@ -77,7 +88,7 @@ engine = new WebAssembly.Instance(binary, {
       aim = [x, y];
     },
     frame(pointer, hit) {
-      frame = { values: Array.from(view(pointer, 29)), hit };
+      frame = { values: Array.from(view(pointer, 30)), hit };
       if (frame.values[25] === 1 && frame.values[26] < missionFlameFloor) missionFlameFloor = frame.values[26];
     },
   },
@@ -116,11 +127,11 @@ for (const [text, expect] of [
 ]) assert.equal(seed(text, 1), expect, JSON.stringify(text));
 generate(42);
 assert(mesh.count > 0);
-assert.equal(water.count, 1944, 'one continuous sea surface surrounds the island');
+assert.equal(water.count, 3456, 'one continuous sea surface surrounds the island');
 const initialSea = water;
-assert.equal((pick(12.5, 15, 0.5, 0, -1, 0) >>> 5) & 15, 0, 'shore bed should emerge from the sea');
-assert.equal((pick(12.5, 15, 1.5, 0, -1, 0) >>> 5) & 15, 1, 'shore should have a shallow intermediate step');
-assert.equal((pick(12.5, 15, 2.5, 0, -1, 0) >>> 5) & 15, 2, 'first dry step should emerge above the water');
+assert.equal((pick(12.5, 15, 0.5, 0, -1, 0) >>> 6) & 15, 0, 'shore bed should emerge from the sea');
+assert.equal((pick(12.5, 15, 1.5, 0, -1, 0) >>> 6) & 15, 1, 'shore should have a shallow intermediate step');
+assert.equal((pick(12.5, 15, 2.5, 0, -1, 0) >>> 6) & 15, 2, 'first dry step should emerge above the water');
 tick(0.06, 1, 0);
 assert.deepEqual(water, initialSea, 'pause should preserve wave phase');
 tick(0, 1, 1);
@@ -166,16 +177,16 @@ assert.equal(frame.values[24], 6, 'hotbar should wrap backward and ignore invali
 assert.equal(pick(-4, 18, -4, -1, 0, 0), -1);
 const hit = pick(12.5, 18, 12.5, 0, -1, 0);
 assert(hit >= 0, 'terrain under center camera');
-const x = hit & 31, y = (hit >>> 5) & 15, z = (hit >>> 9) & 31;
-assert(x >= 0 && x < 24 && y >= 0 && y < 16 && z >= 0 && z < 24);
+const x = hit & 63, y = (hit >>> 6) & 15, z = (hit >>> 10) & 63;
+assert(x >= 0 && x < 48 && y >= 0 && y < 16 && z >= 0 && z < 48);
 edit(x, y, z, 0);
 rebuild();
 assert.notEqual(mesh.hash, original.hash, 'block edit did not change mesh');
 assert.equal(mesh.pointer, original.pointer, 'block edit relocated mesh storage');
 
 for (let y = 0; y < 16; y++) {
-  for (let z = 0; z < 24; z++) {
-    for (let x = 0; x < 24; x++) edit(x, y, z, 0);
+  for (let z = 0; z < 48; z++) {
+    for (let x = 0; x < 48; x++) edit(x, y, z, 0);
   }
 }
 for (let z = 10; z < 23; z++) {
@@ -294,7 +305,7 @@ tick(0, 1, 1);
 const [sx, sy, sz] = frame.values.slice(16, 19);
 const aimedZ = () => {
   const target = pick(sx, sy, sz, 0, 0, -1);
-  return target < 0 ? -1 : (target >>> 9) & 31;
+  return target < 0 ? -1 : (target >>> 10) & 63;
 };
 assert.equal(aimedZ(), 10, 'generic ray should still see distant blocks');
 assert.equal(frame.hit, -1, 'first-person editing ray must not target a block beyond reach');
@@ -343,10 +354,10 @@ assert.equal(frame.values[17], 10);
 assert.equal(frame.values[22], 1, 'an empty world must use a stable flight spawn');
 assert.equal(frame.values[23], 0);
 function renderedSeaAt(x, z) {
-  const data = view(water.pointer, 1944 * 6);
-  const col = Math.min(15, Math.floor((x + 20) / 4));
-  const row = Math.min(15, Math.floor((z + 20) / 4));
-  const cell = ((row + 1) * 18 + col + 1) * 36;
+  const data = view(water.pointer, 3456 * 6);
+  const col = Math.min(21, Math.floor((x + 20) / 4));
+  const row = Math.min(21, Math.floor((z + 20) / 4));
+  const cell = ((row + 1) * 24 + col + 1) * 36;
   const u = (x - data[cell]) / 4, v = (z - data[cell + 2]) / 4;
   const a = data[cell + 1], c = data[cell + 7], b = data[cell + 13], d = data[cell + 19];
   return u + v <= 1 ? a * (1 - u - v) + b * u + c * v : d * (u + v - 1) + b * (1 - v) + c * (1 - u);
@@ -447,7 +458,7 @@ for (let z = iz - 5; z <= iz + 4; z++) {
 edit(ix, iy, iz - 3, 3);
 tick(0, 1, 1);
 const aimTarget = frame.hit;
-assert(aimTarget >= 0 && (aimTarget >>> 9 & 31) === iz - 3);
+assert(aimTarget >= 0 && (aimTarget >>> 10 & 63) === iz - 3);
 assert.equal(avatar.count, 0);
 assert.equal(cycle_camera(), 1);
 tick(0, 1, 1);
@@ -456,7 +467,7 @@ const cameraDistance = (position) => Math.hypot(...position.map((value, i) => va
 assert(cameraDistance(shoulder) > 3.5, 'clear third-person camera sits behind the player');
 assert(shoulder[0] > eye[0] && shoulder[2] > eye[2], 'third person uses a shoulder offset');
 assert.equal(frame.hit, aimTarget, 'changing perspective preserves player-eye target');
-assert.equal(avatar.count, 288, 'six body parts, hat, and pack produce original Wosy geometry');
+assert.equal(avatar.count, 396, 'body, cap, pack and boots produce original Wosy geometry');
 assert(aim[0] < 0 && aim[1] < 0);
 const aimPoint = [eye[0], eye[1], iz - 2];
 const project = (k) => frame.values[12 + k] +
@@ -465,9 +476,11 @@ assert(Math.abs(aim[0] - project(0) / project(3)) < .003, 'third-person reticle 
 assert(Math.abs(aim[1] - project(1) / project(3)) < .003);
 const aimSquare = aim[0], submitted = avatarUploads;
 tick(0, .65, 1);
-assert(Math.abs(aim[0]) > Math.abs(aimSquare), 'portrait reticle accounts for viewport aspect');
+assert(Math.abs(aim[0] - project(0) / project(3)) < .003, 'portrait reticle still tracks the exact block');
+assert(Math.abs(aim[0] - aimSquare) < .06 && frame.values[16] < shoulder[0],
+  'a smaller physical shoulder offset keeps the portrait avatar in view');
 assert.equal(avatarUploads, submitted, 'the unchanged avatar is not submitted again');
-const grazing = [ix + 1, Math.floor(eye[1] + .18 * 1.45 + .04), iz + 1];
+const grazing = [ix + 1, Math.floor(eye[1] + .25 * 1.45 + .04), iz + 1];
 assert.equal(edit(...grazing, 3), 1, 'grazing-wall fixture starts clear');
 tick(0, .35, 1);
 assert(cameraDistance(frame.values.slice(16, 19)) > 3.65, 'narrow frustum clears wall outside central boom');
@@ -510,8 +523,9 @@ assert.equal(underCeiling, aimTarget, 'player-eye ray sees the original block be
 assert.equal(cycle_camera(), 1);
 tick(0, 1, 1);
 assert.equal(frame.hit, underCeiling, 'fallback retains the visible player-eye edit target');
-assert.deepEqual(frame.values.slice(16,19), raisedEye, 'terrain occlusion retracts camera to the player eye');
-assert.deepEqual(aim, [0, 0], 'the original target stays visible at the centered reticle');
+assert(Math.hypot(...frame.values.slice(16,19).map((v,i) => v-raisedEye[i])) < 1.42,
+  'terrain occlusion pulls the boom in instead of leaving the target behind terrain');
+assert(Math.abs(aim[0]) < .3 && Math.abs(aim[1]) < .3, 'the retained target remains near the center of the shortened camera');
 assert.equal(avatar.count, 0, 'the avatar does not obscure a retracted camera');
 assert.equal(edit_control(0, 2), 1, 'the retracted camera shows the target being edited');
 tick(0, 1, 1);
@@ -526,22 +540,21 @@ const missionHUD = () => frame.values.slice(25);
 const steps = (count, seconds = .05, playing = 1) => {
   for (let i = 0; i < count; i++) tick(seconds, 1, playing);
 };
-function moveUntil(axis, index, goal, sign, cap = 80) {
+function moveUntil(axis, index, goal, sign, cap = 150) {
   control(axis, 1);
   for (let i = 0; i < cap && (goal - coords()[index]) * sign > 0 && phase() === 1; i++) tick(.05, 1, 1);
   control(axis, 0);
 }
-function moveOn(axis, index, goal, sign, message, cap = 80) {
+function moveOn(axis, index, goal, sign, message, cap = 150) {
   moveUntil(axis, index, goal, sign, cap);
   assert((goal - coords()[index]) * sign <= .01, message + ': ' + coords());
 }
 function jumpNorth(goal, message) {
   control(4, 1);
-  moveOn(0, 2, goal, -1, message, 28);
+  moveOn(0, 2, goal, -1, message, 35);
   control(4, 0);
   steps(14);
 }
-
 function aimNorthAt(y, z) {
   const [, eyeY, eyeZ] = coords();
   const pitch = Math.atan2(y - eyeY, eyeZ - z);
@@ -549,30 +562,40 @@ function aimNorthAt(y, z) {
   tick(0, 1, 1);
 }
 function enterLighthouse() {
-  moveUntil(0, 2, 5.6, -1, 40);
-  jumpNorth(4.55, 'jump up one deck to the lighthouse entry');
-  moveOn(0, 2, 3.98, -1, 'carry the lantern through the lighthouse door');
-  assert.equal(phase(), 2, 'success requires physical arrival at the dry lighthouse');
+  moveUntil(0, 2, 7.6, -1, 40);
+  jumpNorth(7.16, 'jump up one deck to the lighthouse entry');
+  moveOn(0, 2, 5.95, -1, 'carry the lantern through the lighthouse door');
+}
+function lightWatchfires() {
+  assert.equal(frame.values[29], 1, 'the first watchfire must be visited on the far shore');
+  moveOn(0, 2, 9.45, -1, 'follow the high-bank trail past the tower approach');
+  moveOn(2, 0, 9.42, -1, 'reach the west watchfire');
+  assert.equal(frame.values[29], 2, 'the west watchfire is a required second milestone');
+  moveOn(3, 0, 24.40, 1, 'return to the high tower approach');
+  enterLighthouse();
+  assert.equal(phase(), 2, 'both watchfires and the lighthouse entrance are required for victory');
 }
 
 generate(726);
-edit(12, 14, 16, 5);
+assert(pick(38.5, 15.5, 38.5, 0, -1, 0) >= 0, 'creative terrain extends well beyond the old world');
+edit(42, 14, 42, 5);
+assert((pick(42.5, 15.5, 42.5, 0, -1, 0) & 63) === 42, 'far-end editable block survives ray encoding');
 select_material(4);
 rebuild();
 const editedSandbox = mesh;
 assert(start_beacon() > 0);
 tick(0, 1, 1);
 const freshMission = mesh, freshWater = water, spawn = coords();
-assert.deepEqual(missionHUD(), [1, 1, 0, 7]);
-assert.deepEqual([spawn[0], spawn[2]], [11.5, 21.5]);
-assert.equal(edit(11, 4, 21, 0), -4, 'raw edit cannot bypass the mission rules');
+assert.deepEqual(missionHUD(), [1, 1, 0, 12, 0]);
+assert.deepEqual([spawn[0], spawn[2]], [24.5, 42.5]);
+assert.equal(edit(24, 4, 42, 0), -4, 'raw edit cannot bypass the mission rules');
 assert.deepEqual(mesh, freshMission);
-assert(frame.values[23] === 1 && spawn[1] > 6.6, 'mission spawns on dry starting deck');
-const lanternColor = () => view(mesh.pointer, mesh.count * 6).filter((c, i) => i % 6 === 5 && c > 1);
+assert(frame.values[23] === 1 && spawn[1] > 6.6, 'mission spawns on dry starting ground');
+const lanternColor = () => meshChunks.flatMap((chunk) => chunk.lantern);
 assert(lanternColor().length > 0 && lanternColor().every(c => Math.abs(c - 1.18) < .001),
-  'the lighthouse emits a distinct warm position marker before the run is won');
+  'the dark lighthouse and watchfires have distinct warm navigation markers');
 steps(70, .06, 0);
-assert.deepEqual(missionHUD(), [1, 1, 0, 7], 'preview or pause must not advance the tide or flame');
+assert.deepEqual(missionHUD(), [1, 1, 0, 12, 0], 'preview or pause must not advance the tide or flame');
 assert.deepEqual(water, freshWater);
 pulse_control(7);
 control(7, 1);
@@ -584,123 +607,128 @@ cycle_material(1);
 tick(0, 1, 1);
 assert.equal(frame.values[24], 5, 'mission stock is one material, regardless of sandbox keys');
 
-moveOn(0, 2, 16.5, -1, 'south end of center bridge corridor');
-aimNorthAt(4, 14.5);
-assert(frame.hit >= 0 && (frame.hit & 31) === 11 && ((frame.hit >>> 9) & 31) === 14 &&
-  (frame.hit >>> 14) === 3, 'the first bridge piling is aimable from the dry starting shore');
+moveOn(0, 2, 30.52, -1, 'reach the south end of the long bridge corridor');
+aimNorthAt(4, 28.5);
+assert(frame.hit >= 0 && (frame.hit & 63) === 24 && ((frame.hit >>> 10) & 63) === 28 &&
+  (frame.hit >>> 16) === 3, 'first piling is four-cell-ray aimable');
+const editBoundary = meshPublications.length;
 assert.equal(place_selected(), 1);
+assert.deepEqual(meshPublications.slice(editBoundary).map((p) => p.chunk), [10, 9],
+  "a seam edit replaces only the owner and face-adjacent chunk");
+assert(meshPublications.slice(editBoundary).reduce((sum, chunk) => sum + chunk.count, 0) < freshMission.count / 3,
+  "seam editing moves only a fraction of the level geometry");
 tick(0, 1, 1);
-assert.equal(frame.values[28], 6, 'placing a beam consumes one wood');
+assert.equal(frame.values[28], 11, 'placing a beam consumes one wood');
 assert.equal(edit_view(0), 1);
 tick(0, 1, 1);
-assert.equal(frame.values[28], 7, 'breaking a placed beam recovers its piece of wood');
+assert.equal(frame.values[28], 12, 'breaking a placed beam recovers its piece of wood');
+const beforeRejectedEdit = meshPublications.length;
 assert.equal(edit_view(0), -4, 'the authored piling cannot be broken');
+assert.equal(meshPublications.length, beforeRejectedEdit, 'rejected edit does not publish geometry');
 
-for (const piling of [14, 12, 10]) {
-  aimNorthAt(4, piling + .5);
+for (const piling of [28, 26, 24, 22, 20, 18]) {
+  aimNorthAt(4, piling + .50);
   assert.equal(place_selected(), 1, 'extend the dry surface above piling ' + piling);
   aimNorthAt(4.5, piling + 1);
   assert.equal(place_selected(), 1, 'place adjacent wood in the next unbridged cell');
   moveOn(0, 2, piling + .55, -1, 'walk the completed portion of the bridge');
 }
-aimNorthAt(4.45, 8.97);
-assert.equal(place_selected(), 1, 'join the remaining open cell to the far rock bank');
-tick(0, 1, 1);
-assert.equal(frame.values[28], 0, 'full dry bridge uses exactly the visible wood stock');
-moveOn(0, 2, 6.50, -1, 'cross all seven cells of the player-built bridge');
+assert.equal(frame.values[28], 0, 'entire bridge uses all of the visible wood stock');
+moveOn(0, 2, 16.48, -1, 'cross all twelve cells of the player-built bridge');
+assert.equal(frame.values[29], 1);
 enterLighthouse();
+assert.equal(phase(), 1, 'visiting the lighthouse before the west watchfire cannot finish the run');
+moveOn(1, 2, 9.45, 1, 'return to the west watchfire trail');
+lightWatchfires();
 assert.equal(frame.values[26], 1, 'the complete bridge keeps the flame dry');
-
-function westStride(wait, finish = false) {
-  start_beacon();
-  missionFlameFloor = 1;
-  tick(0, 1, 1);
-  const surfaceLow = renderedSeaAt(4.5, 14.5);
-  if (wait) steps(wait, .06);
-  assert.equal(phase(), 1, 'harbor remains safe even at high tide');
-  moveOn(2, 0, 4.66, -1, 'west route access');
-  moveOn(0, 2, 14.2, -1, 'west cut shelf');
-  steps(8);
-  const before = coords();
-  const surface = renderedSeaAt(before[0], before[2]);
-  if (wait >= 275) assert(surface > surfaceLow + 1.4, 'high tide actually reaches the route, not just the HUD');
-  if (!wait) assert(surface < 3.08, 'the cut is initially mostly dry');
-  control(0, 1);
-  tick(.05, 1, 1);
-  control(0, 0);
-  const stride = before[2] - coords()[2];
-  if (finish) {
-    aimNorthAt(3.5, 12.99);
-    assert(frame.hit >= 0 && ((frame.hit >>> 9) & 31) === 12 && ((frame.hit >>> 5) & 15) === 3);
-    assert.equal(edit_view(0), 1, 'break the bottom plug from the marked route');
-    aimNorthAt(4.5, 12.99);
-    assert(frame.hit >= 0 && ((frame.hit >>> 9) & 31) === 12 && ((frame.hit >>> 5) & 15) === 4);
-    assert.equal(edit_view(0), 1, 'open player-height clearance through the tidal shortcut');
-    moveOn(0, 2, 10.65, -1, 'walk through the broken sand gate', 33);
-    assert.equal(frame.values[28], 7, 'digging sand does not change bridge stock');
-    if (wait) assert(missionFlameFloor < .97 && frame.values[25] === 1, 'the flooded cut may briefly soak the flame without ending the run');
-    moveUntil(0, 2, 9.1, -1, 14);
-    jumpNorth(8.44, 'leave the low cut onto the north shelf');
-    jumpNorth(6.65, 'step from the shelf onto the dry headland');
-    moveOn(3, 0, 11.42, 1, 'reach lighthouse from the tidal cut');
-    enterLighthouse();
-    assert.equal(frame.values[26], 1, 'the flame fully recovers on dry land');
-  }
-  return stride;
-}
-const earlyCut = westStride(0, true), lateCut = westStride(280);
-assert(earlyCut > .20 && lateCut < earlyCut * .80 && lateCut > .07,
-  'walking the same cut is swift early and loses time in the rising sea');
-westStride(130, true);
 
 start_beacon();
 tick(0, 1, 1);
-moveOn(3, 0, 13.35, 1, 'choose open channel instead of wood pilings');
-moveOn(0, 2, 12.6, -1, 'enter deep open water without holding Jump');
-steps(170);
-assert.equal(phase(), 3, 'leaving the lantern immersed in deep water extinguishes the run');
+moveOn(0, 2, 30.35, -1, 'reach the direct route water edge');
+control(0, 1);
+for (let i = 0; i < 3; i++) {
+  pulse_control(4);
+  steps(13);
+}
+clear_controls();
+assert(coords()[2] > 18 && frame.values[29] === 0 && phase() !== 2,
+  'three jumps from the straight route cannot reach even the first watchfire');
+steps(180);
+assert.equal(phase(), 3, 'deep open water extinguishes the run');
 assert.equal(frame.values[26], 0);
 const knownFailure = [coords(), water, mesh, missionHUD()];
 control(0, 1);
 steps(90);
 control(0, 0);
-assert.deepEqual([coords(), water, mesh, missionHUD()], knownFailure, 'finished run freezes terrain, clock-driven water and motion');
+assert.deepEqual([coords(), water, mesh, missionHUD()], knownFailure, 'finished run freezes terrain, waves, and movement');
 
 start_beacon();
 tick(0, 1, 1);
-moveOn(3, 0, 13.35, 1, 'travel to open water for the Swim Up stress case');
-moveOn(0, 2, 12.6, -1, 'enter open water');
+moveOn(0, 2, 33.42, -1, 'walk around the harbor hut');
+moveOn(3, 0, 28.50, 1, 'travel to open water for the Swim Up stress case');
+moveOn(0, 2, 26.8, -1, 'enter open water');
 control(4, 1);
 steps(250, .05);
 control(4, 0);
 assert.equal(phase(), 3, 'a single held Swim Up cannot keep the carried flame dry indefinitely');
+
+function westApproach(wait) {
+  start_beacon();
+  tick(0, 1, 1);
+  if (wait) steps(wait, .06);
+  assert.equal(phase(), 1, 'harbor remains safe even at high tide');
+  moveOn(0, 2, 33.4, -1, 'below the southwest hills');
+  moveOn(2, 0, 8.50, -1, 'west passage head');
+  moveOn(0, 2, 25, -1, 'west cut low entrance');
+  steps(9);
+  return renderedSeaAt(coords()[0], coords()[2]);
+}
+const earlyCut = westApproach(0);
+aimNorthAt(3.5, 23.99);
+assert(frame.hit >= 0 && ((frame.hit >>> 10) & 63) === 23 && ((frame.hit >>> 6) & 15) === 3);
+assert.equal(edit_view(0), 1, 'remove the bottom plug from the approved west route');
+aimNorthAt(4.5, 23.99);
+assert.equal(edit_view(0), 1, 'open player-height clearance through the tidal gate');
+moveOn(0, 2, 20.40, -1, 'pass the opened gate before it floods');
+jumpNorth(19.51, 'scramble back onto the far shelf');
+moveUntil(0, 2, 18.15, -1, 30);
+jumpNorth(17.40, 'climb onto the north bank');
+moveOn(0, 2, 16.42, -1, 'use the west-bank trail above the water');
+moveOn(3, 0, 24.50, 1, 'cross the north bank to the first watchfire');
+lightWatchfires();
+
+const lateCut = westApproach(410);
+assert(lateCut > earlyCut + 1.0, 'the tide physically raises water inside the passage');
+steps(160);
+assert.equal(phase(), 3, 'waiting in the flooded cut costs the flame');
 
 start_beacon();
 tick(0, 1, 1);
 assert.deepEqual(coords(), spawn);
 assert.deepEqual(mesh, freshMission);
 assert.deepEqual(water, freshWater);
-assert.deepEqual(missionHUD(), [1, 1, 0, 7], 'retry restores tide, lamp, wood, terrain and spawn');
+assert.deepEqual(missionHUD(), [1, 1, 0, 12, 0], 'retry resets water, watchfires, wood, terrain and spawn');
+moveOn(0, 2, 33.32, -1, 'go north from the harbor');
+moveOn(3, 0, 38.45, 1, 'east ridge entrance');
+moveUntil(0, 2, 26.8, -1, 70);
+assert(Math.abs(coords()[2] - 27.3) < .05, 'first ridge rise blocks walking');
+jumpNorth(26.48, 'jump the first ridge rise');
+moveUntil(0, 2, 23.9, -1, 40);
+assert(Math.abs(coords()[2] - 24.3) < .05, 'second ridge rise blocks walking');
+jumpNorth(23.52, 'jump the second ridge rise');
+moveOn(0, 2, 16.40, -1, 'come off the ridge onto the north bank');
+moveOn(2, 0, 24.54, -1, 'approach the north watchfire from the ridge');
+lightWatchfires();
 
-moveOn(3, 0, 20.40, 1, 'east ridge entrance');
-moveUntil(0, 2, 14.30, -1, 70);
-assert(Math.abs(coords()[2] - 15.3) < .05, 'first ridge rise blocks walking');
-jumpNorth(13.80, 'jump the first ridge rise');
-moveUntil(0, 2, 12.30, -1, 40);
-assert(Math.abs(coords()[2] - 13.3) < .05, 'second ridge rise blocks walking');
-jumpNorth(11.80, 'jump the second ridge rise');
-moveOn(0, 2, 6.75, -1, 'come off the ridge onto the north headland, clear of the lighthouse ramp');
-moveOn(2, 0, 11.66, -1, 'line up with the lighthouse door');
-enterLighthouse();
 assert(lanternColor().length > 0 && lanternColor().every(c => Math.abs(c - 1.85) < .001),
-  'the finished lighthouse shows the brighter lit signal');
+  'the finished lighthouse and both watchfires emit the brighter signal');
 assert(Math.abs(coords()[1] - 7.62) < .02 && frame.values[23] === 1);
 assert(leave_beacon() > 0);
 tick(0, 1, 1);
 assert.equal(phase(), 0);
-assert.deepEqual(mesh, editedSandbox, 'return to sandbox retains exact prior user edits');
+assert.deepEqual(mesh, editedSandbox, 'return to sandbox restores the expanded terrain and exact far-side edits');
 assert.equal(frame.values[24], 4);
 pulse_control(7);
 tick(0, 1, 1);
 assert.equal(frame.values[22], 1, 'sandbox flight is restored after the mission');
-console.log('Verified Beacon Run high-tide route tradeoff, wet loss, retry, wood bridge editing, dry ridge victory, lit beacon and retained sandbox.');
+console.log('Verified 48-cell world, watchfire progression, shortcut denial, twelve-beam bridge, open-water failure, west tunnel and ridge victories, retry, and exact sandbox restoration.');
