@@ -6,8 +6,8 @@
 <meta name="theme-color" content="#152a24">
 <meta name="description" content="Explore e transforme uma pequena ilha de blocos, gerada em Wosy e renderizada no navegador.">
 <title>Ilha de Bolso • Wosy</title>
-<link rel="stylesheet" href="./style.css">
-<script type="module" src="./main.js"></script>
+<link rel="stylesheet" href="./style.css?v=creative-1">
+<script type="module" src="./main.js?v=creative-1"></script>
 </head>
 <body>
 <main class="shell" id="game">
@@ -32,24 +32,41 @@
     <p class="error" id="error" role="alert" hidden></p>
   </section>
   <span class="reticle" aria-hidden="true"></span>
+  <section class="build-hud" aria-label="Materiais e movimento">
+    <p class="player-state" id="player-state" role="status"></p>
+    <div class="hotbar" role="group" aria-label="Materiais de construção">
+      <button class="grass" type="button" data-material="1" aria-label="1. Grama" aria-pressed="false" title="Grama · 1"><i></i><span>1</span></button>
+      <button class="soil" type="button" data-material="2" aria-label="2. Terra" aria-pressed="false" title="Terra · 2"><i></i><span>2</span></button>
+      <button class="stone" type="button" data-material="3" aria-label="3. Pedra" aria-pressed="false" title="Pedra · 3"><i></i><span>3</span></button>
+      <button class="sand" type="button" data-material="4" aria-label="4. Areia" aria-pressed="false" title="Areia · 4"><i></i><span>4</span></button>
+      <button class="wood" type="button" data-material="5" aria-label="5. Madeira" aria-pressed="false" title="Madeira · 5"><i></i><span>5</span></button>
+      <button class="leaves" type="button" data-material="6" aria-label="6. Folhas" aria-pressed="false" title="Folhas · 6"><i></i><span>6</span></button>
+    </div>
+  </section>
   <p class="notice" id="notice" aria-live="polite"></p>
   <section class="touch" aria-label="Controles por toque">
-    <div class="dpad" aria-label="Mover câmera">
+    <div class="dpad" aria-label="Mover pelo terreno">
       <button data-move="KeyW" type="button" aria-label="Avançar">▲</button>
       <button data-move="KeyA" type="button" aria-label="Mover para a esquerda">◀</button>
       <button data-move="KeyS" type="button" aria-label="Recuar">▼</button>
       <button data-move="KeyD" type="button" aria-label="Mover para a direita">▶</button>
     </div>
-    <div class="touch-edit"><button id="remove" type="button" aria-label="Remover bloco">−</button><button id="place" type="button" aria-label="Colocar bloco">+</button></div>
+    <div class="touch-actions">
+      <button id="jump-touch" data-move="Space" type="button">Pular</button>
+      <button id="descend-touch" data-move="KeyC" type="button" hidden>Descer</button>
+      <button id="flight-touch" type="button" aria-pressed="false">Voar</button>
+      <div class="touch-edit" role="group" aria-label="Editar blocos"><button id="remove" type="button" aria-label="Remover bloco">−</button><button id="place" type="button" aria-label="Colocar bloco selecionado">+</button></div>
+    </div>
   </section>
   <footer class="dock">
     <div class="desktop-guide" aria-label="Controles por teclado">
       <span title="WASD ou setas"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> mover</span>
       <span title="Botão esquerdo remove e botão direito coloca"><kbd>mouse</kbd> olhar</span>
+      <span><kbd>Espaço</kbd> pular <kbd>F</kbd> voo</span>
       <span><kbd>Q</kbd><kbd>E</kbd> editar</span>
       <span><kbd>Esc</kbd> liberar</span>
     </div>
-    <span class="mobile-guide">Arraste para olhar. Use + e − para editar.</span>
+    <span class="mobile-guide">Arraste para olhar. Escolha uma semente e explore.</span>
     <form class="seed" id="seed-form">
       <label for="seed">SEMENTE</label>
       <input id="seed" name="seed" type="text" maxlength="11" inputmode="numeric" pattern="-?[0-9]+" value="471" autocomplete="off">

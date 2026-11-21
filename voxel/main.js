@@ -10,18 +10,23 @@ const error = get("error");
 const notice = get("notice");
 const reticle = document.querySelector(".reticle");
 const coarse = matchMedia("(pointer: coarse)");
+const movementState = get("player-state");
+const jumpTouch = get("jump-touch");
+const descendTouch = get("descend-touch");
+const flightTouch = get("flight-touch");
+const materials = Array.from(document.querySelectorAll("[data-material]"));
 
-const PLACE_MATERIAL = 2;
 const gl = canvas.getContext("webgl2", { alpha: false, antialias: true });
 const fogColor = [0.65, 0.78, 0.72];
 const keyActions = new Map([
   ["KeyW",0], ["ArrowUp",0], ["KeyS",1], ["ArrowDown",1],
   ["KeyA",2], ["ArrowLeft",2], ["KeyD",3], ["ArrowRight",3],
-  ["Space",4], ["KeyC",5], ["ShiftLeft",6], ["ShiftRight",6],
+  ["Space",4], ["KeyC",5], ["ShiftLeft",6], ["ShiftRight",6], ["KeyF",7],
 ]);
 const pressed = new Set();
 const dpad = new Map();
 const downActions = new Set();
+const pulsedActions = new Set();
 const layers = {
   mesh: { data: null, count: 0, version: 0 },
   water: { data: null, count: 0, version: 0 },
@@ -30,6 +35,7 @@ const layers = {
 
 let engine, memory, gpu, playing = false, loaded = false, failed = false, contextLost = false;
 let pointerLook = null, toastTimer = 0, previous = 0, raf = 0;
+let displayedMaterial, displayedFlight, displayedGrounded;
 
 const vertex = `#version 300 es
 layout(location=0) in vec3 position;
@@ -243,7 +249,7 @@ async function boot() {
   }
   try {
     prepareGraphics();
-    const response = await fetch(new URL("./engine.wasm", import.meta.url));
+    const response = await fetch(new URL("./engine.wasm?v=creative-1", import.meta.url));
     if (!response.ok) throw new Error(`Motor não encontrado (HTTP ${response.status}).`);
     const bytes = await response.arrayBuffer();
     const api = {
@@ -261,7 +267,7 @@ async function boot() {
     if (failed) return;
     engine = instance.exports;
     memory = engine.memory;
-    if (!(memory instanceof WebAssembly.Memory) || ["_start", "generate", "control", "clear_controls", "look", "tick", "edit_view"].some((name) => typeof engine[name] !== "function")) {
+    if (!(memory instanceof WebAssembly.Memory) || ["_start", "generate", "control", "clear_controls", "look", "tick", "edit_view", "select_material", "cycle_material", "place_selected"].some((name) => typeof engine[name] !== "function")) {
       throw new Error("O binário WebAssembly não oferece a interface esperada.");
     }
     if (gl.isContextLost()) loseGraphics();
@@ -277,9 +283,27 @@ async function boot() {
   }
 }
 
+function renderControls(flight, grounded, material) {
+  if (displayedMaterial !== material) {
+    displayedMaterial = material;
+    for (const button of materials) {
+      button.setAttribute("aria-pressed", String(Number(button.dataset.material) === material));
+    }
+  }
+  if (displayedFlight === flight && displayedGrounded === grounded) return;
+  displayedFlight = flight;
+  displayedGrounded = grounded;
+  movementState.textContent = flight ? "Voando" : grounded ? "A pé" : "No ar";
+  jumpTouch.textContent = flight ? "Subir" : "Pular";
+  descendTouch.hidden = !flight;
+  flightTouch.textContent = flight ? "Parar voo" : "Voar";
+  flightTouch.setAttribute("aria-pressed", String(flight));
+}
+
 function present(pointer, hit) {
   if (!gpu || contextLost || document.hidden) return;
-  const data = memoryFloats(pointer, 22);
+  const data = memoryFloats(pointer, 25);
+  if (playing) renderControls(data[22] === 1, data[23] === 1, data[24]);
   reticle.classList.toggle("target", hit >= 0);
 
   gl.disable(gl.DEPTH_TEST);
@@ -325,8 +349,15 @@ function frame(now) {
   const h = Math.max(1, Math.round(canvas.clientHeight * ratio));
   if (w !== canvas.width || h !== canvas.height) { canvas.width = w; canvas.height = h; }
   gl.viewport(0, 0, w, h);
-  try { engine.tick(dt, w / h, playing ? 1 : 0); }
-  catch (e) { fail("O motor Wosy não conseguiu atualizar a imagem.", e); }
+  try {
+    engine.tick(dt, w / h, playing ? 1 : 0);
+    if (dt > 0) {
+      for (const action of pulsedActions) {
+        pulsedActions.delete(action);
+        syncAction(action);
+      }
+    }
+  } catch (e) { fail("O motor Wosy não conseguiu atualizar a imagem.", e); }
   startLoop();
 }
 
@@ -336,7 +367,7 @@ function startLoop() {
 
 function syncAction(action) {
   if (!loaded || !playing || contextLost) return;
-  const active = [...pressed].some((key) => keyActions.get(key) === action) ||
+  const active = pulsedActions.has(action) || [...pressed].some((key) => keyActions.get(key) === action) ||
     [...dpad.values()].some((button) => keyActions.get(button.dataset.move) === action);
   if (active === downActions.has(action)) return;
   if (active) downActions.add(action);
@@ -349,6 +380,7 @@ function clearInputs() {
   pressed.clear();
   dpad.clear();
   downActions.clear();
+  pulsedActions.clear();
   pointerLook = null;
   if (loaded) {
     try { engine.clear_controls(); }
@@ -362,12 +394,21 @@ function look(dx, dy) {
   catch (e) { fail("O motor Wosy não conseguiu mover a câmera.", e); }
 }
 
+function selectMaterial(material, cycle = false) {
+  if (!playing || !loaded || contextLost) return;
+  try {
+    if (cycle) engine.cycle_material(material);
+    else engine.select_material(material);
+  } catch (e) { fail("O motor Wosy não conseguiu selecionar o material.", e); }
+}
+
 function edit(place) {
   if (!playing || !loaded || contextLost) return;
   try {
-    const result = engine.edit_view(place ? PLACE_MATERIAL : 0);
+    const result = place ? engine.place_selected() : engine.edit_view(0);
     if (result === -1) toast("Aponte a mira para um bloco.");
     if (result === -2) toast("Aqui é o limite da ilha.");
+    if (result === -3) toast("Esse bloco ficaria no seu caminho.");
   } catch (e) { fail("O motor Wosy não conseguiu atualizar a ilha.", e); }
 }
 
@@ -381,6 +422,7 @@ function startPlaying() {
   if (!loaded || contextLost) return;
   playing = true;
   shell.classList.add("playing");
+  canvas.focus({ preventScroll: true });
   requestLook();
 }
 
@@ -421,6 +463,7 @@ get("fullscreen").addEventListener("click", async () => {
 
 document.addEventListener("keydown", (e) => {
   if (!playing || e.target instanceof HTMLInputElement) return;
+  if (e.code === "Space" && e.target?.nodeName === "BUTTON") return;
   const action = keyActions.get(e.code);
   if (action !== undefined) {
     pressed.add(e.code);
@@ -430,6 +473,11 @@ document.addEventListener("keydown", (e) => {
   if (e.code === "Escape") stopPlaying();
   if (e.code === "KeyQ" && !e.repeat) edit(false);
   if (e.code === "KeyE" && !e.repeat) edit(true);
+  const slot = /^(?:Digit|Numpad)([1-6])$/.exec(e.code);
+  if (slot && !e.repeat) {
+    selectMaterial(Number(slot[1]));
+    e.preventDefault();
+  }
 });
 document.addEventListener("keyup", (e) => {
   if (pressed.delete(e.code)) syncAction(keyActions.get(e.code));
@@ -478,6 +526,11 @@ for (const event of ["pointerup","pointercancel","lostpointercapture"]) {
 }
 for (const btn of document.querySelectorAll("[data-move]")) {
   const action = keyActions.get(btn.dataset.move);
+  btn.addEventListener("click", (e) => {
+    if (e.detail !== 0 || !playing || !loaded || contextLost) return;
+    pulsedActions.add(action);
+    syncAction(action);
+  });
   btn.addEventListener("pointerdown", (e) => {
     if (!playing || e.pointerId === pointerLook?.id || dpad.has(e.pointerId)) return;
     e.preventDefault();
@@ -493,6 +546,21 @@ for (const btn of document.querySelectorAll("[data-move]")) {
     });
   }
 }
+for (const button of materials) {
+  button.addEventListener("click", () => selectMaterial(Number(button.dataset.material)));
+}
+flightTouch.addEventListener("click", () => {
+  if (!playing || !loaded || contextLost || downActions.has(7)) return;
+  try { engine.control(7, 1); engine.control(7, 0); }
+  catch (e) { fail("O motor Wosy não conseguiu alternar o voo.", e); }
+});
+document.addEventListener("wheel", (e) => {
+  if (!playing || !loaded || contextLost || e.ctrlKey || e.deltaY === 0 ||
+      (e.target !== canvas && document.pointerLockElement !== canvas &&
+        !e.target?.closest?.(".hotbar"))) return;
+  selectMaterial(Math.sign(e.deltaY), true);
+  e.preventDefault();
+}, { passive: false });
 get("remove").addEventListener("click", () => edit(false));
 get("place").addEventListener("click", () => edit(true));
 canvas.addEventListener("webglcontextlost", (e) => {

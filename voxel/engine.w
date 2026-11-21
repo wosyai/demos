@@ -47,9 +47,9 @@ f32[6] sea_b = [-88.0, sea_level, 112.0, 0.0, 0.0, 0.0];
 f32[6] sea_c = [112.0, sea_level, 112.0, 0.0, 0.0, 0.0];
 f32[6] sea_d = [112.0, sea_level, -88.0, 0.0, 0.0, 0.0];
 f32[6][6] sea = [sea_a, sea_b, sea_c, sea_a, sea_c, sea_d];
-f32[22] frame_values = [
+f32[25] frame_values = [
 	0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
-	0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+	0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
 ];
 i32 write_position = 0;
 i32 wire_position = 0;
@@ -62,6 +62,16 @@ f32 cos_yaw = 1.0;
 f32 sin_pitch = 0.0;
 f32 cos_pitch = 1.0;
 i32 controls = 0;
+i32 selected_material = 2;
+bool flying = false;
+bool grounded = false;
+bool ground_contact_dirty = false;
+bool jump_pending = false;
+f32 vertical_speed = 0.0;
+f32 player_radius = 0.30;
+f32 player_feet = 1.62;
+f32 player_head = 0.18;
+f32 contact_skin = 0.0001;
 f32 camera_x = 32.0;
 f32 camera_y = 16.5;
 f32 camera_z = 34.5;
@@ -291,6 +301,7 @@ i32(i32, i32, i32, i32) edit = fn(x, y, z, material) {
 		if (world[iy][iz][ix] == new_material) { 0 } else {
 			world[iy][iz][ix] = new_material;
 			target_dirty = true;
+			ground_contact_dirty = true;
 			1
 		}
 	} else { 0 }
@@ -373,24 +384,85 @@ f32(f32) sine = fn(angle) {
 
 f32(f32) cosine = fn(angle) { sine(angle + 1.570796327) };
 
-unit() reset_camera = fn {
-	camera_x = 32.0;
-	camera_y = 16.5;
-	camera_z = 34.5;
-	yaw = -0.72664234;
-	pitch = -0.379571;
-	controls = 0;
+i32(i32, i32, i32) spawn_height = fn(x, y, z) {
+	if (y < 0 || cell(x, y, z) != 0) { y + 1 } else { spawn_height(x, y - 1, z) }
+};
+
+i32(i32, i32) spawn_tile = fn(x, z) {
+	if (inside(x, 0, z)) {
+		i32 height = spawn_height(x, 15, z);
+		if (height > 0) { x + 24 * z + 576 * height } else { -1 }
+	} else { -1 }
+};
+
+i32(i32, i32) search_spawn_ring = fn(distance, dx) {
+	if (dx > distance) { -1 } else {
+		i32 dz = distance - abs_i(dx);
+		i32 north = spawn_tile(12 + dx, 16 - dz);
+		if (north >= 0) { north } else {
+			i32 south = if (dz > 0) { spawn_tile(12 + dx, 16 + dz) } else { -1 };
+			if (south >= 0) { south } else { search_spawn_ring(distance, dx + 1) }
+		}
+	}
+};
+
+i32(i32) search_spawn = fn(distance) {
+	if (distance > 28) { -1 } else {
+		i32 tile = search_spawn_ring(distance, -distance);
+		if (tile >= 0) { tile } else { search_spawn(distance + 1) }
+	}
+};
+
+unit() spawn_player = fn {
+	i32 tile = search_spawn(0);
+	if (tile >= 0) {
+		camera_x = core.sint_to_float<f32>(tile % 24) + 0.5;
+		camera_y = core.sint_to_float<f32>(tile / 576) + player_feet;
+		camera_z = core.sint_to_float<f32>((tile / 24) % 24) + 0.5;
+		grounded = true;
+	} else {
+		camera_x = 12.5;
+		camera_y = 10.0;
+		camera_z = 16.5;
+		flying = true;
+		grounded = false;
+	};
+	ground_contact_dirty = false;
+	jump_pending = false;
+	vertical_speed = 0.0;
 	selected_hit = -2;
 	target_dirty = true;
+};
+
+unit() reset_camera = fn {
+	flying = false;
+	spawn_player();
+	yaw = -0.72664234;
+	pitch = -0.21;
+	controls = 0;
 	orientation_dirty = true;
 };
 
-unit() clear_controls = fn { controls = 0; };
+unit() clear_controls = fn {
+	controls = 0;
+	jump_pending = false;
+};
 
 unit(i32, i32) control = fn(action, down) {
-	if (action >= 0 && action < 7) {
+	if (action >= 0 && action < 8) {
 		i32 bit = 1 << action;
-		if (down != 0) { controls = controls | bit; } else { controls = controls & ~bit; };
+		if (down != 0) {
+			bool first_press = (controls & bit) == 0;
+			controls = controls | bit;
+			if (first_press && action == 4 && !flying) { jump_pending = true; };
+			if (first_press && action == 7) {
+				flying = !flying;
+				grounded = false;
+				ground_contact_dirty = !flying;
+				jump_pending = false;
+				vertical_speed = 0.0;
+			};
+		} else { controls = controls & ~bit; };
 	};
 };
 
@@ -409,27 +481,111 @@ unit(f32, f32) look = fn(dx, dy) {
 	};
 };
 
-unit(f32, f32, f32, f32, f32) move_camera = fn(dt, sy, cy, sp, cp) {
-	i32 forward = active(1) - active(2);
-	i32 right = active(8) - active(4);
-	i32 up = active(16) - active(32);
-	i32 axes = forward * forward + right * right + up * up;
-	if (axes > 0 && dt > 0.0) {
+bool(i32, i32, i32, i32, i32, i32) solid_layers = fn(x0, x1, y, last_y, z0, z1) {
+	if (y > last_y) { false } else {
+		cell(x0, y, z0) != 0
+			|| (x1 != x0 && cell(x1, y, z0) != 0)
+			|| (z1 != z0 && (cell(x0, y, z1) != 0 || (x1 != x0 && cell(x1, y, z1) != 0)))
+			|| solid_layers(x0, x1, y + 1, last_y, z0, z1)
+	}
+};
+
+bool(f32, f32, f32) player_collides = fn(x, y, z) {
+	solid_layers(
+		floor_i(x - player_radius + contact_skin),
+		floor_i(x + player_radius - contact_skin),
+		floor_i(y - player_feet + contact_skin),
+		floor_i(y + player_head - contact_skin),
+		floor_i(z - player_radius + contact_skin),
+		floor_i(z + player_radius - contact_skin)
+	)
+};
+
+bool(i32, i32, i32) overlaps_player = fn(x, y, z) {
+	f32 block_x = core.sint_to_float<f32>(x);
+	f32 block_y = core.sint_to_float<f32>(y);
+	f32 block_z = core.sint_to_float<f32>(z);
+	camera_x - player_radius + contact_skin < block_x + 1.0
+		&& camera_x + player_radius - contact_skin > block_x
+		&& camera_y - player_feet + contact_skin < block_y + 1.0
+		&& camera_y + player_head - contact_skin > block_y
+		&& camera_z - player_radius + contact_skin < block_z + 1.0
+		&& camera_z + player_radius - contact_skin > block_z
+};
+
+f32(f32, f32, f32, f32) contact_position = fn(prior, next, low_extent, high_extent) {
+	if (next > prior) {
+		core.sint_to_float<f32>(floor_i(next + high_extent - contact_skin)) - high_extent
+	} else {
+		core.sint_to_float<f32>(floor_i(next - low_extent + contact_skin) + 1) + low_extent
+	}
+};
+
+unit(f32, f32, f32, i32) move_player_steps = fn(dx, dy, dz, remaining) {
+	if (dx != 0.0) {
+		f32 next_x = clamp_f(camera_x + dx, -20.0, 44.0);
+		if (next_x != camera_x && player_collides(next_x, camera_y, camera_z)) {
+			next_x = contact_position(camera_x, next_x, player_radius, player_radius);
+		};
+		camera_x = next_x;
+	};
+	if (dz != 0.0) {
+		f32 next_z = clamp_f(camera_z + dz, -20.0, 44.0);
+		if (next_z != camera_z && player_collides(camera_x, camera_y, next_z)) {
+			next_z = contact_position(camera_z, next_z, player_radius, player_radius);
+		};
+		camera_z = next_z;
+	};
+	f32 remaining_dy = dy;
+	if (dy != 0.0) {
+		f32 next_y = camera_y + dy;
+		if (flying) { next_y = clamp_f(next_y, 1.8, 35.0); };
+		if (next_y != camera_y && player_collides(camera_x, next_y, camera_z)) {
+			next_y = contact_position(camera_y, next_y, player_feet, player_head);
+			remaining_dy = 0.0;
+			vertical_speed = 0.0;
+		};
+		camera_y = next_y;
+	};
+	if (remaining > 1) { move_player_steps(dx, remaining_dy, dz, remaining - 1); };
+};
+
+unit(f32, f32, f32) move_camera = fn(dt, sy, cy) {
+	if (dt > 0.0) {
+		i32 forward = active(1) - active(2);
+		i32 right = active(8) - active(4);
+		i32 up = if (flying) { active(16) - active(32) } else { 0 };
+		i32 axes = forward * forward + right * right + up * up;
 		f32 normal = if (axes == 3) { 0.577350269 } else { if (axes == 2) { 0.707106781 } else { 1.0 } };
-		f32 speed = if (active(64) == 1) { 13.0 } else { 7.0 };
+		f32 speed = if (active(64) == 1) { 8.0 } else { 4.8 };
 		f32 stride = dt * speed * normal;
 		f32 f = core.sint_to_float<f32>(forward);
 		f32 r = core.sint_to_float<f32>(right);
-		f32 u = core.sint_to_float<f32>(up);
-		f32 next_x = clamp_f(camera_x + (sy * cp * f + cy * r) * stride, -20.0, 44.0);
-		f32 next_y = clamp_f(camera_y + (sp * f + u) * stride, 2.1, 35.0);
-		f32 next_z = clamp_f(camera_z + ((0.0 - cy * cp * f) + sy * r) * stride, -20.0, 44.0);
-		if (next_x != camera_x || next_y != camera_y || next_z != camera_z) {
-			camera_x = next_x;
-			camera_y = next_y;
-			camera_z = next_z;
-			target_dirty = true;
+		f32 dx = (sy * f + cy * r) * stride;
+		f32 dz = (0.0 - cy * f + sy * r) * stride;
+		if (!flying) {
+			if (ground_contact_dirty) {
+				grounded = vertical_speed <= 0.0 && player_collides(camera_x, camera_y - 0.018, camera_z);
+				ground_contact_dirty = false;
+			};
+			if (jump_pending && grounded) { vertical_speed = 7.4; grounded = false; };
+			vertical_speed = if (grounded) { 0.0 } else { clamp_f(vertical_speed - 22.0 * dt, -18.0, 8.0) };
 		};
+		jump_pending = false;
+		f32 dy = if (flying) { core.sint_to_float<f32>(up) * stride } else { vertical_speed * dt };
+		f32 previous_x = camera_x;
+		f32 previous_y = camera_y;
+		f32 previous_z = camera_z;
+		if (dx != 0.0 || dy != 0.0 || dz != 0.0) {
+			if (dt <= 0.015) { move_player_steps(dx, dy, dz, 1); } else {
+				if (dt <= 0.03) { move_player_steps(dx * 0.5, dy * 0.5, dz * 0.5, 2); } else {
+					move_player_steps(dx * 0.25, dy * 0.25, dz * 0.25, 4);
+				};
+			};
+			if (!flying) { grounded = vertical_speed <= 0.0 && player_collides(camera_x, camera_y - 0.018, camera_z); };
+		};
+		if (camera_y < -6.0) { spawn_player(); };
+		if (camera_x != previous_x || camera_y != previous_y || camera_z != previous_z) { target_dirty = true; };
 	};
 };
 
@@ -481,7 +637,7 @@ unit() publish_water = fn {
 	unsafe { host.water(core.pointer_cast<*?u8>(&?sea[0][0]), 6); };
 };
 
-unit(f32, f32, f32, f32, f32, f32, f32, i32) publish_frame = fn(x, y, z, sy, cy, sp, cp, hit) {
+unit(f32, f32, f32, f32, f32, f32, f32, f32, i32) publish_frame = fn(x, y, z, sy, cy, sp, cp, view_pitch, hit) {
 	f32 q = 1.920982127;
 	f32 qw = q / frame_values[20];
 	f32 depth = -1.00170358;
@@ -506,8 +662,11 @@ unit(f32, f32, f32, f32, f32, f32, f32, i32) publish_frame = fn(x, y, z, sy, cy,
 	frame_values[16] = x;
 	frame_values[17] = y;
 	frame_values[18] = z;
-	frame_values[19] = pitch;
+	frame_values[19] = view_pitch;
 	frame_values[21] = clock_seconds;
+	frame_values[22] = if (flying) { 1.0 } else { 0.0 };
+	frame_values[23] = if (grounded) { 1.0 } else { 0.0 };
+	frame_values[24] = core.sint_to_float<f32>(selected_material);
 	unsafe { host.frame(core.pointer_cast<*?u8>(&?frame_values[0]), hit); };
 };
 
@@ -560,11 +719,16 @@ unit(f32, f32, i32) tick = fn(dt, aspect, playing) {
 	frame_values[20] = if (aspect >= 0.05 && aspect <= 20.0) { aspect } else { 1.0 };
 	clock_seconds = clock_seconds + step;
 	update_orientation();
-	if (playing != 0 && controls != 0) { move_camera(step, sin_yaw, cos_yaw, sin_pitch, cos_pitch); };
-	i32 hit = if (playing != 0) { current_view_target() } else { -1 };
-	publish_outline(hit);
-	f32 intro = if (playing == 0 && frame_values[20] > 1.17) { 4.5 } else { 0.0 };
-	publish_frame(camera_x - cos_yaw * intro, camera_y, camera_z - sin_yaw * intro, sin_yaw, cos_yaw, sin_pitch, cos_pitch, hit);
+	if (playing != 0) {
+		move_camera(step, sin_yaw, cos_yaw);
+		i32 hit = current_view_target();
+		publish_outline(hit);
+		publish_frame(camera_x, camera_y, camera_z, sin_yaw, cos_yaw, sin_pitch, cos_pitch, pitch, hit);
+	} else {
+		publish_outline(-1);
+		f32 intro = if (frame_values[20] > 1.17) { 4.5 } else { 0.0 };
+		publish_frame(32.0 - 0.747411 * intro, 16.5, 34.5 + 0.664362 * intro, -0.664362, 0.747411, -0.370522, 0.928823, -0.379571, -1);
+	};
 };
 
 i32(i32) edit_view = fn(material) {
@@ -584,10 +748,26 @@ i32(i32) edit_view = fn(material) {
 			if (side == 5) { z = z + 1; };
 		};
 		if (inside(x, y, z)) {
-			i32 changed = edit(x, y, z, material);
-			if (changed == 1) { rebuild(); };
-			changed
+			if (material > 0 && overlaps_player(x, y, z)) { -3 } else {
+				i32 changed = edit(x, y, z, material);
+				if (changed == 1) { rebuild(); };
+				changed
+			}
 		} else { -2 }
 	}
 };
+unit(i32) select_material = fn(material) {
+	if (material >= 1 && material <= 6) { selected_material = material; };
+};
+
+unit(i32) cycle_material = fn(delta) {
+	if (delta > 0) {
+		selected_material = if (selected_material == 6) { 1 } else { selected_material + 1 };
+	};
+	if (delta < 0) {
+		selected_material = if (selected_material == 1) { 6 } else { selected_material - 1 };
+	};
+};
+
+i32() place_selected = fn { edit_view(selected_material) };
 %%end
