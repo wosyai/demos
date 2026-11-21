@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { bootFlight, makeControls, memoryRange, replayStore } from "../host.mjs";
+import { readFile } from "node:fs/promises";
+import { bootFlight, makeControls, memoryRange, replayStore, stickAxes } from "../host.mjs";
 
 class Hub {
   constructor() { this.listeners = new Map(); }
@@ -32,18 +33,22 @@ function graphicsFixture() {
   return { gl, draws, uploads };
 }
 
-function mock({ noGraphics = false, badMesh = false, initialLost = false, exitAtStart = false } = {}) {
+function mock({ noGraphics = false, badMesh = false, initialLost = false, exitAtStart = false, inputVersion = null, orientationAPI = false, frameLength = 28 } = {}) {
   const doc = new Hub(), win = new Hub(), nodes = new Map(), raf = new Map(), data = new Map();
-  const g = graphicsFixture(), called = { reset: [], tick: [], replay: [], begin: 0 };
+  const g = graphicsFixture(), called = { reset: [], tick: [], replay: [], requests: [], begin: 0 };
   const wasmExports = new WebAssembly.Memory({initial: 1});
   let index = 0, shouldComplete = false, current = 0, imported, distance = 122, completedGates = 3, landing = false;
+  let guidance = [0, 0, 0];
   function element(name, dataset = {}) {
     const node = new Hub();
-    const captures = new Set(), classes = new Set();
+    const captures = new Set(), classes = new Set(), properties = new Map();
     Object.assign(node, {
       dataset, id: name, hidden: false, disabled: false, textContent: "", captures, classes,
       classList: { toggle(key, enabled) { if (enabled) classes.add(key); else classes.delete(key); } },
       focus() { doc.activeElement = this; },
+      properties,
+      style: {setProperty: (key, value) => properties.set(key, value), removeProperty: (key) => properties.delete(key)},
+      getBoundingClientRect: () => ({left: 12, top: 220, width: 174, height: 145}),
       setPointerCapture(id) { captures.add(id); },
       hasPointerCapture(id) { return captures.has(id); },
       releasePointerCapture(id) { captures.delete(id); this.events("lostpointercapture", {pointerId: id}); },
@@ -52,16 +57,18 @@ function mock({ noGraphics = false, badMesh = false, initialLost = false, exitAt
     return node;
   }
   const courses = [element("farm", {course: "0"}), element("paris", {course: "1"})];
-  const controls = ["left", "right", "climb", "dive", "power", "brake"].map((value) => element(value, {action: value}));
-  for (const name of "game view menu hud engine problem keys touch summary summary-title summary-detail summary-kicker again choose callout flight-cue time gates speed altitude best restart pause track".split(" ")) element(name);
+  const controls = ["power", "brake"].map((value) => element(value, {action: value}));
+  for (const name of "game view menu hud engine problem keys touch flight-stick summary summary-title summary-detail summary-kicker again choose callout flight-cue time gates speed altitude best restart pause track".split(" ")) element(name);
   const canvas = nodes.get("view");
   Object.assign(canvas, { clientWidth: 820, clientHeight: 420, getContext: () => noGraphics ? null : g.gl });
   Object.assign(doc, { hidden: false, getElementById: (name) => nodes.get(name),
     querySelectorAll: (selector) => selector === "[data-course]" ? courses : controls });
   Object.assign(win, {
     devicePixelRatio: 3,
+    ...(orientationAPI ? {screen: {orientation: new Hub()}} : {}),
     localStorage: { setItem: (key, value) => data.set(key, value), getItem: (key) => data.get(key) },
-    fetch: async () => {
+    fetch: async (url) => {
+      called.requests.push(url);
       if (initialLost) canvas.events("webglcontextlost");
       return {ok: true, arrayBuffer: async () => new ArrayBuffer(0)};
     },
@@ -69,6 +76,7 @@ function mock({ noGraphics = false, badMesh = false, initialLost = false, exitAt
       imported = imports.flight;
       return {instance: {exports: {
         memory: wasmExports, _start() { if (exitAtStart) imports.wasi_snapshot_preview1.proc_exit(9); },
+        ...(inputVersion === null ? {} : {input_version: () => inputVersion}),
         reset(course) {
           current = course;
           called.reset.push(course);
@@ -80,9 +88,10 @@ function mock({ noGraphics = false, badMesh = false, initialLost = false, exitAt
         tick(dt, mask, aspect) {
           called.tick.push([dt, mask, aspect]);
           imported.aircraft(128, 18);
-          const frame = new Float32Array(wasmExports.buffer, 256, 28);
+          const frame = new Float32Array(wasmExports.buffer, 256, frameLength);
           frame.set([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1, current,12.125,31,22,completedGates,8,shouldComplete ? 1 : 0,12.125,250,0,landing ? 1 : 0,distance]);
-          imported.frame(256, 28);
+          if (frameLength === 31) frame.set(guidance, 28);
+          imported.frame(256, frameLength);
           if (shouldComplete) {
             new Uint8Array(wasmExports.buffer, 512, 3).set([3,4,255]);
             imported.record(512, 3);
@@ -97,6 +106,7 @@ function mock({ noGraphics = false, badMesh = false, initialLost = false, exitAt
   return { ...host, ...g, doc, win, nodes, data, courses, canvas, called, raf,
     complete(value = true) { shouldComplete = value; },
     cue(values) { ({distance, completedGates, landing} = values); },
+    guidance(turn, instruction, shortcut = false) { guidance = [turn, instruction, shortcut ? 1 : 0]; },
     frame(t) {
       const entry = raf.entries().next().value;
       assert.ok(entry, "a frame is pending");
@@ -147,11 +157,15 @@ test("boots to course selection, selects Paris, forwards concurrent desktop and 
   assert.equal(sim.nodes.get("track").textContent, "Seine Sprint");
   const key = sim.win.events("keydown", {code: "KeyS"});
   assert.equal(key.prevented, true);
-  assert.equal(sim.nodes.get("left").events("pointerdown", {pointerId: 5}).prevented, true);
+  const stick = sim.nodes.get("flight-stick");
+  assert.equal(stick.events("pointerdown", {pointerId: 5, clientX: 100, clientY: 300}).prevented, true);
+  stick.events("pointermove", {pointerId: 5, clientX: 50, clientY: 300});
   sim.nodes.get("power").events("pointerdown", {pointerId: 6});
   sim.frame(16);
   assert.equal(sim.called.tick.at(-1)[1], 21);
   sim.win.events("pointercancel", {pointerId: 5});
+  assert.equal(stick.classes.has("active"), false);
+  assert.equal(stick.properties.size, 0);
   sim.frame(32);
   assert.equal(sim.called.tick.at(-1)[1], 20);
   sim.win.events("blur");
@@ -245,4 +259,134 @@ test("changing distance stays visual; live text updates only for gate or landing
   sim.cue({distance: 1, completedGates: 8, landing: true});
   sim.frame(250);
   assert.equal(live.textContent, "Land in the marked strip.");
+});
+
+test("radial stick keeps a deadzone, scales proportionally, and clamps diagonals without a square bias", () => {
+  assert.deepEqual(stickAxes(3, 3, 45), {bank: 0, pitch: 0});
+  assert.deepEqual(stickAxes(-90, 0, 45), {bank: -127, pitch: 0});
+  const shallow = stickAxes(13, -13, 45), deep = stickAxes(24, -24, 45);
+  assert.ok(shallow.bank > 0 && shallow.bank < deep.bank);
+  assert.equal(shallow.pitch, -shallow.bank);
+  assert.equal(deep.pitch, -deep.bank);
+  assert.deepEqual(stickAxes(100, -100, 45), {bank: 90, pitch: -90});
+});
+
+test("analog motion packs both axes while thumbs stay independent across pause, blur and focus", async () => {
+  const sim = mock({inputVersion: 1});
+  await sim.ready;
+  sim.courses[0].events("click");
+  const stick = sim.nodes.get("flight-stick"), power = sim.nodes.get("power");
+  const bytes = (value) => [(value << 16) >> 24, (value << 8) >> 24];
+  stick.events("pointerdown", {pointerId: 10, clientX: 96, clientY: 290});
+  power.events("pointerdown", {pointerId: 20});
+  stick.events("pointermove", {pointerId: 10, clientX: 108, clientY: 282});
+  sim.frame(100);
+  const shallow = sim.called.tick.at(-1)[1];
+  assert.equal(shallow & 127, 64 | 16);
+  assert.ok(bytes(shallow)[0] > 0 && bytes(shallow)[1] < 0);
+  stick.events("pointermove", {pointerId: 20, clientX: 14, clientY: 290});
+  stick.events("pointerdown", {pointerId: 30, clientX: 20, clientY: 290});
+  sim.frame(116);
+  assert.equal(sim.called.tick.at(-1)[1], shallow);
+  stick.events("pointermove", {pointerId: 10, clientX: 131, clientY: 260});
+  sim.win.events("keydown", {code: "ArrowLeft"});
+  sim.frame(132);
+  const deep = sim.called.tick.at(-1)[1];
+  assert.equal(deep & 127, 64 | 16 | 1);
+  assert.ok(bytes(deep)[0] > bytes(shallow)[0] && bytes(deep)[1] < bytes(shallow)[1]);
+  sim.win.events("pointerup", {pointerId: 20});
+  sim.frame(148);
+  assert.deepEqual(bytes(sim.called.tick.at(-1)[1]), bytes(deep));
+  assert.equal(sim.called.tick.at(-1)[1] & 16, 0);
+  sim.nodes.get("pause").events("click");
+  assert.equal(stick.captures.has(10), false);
+  assert.equal(stick.properties.size, 0);
+  sim.nodes.get("again").events("click");
+  stick.events("pointermove", {pointerId: 10, clientX: 139, clientY: 268});
+  sim.win.events("keydown", {code: "ArrowLeft", repeat: true});
+  sim.frame(170);
+  assert.equal(sim.called.tick.at(-1)[1], 0);
+  stick.events("pointerdown", {pointerId: 31, clientX: 96, clientY: 290});
+  stick.events("pointermove", {pointerId: 31, clientX: 96, clientY: 390});
+  sim.frame(186);
+  assert.deepEqual(bytes(sim.called.tick.at(-1)[1]), [0, 127]);
+  sim.win.events("blur");
+  sim.frame(5028);
+  assert.deepEqual(sim.called.tick.at(-1), [0, 0, 820/420]);
+  assert.equal(stick.captures.size, 0);
+});
+
+test("the light shell and its flight engine share the same release token", async () => {
+  const sim = mock();
+  await sim.ready;
+  const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
+  assert.match(html, /href="\.\/style\.css\?v=control-v2"/);
+  assert.match(html, /src="\.\/host\.mjs\?v=control-v2"/);
+  assert.deepEqual(sim.called.requests.map((url) => [url.pathname.split("/").at(-1), url.search]),
+    [["flight.wasm", "?v=control-v2"]]);
+});
+
+test("phone rotation releases the old touch and accepts a fresh steer in the new aspect", async () => {
+  for (const orientationAPI of [false, true]) {
+    const sim = mock({inputVersion: 1, orientationAPI});
+    await sim.ready;
+    sim.courses[0].events("click");
+    const stick = sim.nodes.get("flight-stick");
+    stick.events("pointerdown", {pointerId: 13, clientX: 95, clientY: 300});
+    stick.events("pointermove", {pointerId: 13, clientX: 176, clientY: 300});
+    sim.frame(100);
+    assert.equal((sim.called.tick.at(-1)[1] >> 8) & 255, 127);
+    sim.canvas.clientWidth = 320;
+    sim.canvas.clientHeight = 640;
+    if (orientationAPI) sim.win.screen.orientation.events("change");
+    else sim.win.events("orientationchange");
+    assert.equal(stick.captures.size, 0);
+    stick.events("pointermove", {pointerId: 13, clientX: 35, clientY: 300});
+    sim.frame(120);
+    assert.deepEqual(sim.called.tick.at(-1), [0, 0, .5]);
+    stick.events("pointerdown", {pointerId: 14, clientX: 95, clientY: 300});
+    stick.events("pointermove", {pointerId: 14, clientX: 15, clientY: 300});
+    sim.frame(140);
+    assert.equal((sim.called.tick.at(-1)[1] >> 8) & 255, 129);
+    assert.equal(sim.doc.activeElement, sim.nodes.get("game"));
+  }
+});
+
+test("optional guidance shows turns, the cyan shortcut and corrective landing instructions without live spam", async () => {
+  const sim = mock({frameLength: 31});
+  await sim.ready;
+  sim.courses[1].events("click");
+  const callout = sim.nodes.get("callout"), live = sim.nodes.get("flight-cue");
+  sim.guidance(-.76, 0, true);
+  sim.frame(20);
+  assert.equal(callout.textContent, "← Gate left · 122 m · Cyan shortcut");
+  assert.equal(live.textContent, "Gates cleared: 3 of 8.");
+  sim.guidance(.71, 0);
+  sim.frame(120);
+  assert.equal(callout.textContent, "Gate right → · 122 m");
+  assert.equal(live.textContent, "Gates cleared: 3 of 8.");
+  sim.guidance(.06, 0);
+  sim.frame(230);
+  assert.equal(callout.textContent, "Gate ahead · 122 m");
+  sim.cue({distance: 0, completedGates: 8, landing: true});
+  for (const [instruction, title] of [
+    [1, "Line up with the landing strip"], [2, "Brake to slow down"],
+    [3, "Ease your descent"], [4, "Aligned · ease onto the strip"], [9, "Land in the marked strip"],
+  ]) {
+    sim.guidance(-.99, instruction, true);
+    sim.frame(350 + instruction * 100);
+    assert.equal(callout.textContent, title);
+    assert.equal(live.textContent, "Land in the marked strip.");
+  }
+});
+
+test("legacy returns range only, and an unknown ABI frame length is not treated as ready", async () => {
+  const legacy = mock();
+  await legacy.ready;
+  legacy.courses[0].events("click");
+  assert.equal(legacy.nodes.get("callout").textContent, "Next gate · 122 m");
+  const unknown = mock({frameLength: 30});
+  await unknown.ready;
+  assert.equal(unknown.courses[0].disabled, true);
+  assert.match(unknown.nodes.get("problem").textContent, /restart/);
 });
