@@ -10,16 +10,16 @@ The game runs in English in a WebGL 2 browser on desktop or mobile. A Wosy WebAs
 
 See the [Flying Low build guide](flight/BUILD.md). The complete route and replay tests run with `node tools/verify-flight-wasm.mjs`.
 
-## Voxel island
+## Pocket Island
 
 Start on foot in a seeded voxel landscape or switch to creative flight. Jump, break blocks, and build with six materials and original pixel textures. Terrain, texture pixels and face UVs, collision, movement, targeting, and edit timing run in Wosy compiled to WebAssembly. The browser host handles input and submits the mesh to WebGL 2, without a 3D framework.
 
 - Desktop: WASD or arrows to move, Space to jump, and F to toggle flight. In flight, Space and C rise and descend. Select with 1–6 or the wheel, and use Q/E to remove/place. With mouse capture, left/right click also break/place; hold either action to repeat. Drag to look when capture is unavailable.
-- Touch: use the on-screen directional pad, jump and flight controls, and material bar. Drag the world to look; press or hold the break/place buttons to edit. To set a seed manually, pause and open World options.
+- Touch: drag the left joystick to move and the world on the right to look. Use the larger jump, flight, and editing buttons with your other thumb. Pick a building material from the hotbar. To set a seed manually, pause and open World options.
 
 This is an experimental demo, not a claim that all game logic is statically verified.
 
-## Build Voxel Island locally
+## Build Pocket Island locally
 
 Use the Wosy compiler revision in `tools/wosy-revision`, LLVM/Clang/LLD 18.1.8, Python 3 and Node. The build links the exact WebAssembly exports and checks the actual browser ABI and a deterministic world before updating the published binary.
 
