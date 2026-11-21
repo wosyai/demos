@@ -34,7 +34,7 @@ function graphicsFixture() {
   return { gl, draws, uploads, matrices };
 }
 
-function mock({ noGraphics = false, badMesh = false, initialLost = false, exitAtStart = false, inputVersion = null, orientationAPI = false, frameLength = 32 } = {}) {
+function mock({ noGraphics = false, badMesh = false, initialLost = false, exitAtStart = false, inputVersion = null, orientationAPI = false, frameLength = 35 } = {}) {
   const doc = new Hub(), win = new Hub(), nodes = new Map(), raf = new Map(), data = new Map();
   const g = graphicsFixture(), called = { reset: [], tick: [], replay: [], requests: [], begin: 0, cancel: 0 };
   const wasmExports = new WebAssembly.Memory({initial: 1});
@@ -48,6 +48,8 @@ function mock({ noGraphics = false, badMesh = false, initialLost = false, exitAt
       classList: { toggle(key, enabled) { if (enabled) classes.add(key); else classes.delete(key); } },
       focus() { doc.activeElement = this; },
       properties,
+      setAttribute: (key, value) => properties.set(key, value),
+      getAttribute: (key) => properties.get(key),
       style: {setProperty: (key, value) => properties.set(key, value), removeProperty: (key) => properties.delete(key)},
       getBoundingClientRect: () => ({left: 12, top: 220, width: 174, height: 145}),
       setPointerCapture(id) { captures.add(id); },
@@ -59,7 +61,7 @@ function mock({ noGraphics = false, badMesh = false, initialLost = false, exitAt
   }
   const courses = [element("farm", {course: "0"}), element("paris", {course: "1"})];
   const controls = ["power", "brake", "drop"].map((value) => element(value, {action: value}));
-  for (const name of "game view menu hud engine problem keys touch flight-stick summary summary-title summary-detail summary-kicker again choose callout flight-cue time mission-phase speed altitude best restart pause track drop-key".split(" ")) element(name);
+  for (const name of "game view menu hud engine problem keys touch flight-stick summary summary-title summary-detail summary-kicker again choose callout flight-cue time mission-phase speed altitude best gates restart pause track drop-key".split(" ")) element(name);
   const canvas = nodes.get("view");
   Object.assign(canvas, { clientWidth: 820, clientHeight: 420, getContext: () => noGraphics ? null : g.gl });
   Object.assign(doc, { hidden: false, getElementById: (name) => nodes.get(name),
@@ -93,7 +95,7 @@ function mock({ noGraphics = false, badMesh = false, initialLost = false, exitAt
           imported.aircraft(128, 18);
           const frame = new Float32Array(wasmExports.buffer, 256, frameLength);
           frame.set([aspect,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1, current,12.125,31,22,phase,dropStatus,shouldComplete ? 1 : 0,12.125,250,route,eventCode,distance]);
-          if (frameLength === 32) frame.set(guidance, 28);
+          if (frameLength === 35) frame.set(guidance, 28);
           imported.frame(256, frameLength);
           if (shouldComplete) {
             new Uint8Array(wasmExports.buffer, 512, 3).set([3,4,255]);
@@ -200,7 +202,7 @@ test("reports a result, stores only the active course, restores replay on retry 
   assert.match(sim.nodes.get("summary-detail").textContent, /250 points/);
   assert.equal(sim.nodes.get("touch").hidden, true);
   assert.equal(sim.data.size, 1);
-  assert.ok(sim.data.has("wosy-flying-low/missions-v3/1"));
+  assert.ok(sim.data.has("wosy-flying-low/missions-v4/1"));
   sim.complete(false);
   sim.nodes.get("again").events("click");
   assert.deepEqual(sim.called.replay, [3,4,255,-1]);
@@ -345,10 +347,10 @@ test("the light shell and its flight engine share the same release token", async
   const sim = mock();
   await sim.ready;
   const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
-  assert.match(html, /href="\.\/style\.css\?v=missions-v5"/);
-  assert.match(html, /src="\.\/host\.mjs\?v=missions-v5"/);
+  assert.match(html, /href="\.\/style\.css\?v=sortie-v1"/);
+  assert.match(html, /src="\.\/host\.mjs\?v=sortie-v1"/);
   assert.deepEqual(sim.called.requests.map((url) => [url.pathname.split("/").at(-1), url.search]),
-    [["flight.wasm", "?v=missions-v5"]]);
+    [["flight.wasm", "?v=sortie-v1"]]);
 });
 
 test("phone rotation releases the old touch and accepts a fresh steer in the new aspect", async () => {
@@ -385,7 +387,7 @@ test("the Paris drop control supports quick taps and keyboard without swallowing
   assert.equal(drop.hidden, true);
   sim.courses[1].events("click");
   assert.equal(drop.disabled, true);
-  assert.equal(drop.hidden, false);
+  assert.equal(drop.hidden, true);
   sim.guidance(0, 0, true);
   sim.frame(20);
   assert.equal(callout.textContent, "Climb now to clear the bridge");
@@ -434,14 +436,41 @@ test("mission storage never reads or clobbers legacy race data", () => {
   assert.equal(store.load(1), null);
   store.save(1, Uint8Array.of(0, 87));
   assert.equal(data.get(legacy), "legacy race binary");
-  assert.equal(data.has("wosy-flying-low/missions-v3/1"), true);
+  assert.equal(data.has("wosy-flying-low/missions-v4/1"), true);
 });
 
 test("only the exact mission frame ABI is accepted", async () => {
-  for (const frameLength of [28, 30, 31, 33]) {
+  for (const frameLength of [28, 30, 32, 34, 36]) {
     const unknown = mock({frameLength});
     await unknown.ready;
     assert.equal(unknown.courses[0].disabled, true);
     assert.match(unknown.nodes.get("problem").textContent, /restart/);
   }
+});
+
+test("touch loads Wright cargo only while stopped, then exposes its own spray action", async () => {
+  const sim = mock({inputVersion: 1});
+  await sim.ready;
+  const action = sim.nodes.get("drop");
+  sim.courses[0].events("click");
+  sim.cue({phase: 8});
+  sim.frame(10);
+  assert.equal(action.hidden, true);
+  action.events("pointerdown", {pointerId: 7});
+  sim.frame(55);
+  assert.equal(sim.called.tick.at(-1)[1] & 128, 0);
+  sim.cue({phase: 9});
+  sim.frame(190);
+  assert.equal(action.textContent, "LOAD SPRAY");
+  action.events("pointerdown", {pointerId: 7});
+  sim.frame(250);
+  assert.equal(sim.called.tick.at(-1)[1] & 128, 128);
+  sim.cue({phase: 10});
+  sim.frame(340);
+  assert.equal(action.hidden, true);
+  sim.cue({phase: 11, dropStatus: 9});
+  sim.guidance(.3, 0, false, 2);
+  sim.frame(450);
+  assert.equal(action.textContent, "SPRAY ROW");
+  assert.equal(action.classes.has("drop-ready"), true);
 });
