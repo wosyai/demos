@@ -28,7 +28,7 @@ const layers = {
   outline: { data: null, count: 0, version: 0 },
 };
 
-let engine, memory, gpu, playing = false, loaded = false, contextLost = false;
+let engine, memory, gpu, playing = false, loaded = false, failed = false, contextLost = false;
 let pointerLook = null, toastTimer = 0, previous = 0, raf = 0;
 
 const vertex = `#version 300 es
@@ -170,8 +170,46 @@ function setStatus(text, kind = "") {
   status.replaceChildren(document.createElement("i"), document.createTextNode(` ${text}`));
 }
 
+function refreshAvailability() {
+  const ready = !failed && loaded && !contextLost && Boolean(gpu);
+  enter.disabled = applySeed.disabled = randomSeed.disabled = !ready;
+  if (failed) return;
+  if (contextLost) setStatus("Recuperando gráficos");
+  else if (!ready) setStatus("Carregando motor");
+  else {
+    setStatus("Wosy · motor ativo", "ready");
+    startLoop();
+  }
+}
+
+function loseGraphics() {
+  const wasLost = contextLost;
+  contextLost = true;
+  gpu = null;
+  if (!wasLost) {
+    stopPlaying();
+    if (document.pointerLockElement === canvas) document.exitPointerLock();
+    if (raf) cancelAnimationFrame(raf);
+    raf = 0; previous = 0;
+  }
+  refreshAvailability();
+}
+
+function prepareGraphics() {
+  if (!gl.isContextLost()) {
+    try { newGraphics(); }
+    catch (e) { if (!gl.isContextLost()) throw e; }
+  }
+  if (gl.isContextLost()) loseGraphics();
+  else {
+    contextLost = false;
+    refreshAvailability();
+  }
+}
+
 function fail(message, detail) {
   if (detail) console.warn("Ilha de Bolso:", detail);
+  failed = true;
   loaded = false;
   stopPlaying();
   if (document.pointerLockElement === canvas) document.exitPointerLock();
@@ -204,7 +242,7 @@ async function boot() {
     return;
   }
   try {
-    newGraphics();
+    prepareGraphics();
     const response = await fetch(new URL("./engine.wasm", import.meta.url));
     if (!response.ok) throw new Error(`Motor não encontrado (HTTP ${response.status}).`);
     const bytes = await response.arrayBuffer();
@@ -220,19 +258,20 @@ async function boot() {
       },
     };
     const { instance } = await WebAssembly.instantiate(bytes, api);
+    if (failed) return;
     engine = instance.exports;
     memory = engine.memory;
     if (!(memory instanceof WebAssembly.Memory) || ["_start", "generate", "control", "clear_controls", "look", "tick", "edit_view"].some((name) => typeof engine[name] !== "function")) {
       throw new Error("O binário WebAssembly não oferece a interface esperada.");
     }
+    if (gl.isContextLost()) loseGraphics();
     engine._start();
     let seed = 471;
     try { const stored = readSeed(localStorage.getItem("wosy-voxel-seed")); if (stored !== null) seed = stored; } catch {}
     generate(seed);
     loaded = true;
-    enter.disabled = applySeed.disabled = randomSeed.disabled = false;
-    setStatus("Wosy · motor ativo", "ready");
-    startLoop();
+    if (gl.isContextLost()) loseGraphics();
+    else refreshAvailability();
   } catch (e) {
     fail("Não foi possível iniciar o motor Wosy. Recarregue a página para tentar novamente.", e);
   }
@@ -401,7 +440,11 @@ document.addEventListener("visibilitychange", () => {
   else startLoop();
 });
 document.addEventListener("pointerlockchange", () => {
-  if (!playing || document.pointerLockElement === canvas) return;
+  if (document.pointerLockElement === canvas) {
+    if (!playing) document.exitPointerLock();
+    return;
+  }
+  if (!playing) return;
   const fullscreenButton = document.activeElement === get("fullscreen");
   if (!fullscreenButton) stopPlaying();
 });
@@ -454,21 +497,12 @@ get("remove").addEventListener("click", () => edit(false));
 get("place").addEventListener("click", () => edit(true));
 canvas.addEventListener("webglcontextlost", (e) => {
   e.preventDefault();
-  contextLost = true;
-  stopPlaying();
-  if (document.pointerLockElement === canvas) document.exitPointerLock();
-  if (raf) cancelAnimationFrame(raf);
-  raf = 0; previous = 0;
-  enter.disabled = applySeed.disabled = randomSeed.disabled = true;
-  setStatus("Recuperando gráficos");
-  toast("O navegador pausou os gráficos.");
+  loseGraphics();
+  if (!failed) toast("O navegador pausou os gráficos.");
 });
 canvas.addEventListener("webglcontextrestored", () => {
-  try {
-    newGraphics();
-    contextLost = false;
-    if (loaded) { enter.disabled = applySeed.disabled = randomSeed.disabled = false; setStatus("Wosy · motor ativo", "ready"); }
-    startLoop();
-  } catch (e) { fail("Não foi possível restaurar os gráficos. Recarregue a página.", e); }
+  if (failed) return;
+  try { prepareGraphics(); }
+  catch (e) { fail("Não foi possível restaurar os gráficos. Recarregue a página.", e); }
 });
 boot();
