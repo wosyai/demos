@@ -79,10 +79,65 @@ assert.equal(worldUploads, 1, "retrying the same course does not rebuild or reup
 for (let i = 0; i < 108; i++) tick(16);
 assert.deepEqual([frame, aircraft], allForward, "fixed control replay is deterministic");
 
+// At the neutral spawn, the plane's cloth and framing are axis aligned. Check
+// that two positive-area triangle interiors never compete on the same plane.
+function cross(a, b, p) {
+    return (b[0] - a[0]) * (p[1] - a[1]) - (b[1] - a[1]) * (p[0] - a[0]);
+}
+function overlapArea(left, right) {
+    let shape = left;
+    const winding = Math.sign(cross(...right));
+    for (let i = 0; i < 3 && shape.length; i++) {
+        const a = right[i], b = right[(i + 1) % 3];
+        const clipped = [];
+        for (let j = 0; j < shape.length; j++) {
+            const p = shape[j], q = shape[(j + 1) % shape.length];
+            const dp = cross(a, b, p) * winding, dq = cross(a, b, q) * winding;
+            if (dp >= 0) clipped.push(p);
+            if ((dp < 0) !== (dq < 0)) {
+                const t = dp / (dp - dq);
+                clipped.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]);
+            }
+        }
+        shape = clipped;
+    }
+    let doubledArea = 0;
+    for (let i = 0; i < shape.length; i++) {
+        const a = shape[i], b = shape[(i + 1) % shape.length];
+        doubledArea += a[0] * b[1] - a[1] * b[0];
+    }
+    return Math.abs(doubledArea) / 2;
+}
+function assertNonOverlappingParisPanels(values) {
+    // Two 72-vertex gate meshes precede the player; no ghost at the start.
+    const triangles = [];
+    for (let i = 144 * 6; i < values.length; i += 18) {
+        const corners = [0, 6, 12].map((v) => Array.from(values.subarray(i + v, i + v + 3)));
+        const axis = [0, 1, 2].find((n) => corners.every((p) => Math.abs(p[n] - corners[0][n]) < 0.00005));
+        if (axis === undefined) continue;
+        const plane = corners[0][axis];
+        const projected = corners.map((p) => p.filter((_, n) => n !== axis));
+        if (Math.abs(cross(...projected)) < 0.00001) continue;
+        for (const previous of triangles) {
+            if (previous.axis !== axis || Math.abs(previous.plane - plane) >= 0.00005) continue;
+            assert(overlapArea(projected, previous.projected) < 0.00008,
+                `overlapping aircraft triangles on axis ${axis} at ${plane}`);
+        }
+        triangles.push({ axis, plane, projected });
+    }
+    assert(triangles.length > 60, "the panel check covers the actual aircraft geometry");
+}
+
 reset(1);
 assert.equal(worldUploads, 2, "changing course publishes new terrain");
 assert.notDeepEqual(world, farmWorld, "courses draw different scenery");
 assert.notDeepEqual(aircraft, farmAircraft, "courses draw different airplanes and gates");
+assertNonOverlappingParisPanels(aircraft);
+const parisPose = [frame, aircraft];
+for (let i = 0; i < 4; i++) {
+    tick(0, 0);
+    assert.deepEqual([frame, aircraft], parisPose, "repeated presentation of a stationary pose is stable");
+}
 tick(0, 0, 0.55);
 assert(frame[0] > startFrame[0] && frame[3] === 0, "portrait changes projection rather than the camera mode");
 for (let i = 0; i < 140; i++) tick(16);
