@@ -1,0 +1,347 @@
+export const ENGINE_PATH = "./ferry.wasm?v=ferry-1";
+const INPUTS = new Map([
+  ["KeyA","left"],["ArrowLeft","left"],["KeyD","right"],["ArrowRight","right"],
+  ["KeyW","up"],["ArrowUp","up"],["KeyS","down"],["ArrowDown","down"],["Space","brake"],
+]);
+const ACTIONS = ["","Enter","Exit","Collect","Board"];
+const HIT = ["","Mailbox hit","Tree hit","Pedestrian hit","Vehicle hit","Wall hit"];
+const OBJECTIVES = ["Pick up the tape","Bring the tape aboard","Caught the last ferry","Missed the last ferry","Explore the waterfront"];
+
+export function axes(x,y,radius) {
+  const length = Math.hypot(x,y);
+  const level = Math.min(length/radius,1);
+  if (level <= .13) return [0,0];
+  const scale = (level-.13)/(.87*length);
+  return [x*scale,-y*scale];
+}
+
+export function inputState() {
+  const keys = new Map(), buttons = new Map();
+  return {
+    keys, buttons, stick: null, action: false,
+    clear() { keys.clear(); buttons.clear(); this.stick=null; this.action=false; },
+    sample() {
+      const keyboard=Array.from(keys.values());
+      const held=(key)=>keyboard.includes(key);
+      const horizontal=held("left")||held("right");
+      const vertical=held("up")||held("down");
+      const pedal=Array.from(buttons.values());
+      const steer=horizontal ? Number(held("right"))-Number(held("left")) : (this.stick?.axis[0]??0);
+      const drive=vertical ? Number(held("up"))-Number(held("down")) : pedal.includes("power") ? 1 : (this.stick?.axis[1]??0);
+      const flags=Number(held("brake")||pedal.includes("brake")) | (this.action ? 2 : 0);
+      this.action=false;
+      return [steer,drive,flags];
+    },
+  };
+}
+
+export function frameData(memory,pointer,length,kind) {
+  if (!Number.isSafeInteger(pointer)||pointer<0||pointer%4||!Number.isSafeInteger(length)||length<0||
+      (kind==="frame" ? length!==30 : length%18!==0)||pointer+length*4>memory.buffer.byteLength) {
+    throw Error("The game engine returned unreadable data.");
+  }
+  return new Float32Array(memory.buffer,pointer,length);
+}
+
+function programFor(gl) {
+  const shader=(kind,source)=>{
+    const id=gl.createShader(kind);
+    gl.shaderSource(id,source);
+    gl.compileShader(id);
+    if (!gl.getShaderParameter(id,gl.COMPILE_STATUS)) throw Error("The scene shader could not start.");
+    return id;
+  };
+  const vertex=shader(gl.VERTEX_SHADER,`#version 300 es
+  layout(location=0) in vec3 position;
+  layout(location=1) in vec3 color;
+  uniform mat4 camera;
+  out vec3 tint;
+  void main(){gl_Position=camera*vec4(position,1.0);tint=color;}`);
+  const fragment=shader(gl.FRAGMENT_SHADER,`#version 300 es
+  precision mediump float;
+  in vec3 tint;
+  out vec4 pixel;
+  void main(){pixel=vec4(mix(tint,vec3(.69,.45,.38),smoothstep(.988,1.,gl_FragCoord.z)*.34),1.0);}`);
+  const program=gl.createProgram();
+  gl.attachShader(program,vertex);
+  gl.attachShader(program,fragment);
+  gl.linkProgram(program);
+  gl.deleteShader(vertex);
+  gl.deleteShader(fragment);
+  if (!gl.getProgramParameter(program,gl.LINK_STATUS)) throw Error("The scene could not start.");
+  return program;
+}
+
+function graphics(canvas) {
+  const gl=canvas.getContext("webgl2",{alpha:true,antialias:true});
+  if (!gl) throw Error("Last Ferry needs WebGL 2. Try a browser with graphics acceleration enabled.");
+  const program=programFor(gl), camera=gl.getUniformLocation(program,"camera");
+  gl.enable(gl.DEPTH_TEST);
+  const layers=["world","moving"].map(()=>{
+    const vao=gl.createVertexArray(), buffer=gl.createBuffer();
+    gl.bindVertexArray(vao);
+    gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
+    for (let i=0;i<2;i++) {
+      gl.enableVertexAttribArray(i);
+      gl.vertexAttribPointer(i,3,gl.FLOAT,false,24,i*12);
+    }
+    return {vao,buffer,count:0};
+  });
+  return {
+    upload(name,data) {
+      const layer=layers[name==="world"?0:1];
+      gl.bindBuffer(gl.ARRAY_BUFFER,layer.buffer);
+      gl.bufferData(gl.ARRAY_BUFFER,data,name==="world"?gl.STATIC_DRAW:gl.DYNAMIC_DRAW);
+      layer.count=data.length/6;
+    },
+    draw(frame) {
+      gl.viewport(0,0,canvas.width,canvas.height);
+      gl.clearColor(0,0,0,0);
+      gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);
+      gl.useProgram(program);
+      gl.uniformMatrix4fv(camera,false,frame.subarray(0,16));
+      for (const layer of layers) {
+        gl.bindVertexArray(layer.vao);
+        gl.drawArrays(gl.TRIANGLES,0,layer.count);
+      }
+    },
+  };
+}
+
+function countdown(value) {
+  if (!Number.isFinite(value)) return "--:--";
+  const left=Math.max(0,Math.ceil(value));
+  return `${Math.floor(left/60)}:${String(left%60).padStart(2,"0")}`;
+}
+function label(node,text) { if(node.textContent!==text) node.textContent=text; }
+function fit(canvas,pixelRatio) {
+  const ratio=Math.min(pixelRatio||1,1.8);
+  const width=Math.max(1,Math.round(canvas.clientWidth*ratio));
+  const height=Math.max(1,Math.round(canvas.clientHeight*ratio));
+  if(canvas.width!==width) canvas.width=width;
+  if(canvas.height!==height) canvas.height=height;
+  return width/height;
+}
+
+export async function boot(env=globalThis,createGraphics=graphics) {
+  const {document,window,WebAssembly,performance}=env;
+  const get=(id)=>document.getElementById(id);
+  const canvas=get("view"), wheel=get("wheel"), thumb=get("thumb"), pause=get("pause");
+  const panel=get("panel"), start=get("start"), roam=get("roam"), power=get("power"), brake=get("brake"), action=get("action");
+  const objective=get("objective"), stats=get("status"), clock=get("clock"), hint=get("hint"), summary=get("summary"), announce=get("announce");
+  const input=inputState(), meshes=new Map();
+  let engine, renderer, frame, aspect=0, menuText="Loading the waterfront…", failed=false, noticeUntil=0, notice="", last=0, playing=false, lost=false, ready=false, paused=false, mode=0, event=0, previousCue=-1, previousState=-1;
+  const heldButtons=[power,brake,action];
+  const renderThumb=(x,y)=>{
+    thumb.style.setProperty("--x",`${x}px`);
+    thumb.style.setProperty("--y",`${y}px`);
+  };
+  function clear() {
+    if (input.stick && wheel.hasPointerCapture(input.stick.id)) wheel.releasePointerCapture(input.stick.id);
+    for(const [id,name] of input.buttons) {
+      const node=get(name);
+      if(node.hasPointerCapture(id)) node.releasePointerCapture(id);
+    }
+    input.clear();
+    renderThumb(0,0);
+    for(const node of heldButtons) node.dataset.held="false";
+    if(ready) engine.cancel_action();
+  }
+  function overlay(message,cta) {
+    playing=false;
+    clear();
+    menuText=message; label(start,cta);
+    panel.hidden=false;
+    get("touch").hidden=true;
+    hint.hidden=true;
+    pause.disabled=true;
+    updateAvailability();
+    if(ready&&!lost) start.focus({preventScroll:true});
+  }
+  const missionText="The clock starts when you pick up the tape. Drive, park, or run to reach the last ferry.";
+  function updateAvailability() {
+    const available=ready&&!lost;
+    start.disabled=!available; roam.disabled=!available;
+    pause.disabled=!available||!playing;
+    label(summary,lost&&!failed ? "Graphics interrupted. Waiting for the browser to restore the scene." : menuText);
+  }
+  function syncAspect(next) {
+    aspect=next;
+    engine.tick(0,0,0,0,aspect);
+    show();
+  }
+  function show() {
+    if(!frame || !renderer) return;
+    renderer.draw(frame);
+    const foot=frame[16]===0,state=frame[17],cue=frame[20],hit=frame[21];
+    label(objective,OBJECTIVES[state]||"Find the ferry");
+    const distance=Number.isFinite(frame[23]) ? `${Math.round(frame[23])} m to go` : "";
+    label(stats,[foot?"On foot":`${Math.round(frame[19])} km/h`,state<2?distance:""].filter(Boolean).join(" · "));
+    label(clock,state===4?"FREE":countdown(frame[18]));
+    label(brake,foot?"Sprint":"Brake");
+    brake.parentElement.dataset.foot=String(foot);
+    label(action,ACTIONS[cue]||"Action");
+    const arrow=frame[29]<-.18?"←":frame[29]>.18?"→":"↑";
+    const route=state<2 ? `${arrow} ${OBJECTIVES[state]}` : "";
+    if(frame[22]!==event) {
+      notice=HIT[hit]||""; noticeUntil=performance.now()+1800;
+    }
+    action.setAttribute("aria-disabled",String(!ACTIONS[cue]));
+    const prompt=ACTIONS[cue] ? `E / ${ACTIONS[cue]}` : performance.now()<noticeUntil ? notice : route;
+    label(hint,prompt);
+    hint.hidden=!playing||!prompt;
+    if(frame[22]!==event) {
+      event=frame[22]; if(HIT[hit]) label(announce,HIT[hit]);
+    } else if(previousState!==state||previousCue!==cue) {
+      label(announce,ACTIONS[cue]||OBJECTIVES[state]||"");
+    }
+    previousCue=cue; previousState=state;
+    if(playing && (state===2||state===3)) overlay(state===2?"Tape aboard. You caught the last ferry.":"The ferry left without the tape. Try a quicker route.","Play again");
+  }
+  function engage(nextMode) {
+    if(!ready||lost) return;
+    try {
+      clear();
+      if(!paused||nextMode!==mode) {
+        event=0; previousCue=-1; previousState=-1; noticeUntil=0;
+        mode=nextMode; engine.reset(mode); aspect=0;
+      }
+      paused=false; playing=true; last=0;
+      panel.hidden=true; panel.dataset.intro="false"; get("touch").hidden=false; updateAvailability();
+      pause.focus({preventScroll:true});
+    } catch(error) { fail(error); }
+  }
+  function suspend() {
+    if(!playing) return;
+    paused=true;
+    try { overlay("Take a breather. The ferry clock is paused.","Resume game"); }
+    catch(error) { fail(error); }
+  }
+  start.addEventListener("click",()=>engage(paused ? mode : 0));
+  roam.addEventListener("click",()=>{ if(ready&&!lost) { paused=false;engage(1); } });
+  pause.addEventListener("click",suspend);
+  function updateStick(event) {
+    const held=input.stick;
+    const x=event.clientX-held.x,y=event.clientY-held.y;
+    held.axis=axes(x,y,held.radius);
+    const factor=Math.min(1,held.radius/(Math.hypot(x,y)||1));
+    renderThumb(x*factor,y*factor);
+  }
+  wheel.addEventListener("pointerdown",(e)=>{
+    if(!playing||input.stick||e.button!==0) return;
+    e.preventDefault(); wheel.setPointerCapture(e.pointerId);
+    input.stick={id:e.pointerId,x:e.clientX,y:e.clientY,radius:Math.min(48,wheel.clientWidth*.34),axis:[0,0]};
+  });
+  wheel.addEventListener("pointermove",(e)=>{ if(input.stick?.id===e.pointerId) updateStick(e); });
+  for(const name of ["pointerup","pointercancel","lostpointercapture"]) wheel.addEventListener(name,(e)=>{
+    if(input.stick?.id!==e.pointerId) return;
+    input.stick=null; renderThumb(0,0);
+  });
+  for(const node of heldButtons) {
+    node.addEventListener("pointerdown",(e)=>{
+      if(!playing||e.button!==0||(node===action&&!ACTIONS[frame?.[20]])) return;
+      e.preventDefault(); node.setPointerCapture(e.pointerId);
+      input.buttons.set(e.pointerId,node.id);
+      node.dataset.held="true";
+
+    });
+    for(const name of ["pointerup","pointercancel","lostpointercapture"]) node.addEventListener(name,(e)=>{
+      if(input.buttons.get(e.pointerId)!==node.id) return;
+      input.buttons.delete(e.pointerId);
+      if(!Array.from(input.buttons.values()).includes(node.id)) node.dataset.held="false";
+      if(name==="pointerup"&&playing&&node===action&&ACTIONS[frame?.[20]]) input.action=true;
+    });
+  }
+  action.addEventListener("click",(e)=>{ if(playing&&e.detail===0&&ACTIONS[frame?.[20]]) input.action=true; });
+  window.addEventListener("keydown",(e)=>{
+    if(e.code==="Escape"&&!e.repeat) {
+      if(playing) suspend();
+      else if(paused) engage(mode);
+      return;
+    }
+    if(!playing||e.ctrlKey||e.metaKey||e.altKey) return;
+    if(e.code==="Space"&&/^(BUTTON|A)$/.test(e.target?.tagName)&&e.target!==pause) return;
+    if(e.code!=="KeyE"&&!INPUTS.has(e.code)) return;
+    e.preventDefault();
+    if(e.repeat) return;
+    if(e.code==="KeyE") input.action=true;
+    else input.keys.set(e.code,INPUTS.get(e.code));
+  });
+  window.addEventListener("keyup",(e)=>input.keys.delete(e.code));
+  window.addEventListener("blur",suspend);
+  window.addEventListener("orientationchange",clear);
+  window.screen?.orientation?.addEventListener("change",clear);
+  document.addEventListener("visibilitychange",()=>{if(document.hidden)suspend();});
+  canvas.addEventListener("webglcontextlost",(e)=>{
+    e.preventDefault(); lost=true; renderer=null;
+    suspend(); updateAvailability();
+  });
+  canvas.addEventListener("webglcontextrestored",()=>{
+    if(failed) return;
+    try {
+      renderer=createGraphics(canvas);
+      if(ready) for(const [name,range] of meshes)renderer.upload(name,frameData(engine.memory,...range,name));
+      lost=false;
+      if(ready) syncAspect(fit(canvas,env.devicePixelRatio));
+      updateAvailability();
+    } catch(error) { fail(error); }
+  });
+  function fail(error) {
+    ready=false; failed=true;
+    overlay(error?.message||"Last Ferry could not load.","Unavailable");
+  }
+  function receive(name,pointer,length) {
+    const data=frameData(engine.memory,pointer,length,name);
+    meshes.set(name,[pointer,length]);
+    renderer?.upload(name,data);
+  }
+  try {
+    renderer=createGraphics(canvas);
+    const response=await env.fetch(ENGINE_PATH);
+    if(!response.ok) throw Error("The game could not be downloaded. Reload the page to try again.");
+    const module=await WebAssembly.instantiate(await response.arrayBuffer(),{
+      ferry:{
+        world:(ptr,len)=>receive("world",ptr,len),
+        moving:(ptr,len)=>receive("moving",ptr,len),
+        frame:(ptr,len)=>{ frame=frameData(engine.memory,ptr,len,"frame").slice(); },
+      },
+      wasi_snapshot_preview1:{proc_exit(code){throw Error(`The game stopped (${code}).`);}},
+    });
+    if(failed) return;
+    const exports=module.instance.exports;
+    if(!(exports.memory instanceof WebAssembly.Memory) ||
+      !["_start","reset","tick","cancel_action"].every((name)=>typeof exports[name]==="function")) {
+      throw Error("The game engine could not be initialized.");
+    }
+    engine=exports;
+    engine._start();
+    engine.reset(0);
+    if(!lost) syncAspect(fit(canvas,env.devicePixelRatio));
+    ready=true;
+    menuText=missionText; label(start,"Start mission");
+    updateAvailability();
+    function loop(now) {
+      if(!ready) return;
+      if(!lost) {
+        try {
+          const width=canvas.width,height=canvas.height;
+          const next=fit(canvas,env.devicePixelRatio);
+          if(playing) {
+            aspect=next;
+            engine.tick(last ? Math.min((now-last)/1000,.05) : 0,...input.sample(),aspect);
+            last=now;
+            show();
+          } else if(next!==aspect) {
+            syncAspect(next);
+          } else if(canvas.width!==width||canvas.height!==height) {
+            show();
+          }
+        } catch(error) { fail(error); }
+      }
+      if(ready) env.requestAnimationFrame(loop);
+    }
+    env.requestAnimationFrame(loop);
+  } catch(error) { fail(error); }
+}
+
+if (typeof document!=="undefined") void boot();
