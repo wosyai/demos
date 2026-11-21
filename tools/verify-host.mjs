@@ -104,11 +104,17 @@ async function loadHost(caseId, startsLost = false, stored = null) {
       _start() { counters.starts++; },
       control(action, active) {
         counters.controls.push([action, active]);
-        if (active) held.add(action);
-        else held.delete(action);
-        if (action === 7 && active) counters.flying = !counters.flying;
+        if (active) {
+          if (action === 7 && !held.has(action)) counters.flying = !counters.flying;
+          held.add(action);
+        } else held.delete(action);
       },
-      pulse_control(action) { counters.pulses.push(action); pending.add(action); },
+      pulse_control(action) {
+        counters.pulses.push(action);
+        if (action === 7) {
+          if (!held.has(action)) counters.flying = !counters.flying;
+        } else pending.add(action);
+      },
       clear_controls() { counters.clears++; pending.clear(); held.clear(); },
       seed_begin(trim) { counters.parser.push({ trim, units: [] }); },
       seed_code_unit(unit) { counters.parser.at(-1).units.push(unit); return +!(unit === 88); },
@@ -130,7 +136,6 @@ async function loadHost(caseId, startsLost = false, stored = null) {
       tick(dt, aspect, active) {
         if (active && dt > 0 && pending.size) {
           counters.ticksWithPulses.push([...pending]);
-          if (pending.has(7) && !held.has(7)) counters.flying = !counters.flying;
           pending.clear();
         }
         new Float32Array(memory.buffer, 512, 25).set([+counters.flying, +counters.grounded, counters.picked], 22);
@@ -289,6 +294,15 @@ assert.equal(creative.node('jump-touch').textContent, 'Subir');
 assert.equal(creative.node('descend-touch').hidden, false);
 assert.equal(creative.node('flight-touch')['aria-pressed'], 'true');
 assert.equal(creative.node('player-state').textContent, 'Voando');
+creative.node('flight-touch').dispatch('click');
+creative.node('flight-touch').dispatch('click');
+creative.frame();
+assert.equal(creative.node('flight-touch')['aria-pressed'], 'true', 'two rapid taps cancel');
+creative.doc.dispatch('keydown', { code: 'KeyF' });
+creative.node('flight-touch').dispatch('click');
+creative.frame();
+assert.equal(creative.node('flight-touch')['aria-pressed'], 'false', 'physical F suppresses a concurrent touch toggle');
+creative.doc.dispatch('keyup', { code: 'KeyF' });
 console.log('Creative host smoke passed: 25-float HUD, Wosy material authority, keyboard/wheel/touch inputs, and selected placement.');
 
 const accessible = await loadHost('accessible');
