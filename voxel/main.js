@@ -14,6 +14,7 @@ const movementState = get("player-state");
 const jumpTouch = get("jump-touch");
 const descendTouch = get("descend-touch");
 const flightTouch = get("flight-touch");
+const moveStick = get("move-stick");
 const materials = Array.from(document.querySelectorAll("[data-material]"));
 
 const gl = canvas.getContext("webgl2", { alpha: false, antialias: true });
@@ -25,7 +26,8 @@ const keyActions = new Map([
 ]);
 const editKeys = new Map([["KeyQ",0], ["KeyE",1]]);
 const pressed = new Set();
-const dpad = new Map();
+const heldButtons = new Map();
+const MOVE_MASK = 15;
 const downActions = new Set();
 const editMouse = new Set();
 const downEdits = new Set();
@@ -37,7 +39,7 @@ const layers = {
 };
 
 let engine, memory, gpu, playing = false, loaded = false, failed = false, contextLost = false;
-let pointerLook = null, toastTimer = 0, previous = 0, raf = 0;
+let pointerLook = null, stick = null, axes = 0, toastTimer = 0, previous = 0, raf = 0;
 let displayedMaterial, displayedFlight, displayedGrounded;
 
 const vertex = `#version 300 es
@@ -107,7 +109,7 @@ function makeProgram(vs, fs) {
     gl.shaderSource(result, src);
     gl.compileShader(result);
     if (!gl.getShaderParameter(result, gl.COMPILE_STATUS)) {
-      throw new Error(gl.getShaderInfoLog(result) || "Shader WebGL inválido.");
+      throw new Error(gl.getShaderInfoLog(result) || "Invalid WebGL shader.");
     }
     return result;
   }
@@ -119,7 +121,7 @@ function makeProgram(vs, fs) {
   gl.deleteShader(vert);
   gl.deleteShader(frag);
   if (!gl.getProgramParameter(result, gl.LINK_STATUS)) {
-    throw new Error(gl.getProgramInfoLog(result) || "Programa WebGL inválido.");
+    throw new Error(gl.getProgramInfoLog(result) || "Invalid WebGL program.");
   }
   return result;
 }
@@ -161,7 +163,7 @@ function newGraphics() {
 function memoryFloats(pointer, length) {
   if (!memory || !Number.isInteger(pointer) || pointer < 0 || (pointer & 3) ||
       !Number.isSafeInteger(length) || length < 0 || pointer + length * 4 > memory.buffer.byteLength) {
-    throw new Error("O motor enviou dados inválidos.");
+    throw new Error("The engine returned invalid data.");
   }
   return new Float32Array(memory.buffer, pointer, length);
 }
@@ -175,7 +177,7 @@ function bindAtlas(pointer, width, height) {
   const bytes = width * height * 4;
   if (!memory || !Number.isInteger(pointer) || pointer < 0 || width !== 128 || height !== 16 ||
       pointer + bytes > memory.buffer.byteLength) {
-    throw new Error("O motor enviou um atlas inválido.");
+    throw new Error("The engine returned an invalid texture atlas.");
   }
   atlas.width = width;
   atlas.height = height;
@@ -186,7 +188,7 @@ function bindAtlas(pointer, width, height) {
 function bindLayer(name, stride) {
   return (pointer, count) => {
     if (!Number.isInteger(count) || count < 0 || count % stride !== 0) {
-      throw new Error("O motor enviou uma malha inválida.");
+      throw new Error("The engine returned invalid geometry.");
     }
     const layer = layers[name];
     layer.data = count === 0 ? null : memoryFloats(pointer, count * 6).slice();
@@ -207,10 +209,10 @@ function refreshAvailability() {
   const ready = !failed && loaded && !contextLost && Boolean(gpu);
   enter.disabled = applySeed.disabled = randomSeed.disabled = !ready;
   if (failed) return;
-  if (contextLost) setStatus("Recuperando gráficos");
-  else if (!ready) setStatus("Carregando motor");
+  if (contextLost) setStatus("Restoring graphics");
+  else if (!ready) setStatus("Loading engine");
   else {
-    setStatus("Wosy · motor ativo", "ready");
+    setStatus("Wosy · engine ready", "ready");
     startLoop();
   }
 }
@@ -241,13 +243,13 @@ function prepareGraphics() {
 }
 
 function fail(message, detail) {
-  if (detail) console.warn("Ilha de Bolso:", detail);
+  if (detail) console.warn("Pocket Island:", detail);
   failed = true;
   loaded = false;
   stopPlaying();
   if (document.pointerLockElement === canvas) document.exitPointerLock();
   enter.disabled = applySeed.disabled = randomSeed.disabled = true;
-  setStatus("Motor indisponível", "failed");
+  setStatus("Engine unavailable", "failed");
   error.textContent = message;
   error.hidden = false;
 }
@@ -263,7 +265,7 @@ function generate(seed) {
   if (loaded) clearInputs();
   engine.generate(seed);
   if (!atlas.data || previousMesh === layers.mesh.version || previousWater === layers.water.version) {
-    throw new Error("O motor não enviou a malha da nova ilha.");
+    throw new Error("The engine did not return geometry for the new island.");
   }
   try { localStorage.setItem("wosy-voxel-seed", String(seed)); } catch {}
   seedInput.value = String(seed);
@@ -271,13 +273,13 @@ function generate(seed) {
 
 async function boot() {
   if (!gl) {
-    fail("Este navegador não disponibilizou WebGL 2. Tente ativar a aceleração gráfica ou abrir em outro navegador.");
+    fail("WebGL 2 is not available in this browser. Enable hardware acceleration or try another browser.");
     return;
   }
   try {
     prepareGraphics();
-    const response = await fetch(new URL("./engine.wasm?v=creative-4", import.meta.url));
-    if (!response.ok) throw new Error(`Motor não encontrado (HTTP ${response.status}).`);
+    const response = await fetch(new URL("./engine.wasm?v=creative-5", import.meta.url));
+    if (!response.ok) throw new Error(`Engine not found (HTTP ${response.status}).`);
     const bytes = await response.arrayBuffer();
     const api = {
       showcase: {
@@ -288,7 +290,7 @@ async function boot() {
         frame: present,
       },
       wasi_snapshot_preview1: {
-        proc_exit(code) { throw new WebAssembly.RuntimeError(`Wosy encerrou com código ${code}.`); },
+        proc_exit(code) { throw new WebAssembly.RuntimeError(`Wosy exited with code ${code}.`); },
       },
     };
     const { instance } = await WebAssembly.instantiate(bytes, api);
@@ -301,7 +303,7 @@ async function boot() {
       "seed_begin", "seed_code_unit", "seed_end", "default_seed",
     ];
     if (!(memory instanceof WebAssembly.Memory) || required.some((name) => typeof engine[name] !== "function")) {
-      throw new Error("O binário WebAssembly não oferece a interface esperada.");
+      throw new Error("The WebAssembly binary has an incompatible interface.");
     }
     if (gl.isContextLost()) loseGraphics();
     engine._start();
@@ -312,7 +314,7 @@ async function boot() {
     if (gl.isContextLost()) loseGraphics();
     else refreshAvailability();
   } catch (e) {
-    fail("Não foi possível iniciar o motor Wosy. Recarregue a página para tentar novamente.", e);
+    fail("The Wosy engine could not start. Reload the page to try again.", e);
   }
 }
 
@@ -326,10 +328,10 @@ function renderControls(flight, grounded, material) {
   if (displayedFlight === flight && displayedGrounded === grounded) return;
   displayedFlight = flight;
   displayedGrounded = grounded;
-  movementState.textContent = flight ? "Voando" : grounded ? "A pé" : "No ar";
-  jumpTouch.textContent = flight ? "Subir" : "Pular";
+  movementState.textContent = flight ? "Flying" : grounded ? "On foot" : "In the air";
+  jumpTouch.textContent = flight ? "Rise" : "Jump";
   descendTouch.hidden = !flight;
-  flightTouch.textContent = flight ? "Parar voo" : "Voar";
+  flightTouch.textContent = flight ? "Stop flight" : "Fly";
   flightTouch.setAttribute("aria-pressed", String(flight));
 }
 
@@ -386,7 +388,7 @@ function frame(now) {
   if (w !== canvas.width || h !== canvas.height) { canvas.width = w; canvas.height = h; }
   gl.viewport(0, 0, w, h);
   try { engine.tick(dt, w / h, playing ? 1 : 0); }
-  catch (e) { fail("O motor Wosy não conseguiu atualizar a imagem.", e); }
+  catch (e) { fail("The engine could not update the scene.", e); }
   startLoop();
 }
 
@@ -396,13 +398,14 @@ function startLoop() {
 
 function syncAction(action) {
   if (!loaded || !playing || contextLost) return;
-  const active = [...pressed].some((key) => keyActions.get(key) === action) ||
-    [...dpad.values()].some((button) => keyActions.get(button.dataset.move) === action);
+  const active = Boolean(MOVE_MASK & axes & (1 << action)) ||
+    [...pressed].some((key) => keyActions.get(key) === action) ||
+    [...heldButtons.values()].some((button) => keyActions.get(button.dataset.move) === action);
   if (active === downActions.has(action)) return;
   if (active) downActions.add(action);
   else downActions.delete(action);
   try { engine.control(action, active ? 1 : 0); }
-  catch (e) { fail("O motor Wosy não conseguiu receber um comando.", e); }
+  catch (e) { fail("The engine could not accept a control input.", e); }
 }
 
 function syncInput(code) {
@@ -413,7 +416,7 @@ function syncInput(code) {
 function syncEdit(mode) {
   if (!playing || !loaded || contextLost) return;
   const active = editMouse.has(mode) || [...pressed].some((key) => editKeys.get(key) === mode) ||
-    [...dpad.values()].some((button) => editKeys.get(button.dataset.move) === mode);
+    [...heldButtons.values()].some((button) => editKeys.get(button.dataset.move) === mode);
   if (active === downEdits.has(mode)) return;
   if (active) downEdits.add(mode);
   else downEdits.delete(mode);
@@ -423,26 +426,60 @@ function syncEdit(mode) {
 function pulseControl(action) {
   if (!playing || !loaded || contextLost) return;
   try { engine.pulse_control(action); }
-  catch (e) { fail("O motor Wosy não conseguiu receber um comando.", e); }
+  catch (e) { fail("The engine could not accept a control input.", e); }
+}
+
+function releaseCapture(element, id) {
+  if (element.hasPointerCapture?.(id)) element.releasePointerCapture(id);
+}
+
+function setStickAxes(next) {
+  const changed = axes ^ next;
+  axes = next;
+  for (let action = 0; action < 4; action++) {
+    if (changed & (1 << action)) syncAction(action);
+  }
+}
+
+function closeStick(id, report) {
+  if (!stick || stick.id !== id) return;
+  stick = null;
+  for (const field of ["x", "y", "dx", "dy"]) moveStick.style.removeProperty("--stick-" + field);
+  moveStick.classList.remove("held");
+  if (report) setStickAxes(0);
+  else axes = 0;
 }
 
 function clearInputs() {
+  const capturedButtons = [...heldButtons];
+  const lookId = pointerLook?.id;
+  const stickId = stick?.id;
   pressed.clear();
-  dpad.clear();
+  heldButtons.clear();
   downActions.clear();
   editMouse.clear();
   downEdits.clear();
   pointerLook = null;
+  previous = 0;
+  if (stickId !== undefined) {
+    closeStick(stickId, false);
+    releaseCapture(moveStick, stickId);
+  }
+  if (lookId !== undefined) releaseCapture(canvas, lookId);
+  for (const [id, button] of capturedButtons) {
+    button.classList.remove("held");
+    releaseCapture(button, id);
+  }
   if (loaded) {
     try { engine.clear_controls(); }
-    catch (e) { fail("O motor Wosy não conseguiu liberar os controles.", e); }
+    catch (e) { fail("The engine could not clear the controls.", e); }
   }
 }
 
 function look(dx, dy) {
   if (!playing || !loaded || contextLost) return;
   try { engine.look(dx, dy); }
-  catch (e) { fail("O motor Wosy não conseguiu mover a câmera.", e); }
+  catch (e) { fail("The engine could not move the camera.", e); }
 }
 
 function selectMaterial(material, cycle = false) {
@@ -450,23 +487,23 @@ function selectMaterial(material, cycle = false) {
   try {
     if (cycle) engine.cycle_material(material);
     else engine.select_material(material);
-  } catch (e) { fail("O motor Wosy não conseguiu selecionar o material.", e); }
+  } catch (e) { fail("The engine could not select that material.", e); }
 }
 
 function sendEdit(mode, state) {
   if (!playing || !loaded || contextLost) return;
   try {
     const result = engine.edit_control(mode, state);
-    if (result === -1) toast("Aponte a mira para um bloco.");
-    if (result === -2) toast("Aqui é o limite da ilha.");
-    if (result === -3) toast("Esse bloco ficaria no seu caminho.");
-  } catch (e) { fail("O motor Wosy não conseguiu atualizar a ilha.", e); }
+    if (result === -1) toast("Aim at a block.");
+    if (result === -2) toast("You reached the island boundary.");
+    if (result === -3) toast("That block would be in your way.");
+  } catch (e) { fail("The engine could not update the island.", e); }
 }
 
 function requestLook() {
   if (coarse.matches || typeof canvas.requestPointerLock !== "function") return;
-  try { canvas.requestPointerLock()?.catch(() => toast("Arraste a cena para olhar.")); }
-  catch { toast("Arraste a cena para olhar."); }
+  try { canvas.requestPointerLock()?.catch(() => toast("Drag the scene to look around.")); }
+  catch { toast("Drag the scene to look around."); }
 }
 
 function startPlaying() {
@@ -495,9 +532,9 @@ function readSeed(value, trim) {
 
 function changeSeed(seed) {
   if (!engine || !loaded || contextLost) return;
-  if (seed === null) { toast("Use um número inteiro válido para a semente."); return; }
-  try { generate(seed); toast(`Nova ilha · semente ${seed}`); }
-  catch (e) { fail("O motor Wosy não conseguiu gerar esta ilha.", e); }
+  if (seed === null) { toast("Enter a valid whole number for the seed."); return; }
+  try { generate(seed); toast(`New island · seed ${seed}`); }
+  catch (e) { fail("The engine could not generate this island.", e); }
 }
 
 enter.addEventListener("click", startPlaying);
@@ -510,15 +547,15 @@ get("seed-form").addEventListener("submit", (e) => {
   e.preventDefault();
   if (!loaded || contextLost) return;
   try { changeSeed(readSeed(seedInput.value, true)); }
-  catch (e) { fail("O motor Wosy não conseguiu ler a semente.", e); }
+  catch (e) { fail("The engine could not read the seed.", e); }
 });
 randomSeed.addEventListener("click", () => changeSeed(crypto.getRandomValues(new Int32Array(1))[0]));
 get("fullscreen").addEventListener("click", async () => {
   try {
     if (document.fullscreenElement) await document.exitFullscreen();
     else if (shell.requestFullscreen) await shell.requestFullscreen();
-    else toast("Tela cheia não disponível neste navegador.");
-  } catch { toast("Tela cheia não disponível neste navegador."); }
+    else toast("Full screen is not available in this browser.");
+  } catch { toast("Full screen is not available in this browser."); }
 });
 
 document.addEventListener("keydown", (e) => {
@@ -542,6 +579,8 @@ document.addEventListener("keyup", (e) => {
   if (pressed.delete(e.code)) syncInput(e.code);
 });
 window.addEventListener("blur", clearInputs);
+if (window.screen?.orientation?.addEventListener) window.screen.orientation.addEventListener("change", clearInputs);
+else window.addEventListener("orientationchange", clearInputs);
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) clearInputs();
   else startLoop();
@@ -556,7 +595,7 @@ document.addEventListener("pointerlockchange", () => {
   if (fullscreenButton) clearInputs();
   else stopPlaying();
 });
-document.addEventListener("pointerlockerror", () => toast("Arraste a cena para olhar."));
+document.addEventListener("pointerlockerror", () => toast("Drag the scene to look around."));
 document.addEventListener("mousemove", (e) => {
   if (playing && document.pointerLockElement === canvas) look(e.movementX, e.movementY);
 });
@@ -576,11 +615,12 @@ document.addEventListener("mouseup", (e) => {
   if (editMouse.delete(mode)) syncEdit(mode);
 });
 canvas.addEventListener("pointerdown", (e) => {
-  if (!playing || !loaded) return;
-  canvas.focus({ preventScroll: true });
+  if (!playing || !loaded || contextLost) return;
   const tapBreak = e.pointerType !== "touch";
+  if (tapBreak) canvas.focus({ preventScroll: true });
   if (tapBreak && (document.pointerLockElement === canvas || e.button !== 0)) return;
-  if (pointerLook || dpad.has(e.pointerId)) return;
+  if (pointerLook || stick?.id === e.pointerId || heldButtons.has(e.pointerId)) return;
+  if (!tapBreak) e.preventDefault();
   pointerLook = { id: e.pointerId, x: e.clientX, y: e.clientY, tapBreak };
   canvas.setPointerCapture(e.pointerId);
 });
@@ -604,6 +644,41 @@ for (const event of ["pointerup","pointercancel","lostpointercapture"]) {
         e.clientY >= bounds.top && e.clientY < bounds.bottom) sendEdit(0, 2);
   });
 }
+function direction(value, negative, positive) {
+  const enter = .34, leave = .21;
+  if (value <= -(axes & negative ? leave : enter)) return negative;
+  if (value >= (axes & positive ? leave : enter)) return positive;
+  return 0;
+}
+
+moveStick.addEventListener("pointerdown", (e) => {
+  if (!playing || !loaded || contextLost || e.button !== 0 || stick ||
+      e.pointerId === pointerLook?.id || heldButtons.has(e.pointerId)) return;
+  e.preventDefault();
+  const rect = moveStick.getBoundingClientRect();
+  const radius = Math.max(37, Math.min(54, rect.height * .35));
+  const center = (value, extent) => Math.max(radius, Math.min(extent - radius, value));
+  stick = { id: e.pointerId, x: e.clientX, y: e.clientY, radius };
+  moveStick.style.setProperty("--stick-x", `${center(e.clientX - rect.left, rect.width)}px`);
+  moveStick.style.setProperty("--stick-y", `${center(e.clientY - rect.top, rect.height)}px`);
+  moveStick.classList.add("held");
+  moveStick.setPointerCapture(e.pointerId);
+});
+moveStick.addEventListener("pointermove", (e) => {
+  if (!stick || stick.id !== e.pointerId) return;
+  e.preventDefault();
+  const dx = e.clientX - stick.x, dy = e.clientY - stick.y;
+  const scale = Math.max(stick.radius, Math.hypot(dx, dy));
+  const x = dx / scale, y = dy / scale;
+  moveStick.style.setProperty("--stick-dx", `${x * stick.radius * .49}px`);
+  moveStick.style.setProperty("--stick-dy", `${y * stick.radius * .49}px`);
+  setStickAxes(direction(y, 1, 2) | direction(x, 4, 8));
+});
+for (const event of ["pointerup", "pointercancel", "lostpointercapture"]) {
+  moveStick.addEventListener(event, (e) => closeStick(e.pointerId, true));
+}
+moveStick.addEventListener("contextmenu", (e) => e.preventDefault());
+
 for (const btn of document.querySelectorAll("[data-move]")) {
   const code = btn.dataset.move;
   btn.addEventListener("click", (e) => {
@@ -612,16 +687,20 @@ for (const btn of document.querySelectorAll("[data-move]")) {
     else pulseControl(keyActions.get(code));
   });
   btn.addEventListener("pointerdown", (e) => {
-    if (!playing || e.pointerId === pointerLook?.id || dpad.has(e.pointerId)) return;
+    if (!playing || !loaded || contextLost || e.button !== 0 || e.pointerId === pointerLook?.id ||
+        stick?.id === e.pointerId || heldButtons.has(e.pointerId)) return;
     e.preventDefault();
-    dpad.set(e.pointerId, btn);
+    heldButtons.set(e.pointerId, btn);
+    btn.classList.add("held");
     btn.setPointerCapture(e.pointerId);
     syncInput(code);
   });
+  btn.addEventListener("contextmenu", (e) => e.preventDefault());
   for (const event of ["pointerup","pointercancel","lostpointercapture"]) {
     btn.addEventListener(event, (e) => {
-      if (dpad.get(e.pointerId) !== btn) return;
-      dpad.delete(e.pointerId);
+      if (heldButtons.get(e.pointerId) !== btn) return;
+      heldButtons.delete(e.pointerId);
+      if (![...heldButtons.values()].includes(btn)) btn.classList.remove("held");
       syncInput(code);
     });
   }
@@ -640,11 +719,11 @@ document.addEventListener("wheel", (e) => {
 canvas.addEventListener("webglcontextlost", (e) => {
   e.preventDefault();
   loseGraphics();
-  if (!failed) toast("O navegador pausou os gráficos.");
+  if (!failed) toast("The browser paused the graphics.");
 });
 canvas.addEventListener("webglcontextrestored", () => {
   if (failed) return;
   try { prepareGraphics(); }
-  catch (e) { fail("Não foi possível restaurar os gráficos. Recarregue a página.", e); }
+  catch (e) { fail("Graphics could not be restored. Reload the page.", e); }
 });
 boot();
