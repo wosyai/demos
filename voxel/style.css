@@ -23,7 +23,9 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--lime);outline-o
 .status.ready i,.eyebrow i{background:var(--lime);box-shadow:0 0 .7rem #dfff8980}
 .status.failed i{background:#ffa697}
 .icon{display:grid;place-items:center;width:2.6rem;height:2.6rem;padding:.55rem}
-.top #pause{display:none}.playing .top #pause{display:grid}
+.top #pause,.top #camera-view{display:none}
+.playing .top #pause,.playing .top #camera-view{display:grid}
+.top .view-switch{width:auto;padding-inline:.55rem;font-size:.82rem;font-weight:725;white-space:nowrap}
 .icon:hover,.random:hover{background:#365140}
 .icon svg,.random svg{width:100%;height:100%}
 .intro{position:absolute;inset-inline-start:clamp(1.15rem,6.75vw,7rem);top:46%;transform:translateY(-46%);width:min(33rem,90vw);transition:opacity .24s,transform .24s;pointer-events:none}
@@ -52,7 +54,7 @@ kbd{display:inline-block;border:1px solid #ffffff4a;border-radius:.27rem;margin-
 .seed button:hover:enabled{background:#3e6348}
 .seed .random{display:grid;place-items:center;width:2rem;height:2rem;padding:.4rem}
 .touch,.reticle,.notice:empty,.entry-touch{display:none}
-.reticle{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);height:13px;width:13px;pointer-events:none;filter:drop-shadow(0 1px 0 #111a1a)}
+.reticle{position:absolute;left:var(--aim-x,50%);top:var(--aim-y,50%);transform:translate(-50%,-50%);height:13px;width:13px;pointer-events:none;filter:drop-shadow(0 1px 0 #111a1a)}
 .reticle:before,.reticle:after{content:"";background:#f7faf3;position:absolute}
 .reticle:before{inset:6px 0}
 .reticle:after{inset:0 6px}
@@ -128,7 +130,9 @@ kbd{display:inline-block;border:1px solid #ffffff4a;border-radius:.27rem;margin-
     touch-action:none;pointer-events:auto;user-select:none;-webkit-user-select:none
   }
   .touch button:active,.touch button.held{color:#15291f;background:var(--lime)}
-  .touch-actions #flight-touch{grid-column:1 / -1}
+  .playing .top #camera-view{display:none}
+  .touch-actions #view-touch{white-space:nowrap}
+  .touch-actions #view-touch[aria-pressed="true"]{border-color:var(--lime);color:var(--lime)}
   .touch-actions #flight-touch[aria-pressed="true"]:not(:active){border-color:var(--lime);color:var(--lime)}
   .touch-actions .touch-edit{grid-column:1 / -1;display:grid;grid-template-columns:1fr 1fr;gap:.32rem}
   .touch-actions .touch-edit button{font-size:.79rem}
@@ -149,4 +153,25 @@ kbd{display:inline-block;border:1px solid #ffffff4a;border-radius:.27rem;margin-
 @media(pointer:coarse) and (max-width:340px){
   .touch-actions{gap:.25rem}
   .hotbar button{width:2.7rem}
+}
+
+
+.entry-actions{display:flex;flex-wrap:wrap;align-items:center;gap:.65rem}
+.secondary{min-height:2.75rem;padding:.55rem .78rem;border:1px solid #f1ffdd6b;border-radius:.4rem;color:var(--paper);background:#132a24ef;font-weight:750;cursor:pointer}
+.secondary:hover:enabled{background:#28473a}
+.intro .mission-intro{margin:.72rem 0 .25rem;max-width:26rem;color:#fbedd0;font-size:.88rem;line-height:1.36}
+.mission-hud{display:none;position:absolute;top:4.3rem;left:50%;transform:translateX(-50%);max-width:calc(100% - 1.4rem);padding:.38rem .54rem;border:1px solid #ffd58780;border-radius:.43rem;color:#fff1d8;background:#172620ed;font-size:.79rem;pointer-events:none}
+.playing.beacon .mission-hud:not([hidden]){display:block}
+.mission-readouts:not([hidden]){display:flex;gap:.6rem;align-items:center;white-space:nowrap}
+.mission-readouts label{display:flex;gap:.25rem;align-items:center}
+.mission-readouts meter{width:3.7em;height:.68rem;accent-color:#ffbf5a}
+.mission-hud button{pointer-events:auto}
+#mission-result:not([hidden]){margin:.08rem 0 .45rem;font-weight:850}
+.playing.beacon .hotbar,.playing.beacon #flight-touch,.playing.beacon-finished .touch,.playing.beacon-finished .reticle,.playing.beacon-finished .build-hud{display:none}
+@media(max-height:430px){
+  .intro .entry-guide{margin:.38rem 0 .12rem}
+  .intro .entry-guide p{line-height:1.42;font-size:.75rem}
+  .intro .mission-intro{margin:.52rem 0 0;font-size:.78rem}
+  .intro .world-options{margin-top:.25rem}
+  .mission-hud{top:max(.85rem,env(safe-area-inset-top));left:max(.8rem,env(safe-area-inset-left));transform:none}
 }
