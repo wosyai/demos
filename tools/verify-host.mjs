@@ -38,7 +38,8 @@ async function loadHost(caseId, startsLost = false, stored = null) {
   const fetchResponse = deferred();
   const frames = new Map();
   const memory = new WebAssembly.Memory({ initial: 1 });
-  Object.assign(counters, { seeds: [], parser: [], defaults: 0, stored: [] });
+  Object.assign(counters, { seeds: [], parser: [], defaults: 0, stored: [], pulses: [], ticksWithPulses: [] });
+  const pending = new Set(), held = new Set();
   let lost = startsLost;
   let frameId = 0;
   const gl = new Proxy({}, {
@@ -103,9 +104,12 @@ async function loadHost(caseId, startsLost = false, stored = null) {
       _start() { counters.starts++; },
       control(action, active) {
         counters.controls.push([action, active]);
+        if (active) held.add(action);
+        else held.delete(action);
         if (action === 7 && active) counters.flying = !counters.flying;
       },
-      clear_controls() { counters.clears++; },
+      pulse_control(action) { counters.pulses.push(action); pending.add(action); },
+      clear_controls() { counters.clears++; pending.clear(); held.clear(); },
       seed_begin(trim) { counters.parser.push({ trim, units: [] }); },
       seed_code_unit(unit) { counters.parser.at(-1).units.push(unit); return +!(unit === 88); },
       seed_end() {
@@ -123,7 +127,12 @@ async function loadHost(caseId, startsLost = false, stored = null) {
         showcase.mesh(256, 3);
       },
       look() {},
-      tick() {
+      tick(dt, aspect, active) {
+        if (active && dt > 0 && pending.size) {
+          counters.ticksWithPulses.push([...pending]);
+          if (pending.has(7) && !held.has(7)) counters.flying = !counters.flying;
+          pending.clear();
+        }
         new Float32Array(memory.buffer, 512, 25).set([+counters.flying, +counters.grounded, counters.picked], 22);
         showcase.frame(512, -1);
       },
@@ -274,7 +283,8 @@ creative.doc.dispatch('keydown', { code: 'Space' });
 creative.doc.dispatch('keyup', { code: 'Space' });
 creative.node('flight-touch').dispatch('click');
 creative.frame();
-assert.deepEqual(creative.counters.controls, [[4, 1], [4, 0], [7, 1], [7, 0]]);
+assert.deepEqual(creative.counters.controls, [[4, 1], [4, 0]]);
+assert.deepEqual(creative.counters.pulses, [7]);
 assert.equal(creative.node('jump-touch').textContent, 'Subir');
 assert.equal(creative.node('descend-touch').hidden, false);
 assert.equal(creative.node('flight-touch')['aria-pressed'], 'true');
@@ -287,30 +297,36 @@ accessible.node('enter').dispatch('click');
 const jump = accessible.node('jump-touch');
 const arrow = accessible.node('up-touch');
 const transitions = accessible.counters.controls;
+
 jump.dispatch('click',{detail:0});
-assert.deepEqual(transitions,[[4,1]]);
+assert.deepEqual(transitions,[]);
+assert.deepEqual(accessible.counters.pulses,[4]);
 accessible.frame();
-assert.deepEqual(transitions,[[4,1]],'do not release before a non-zero tick');
 accessible.frame();
-assert.deepEqual(transitions,[[4,1],[4,0]]);
+assert.deepEqual(accessible.counters.ticksWithPulses,[[4]]);
+assert.deepEqual(transitions,[],'host may not synthesize control edges');
 arrow.dispatch('pointerdown',{pointerId:12});
 arrow.dispatch('pointerup',{pointerId:12});
 arrow.dispatch('click',{detail:1});
-assert.deepEqual(transitions,[[4,1],[4,0],[0,1],[0,0]],'ordinary pointer click must not duplicate edges');
+assert.deepEqual(transitions,[[0,1],[0,0]],'ordinary pointer click must not duplicate edges');
+assert.deepEqual(accessible.counters.pulses,[4],'ordinary pointer click must not add pulse');
 accessible.doc.dispatch('keydown',{code:'KeyW'});
 arrow.dispatch('click',{detail:0});
 accessible.frame();
-assert.deepEqual(transitions.slice(-2),[[0,0],[0,1]],'pulse ended but held keyboard source retained');
+assert.deepEqual(transitions.slice(-2),[[0,0],[0,1]],'pulse must not touch a live keyboard hold');
 accessible.doc.dispatch('keyup',{code:'KeyW'});
 assert.deepEqual(transitions.slice(-2),[[0,1],[0,0]]);
 arrow.dispatch('click',{detail:0});
+assert.deepEqual(accessible.counters.pulses,[4,0,0]);
 accessible.lostEvent();
+assert.equal(accessible.counters.clears,1);
 accessible.restoredEvent();
 accessible.node('enter').dispatch('click');
 accessible.frame();
 accessible.frame();
-assert.deepEqual(transitions.slice(-2),[[0,0],[0,1]],'context reset consumed stale pulse without replay');
-console.log('Accessible pointerless pulse, suppression, overlap and context reset passed.');
+assert.deepEqual(accessible.counters.ticksWithPulses,[[4],[0]],'engine reset consumes stale pulse');
+assert.deepEqual(transitions,[[0,1],[0,0],[0,1],[0,0]]);
+console.log('Accessible pulse delegates exactly once; physical overlaps and graphics reset preserved.');
 
 const parsed = await loadHost('engine-parses-seed', false, '7');
 await parsed.resolveFetch();

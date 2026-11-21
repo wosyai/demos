@@ -43,9 +43,9 @@ engine = new WebAssembly.Instance(binary, {
   wasi_snapshot_preview1: { proc_exit(code) { assert.fail('Wosy exited: ' + code); } },
 }).exports;
 
-const { _start, generate, rebuild, edit, pick, control, clear_controls, look, reset_camera, tick, edit_view, select_material, cycle_material, place_selected, seed_begin, seed_code_unit, seed_end, default_seed, memory } = engine;
+const { _start, generate, rebuild, edit, pick, control, clear_controls, look, reset_camera, tick, edit_view, select_material, cycle_material, place_selected, seed_begin, seed_code_unit, seed_end, default_seed, pulse_control, memory } = engine;
 assert(memory instanceof WebAssembly.Memory);
-for (const fn of [_start, generate, rebuild, edit, pick, control, clear_controls, look, reset_camera, tick, edit_view, select_material, cycle_material, place_selected, seed_begin, seed_code_unit, seed_end, default_seed]) {
+for (const fn of [_start, generate, rebuild, edit, pick, control, clear_controls, look, reset_camera, tick, edit_view, select_material, cycle_material, place_selected, seed_begin, seed_code_unit, seed_end, default_seed, pulse_control]) {
   assert.equal(typeof fn, 'function');
 }
 _start();
@@ -161,8 +161,46 @@ assert.notEqual(mesh.hash, blockedMesh);
 assert.equal(edit_view(0), 1, 'removal should reach the newly placed block');
 assert.equal(mesh.hash, blockedMesh);
 
+const pulsedFrom = frame.values[18];
+pulse_control(1);
+pulse_control(1);
+tick(0, 1, 1);
+assert.equal(frame.values[18], pulsedFrom);
+tick(NaN, 1, 1);
+assert.equal(frame.values[18], pulsedFrom);
+tick(0.04, 1, 0);
+tick(0, 1, 1);
+assert.equal(frame.values[18], pulsedFrom);
+tick(0.04, 1, 1);
+const singlePulse = frame.values[18];
+assert(singlePulse > pulsedFrom && singlePulse - pulsedFrom <= 0.20);
+tick(0.04, 1, 1);
+assert.equal(frame.values[18], singlePulse, 'pulse should expire after one active advancing tick');
+control(1, 1);
+pulse_control(1);
+tick(0.04, 1, 1);
+const duringHeld = frame.values[18];
+tick(0.04, 1, 1);
+assert(frame.values[18] > duringHeld, 'pulse expiry must not release still-held movement');
+control(1, 0);
+pulse_control(4);
+clear_controls();
+tick(0.04, 1, 1);
+assert.equal(frame.values[17], ground, 'reset must discard pending jump');
+pulse_control(7);
+pulse_control(7);
+tick(0, 1, 1);
+assert.equal(frame.values[22], 0, 'two discrete flight taps should cancel before next tick');
+pulse_control(7);
+tick(0, 1, 1);
+assert.equal(frame.values[22], 1, 'discrete flight change should not require time advancement');
+pulse_control(7);
+tick(0, 1, 1);
+assert.equal(frame.values[22], 0);
+
 control(7, 1);
 control(7, 1);
+pulse_control(7);
 tick(0, 1, 1);
 assert.equal(frame.values[22], 1, 'repeated down must not toggle flight twice');
 control(7, 0);
