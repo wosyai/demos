@@ -6,8 +6,8 @@
 <meta name="theme-color" content="#152a24">
 <meta name="description" content="Explore and reshape a small block island built in Wosy and rendered in your browser.">
 <title>Pocket Island • Wosy</title>
-<link rel="stylesheet" href="./style.css?v=beacon-1">
-<script type="module" src="./main.js?v=beacon-1"></script>
+<link rel="stylesheet" href="./style.css?v=beacon-3">
+<script type="module" src="./main.js?v=beacon-3"></script>
 </head>
 <body>
 <main class="shell" id="game">
@@ -33,7 +33,7 @@
       <button class="primary" id="mission-start" type="button" disabled>Beacon Run</button>
       <button class="secondary" id="enter" type="button" disabled>Play sandbox</button>
     </div>
-    <p class="mission-intro">Carry the flame to the lighthouse before the rising sea puts it out. Dig west, build a bridge, or take the high ridge east.</p>
+    <p class="mission-intro">Cross the tidal channel with your flame. Light the north and west watchfires before climbing to the lighthouse. Dig west, build a bridge, or jump the east ridge.</p>
     <div class="entry-guide" aria-label="Controls">
       <p class="entry-keys"><kbd>WASD</kbd> Move <kbd>Space</kbd> Jump / hold to swim up <kbd>F</kbd> Fly<br><kbd>Q</kbd> or left click: break · <kbd>E</kbd> or right click: place<br><kbd>1–6</kbd> Select block · <kbd>V</kbd> Change view</p>
       <p class="entry-touch">Use the left stick to move. Drag the right side to look. Hold Jump to swim up. Hold Break or Place to edit. Tap View to change perspective.</p>
@@ -52,8 +52,9 @@
   <section class="mission-hud" id="mission-hud" aria-label="Beacon Run" hidden>
     <p id="mission-result" aria-live="polite" hidden></p>
     <div class="mission-readouts" id="mission-readouts">
+      <strong id="relay-goal" aria-live="polite">Cross to the north watchfire</strong>
       <label>Flame <meter id="flame" min="0" max="1" value="1"></meter></label>
-      <span id="tide-level">Low tide</span><span id="bridge-stock">Wood: 7</span>
+      <span id="tide-level">Low tide</span><span id="bridge-stock">Wood: 12</span>
     </div>
     <button class="secondary" id="mission-retry" type="button" hidden>Try again</button>
   </section>

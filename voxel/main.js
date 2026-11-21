@@ -5,7 +5,7 @@ const enter = get("enter");
 const missionStart = get("mission-start"), missionRetry = get("mission-retry");
 const missionHud = get("mission-hud"), missionResult = get("mission-result");
 const missionReadouts = get("mission-readouts"), flameMeter = get("flame");
-const tideLevel = get("tide-level"), bridgeStock = get("bridge-stock");
+const tideLevel = get("tide-level"), bridgeStock = get("bridge-stock"), relayGoal = get("relay-goal");
 const seedInput = get("seed");
 const applySeed = get("apply-seed");
 const randomSeed = get("random-seed");
@@ -23,7 +23,7 @@ const moveStick = get("move-stick");
 const materials = Array.from(document.querySelectorAll("[data-material]"));
 
 const gl = canvas.getContext("webgl2", { alpha: false, antialias: true });
-const fogColor = [0.65, 0.78, 0.72];
+const fogColor = [0.66, 0.78, 0.83];
 const keyActions = new Map([
   ["KeyW",0], ["ArrowUp",0], ["KeyS",1], ["ArrowDown",1],
   ["KeyA",2], ["ArrowLeft",2], ["KeyD",3], ["ArrowRight",3],
@@ -37,8 +37,8 @@ const downActions = new Set();
 const editMouse = new Set();
 const downEdits = new Set();
 const atlas = { data: null, width: 0, height: 0 };
+const terrainChunks = Array.from({ length: 16 }, () => ({ data: null, count: 0 }));
 const layers = {
-  mesh: { data: null, count: 0, version: 0 },
   water: { pointer: 0, count: 0, version: 0 },
   outline: { data: null, count: 0, version: 0 },
   player: { data: null, count: 0, version: 0 },
@@ -47,8 +47,8 @@ const layers = {
 let engine, memory, gpu, playing = false, loaded = false, failed = false, contextLost = false;
 let pointerLook = null, stick = null, axes = 0, toastTimer = 0, previous = 0, raf = 0;
 let displayedMaterial, displayedFlight, displayedGrounded;
-let aimX = 0, aimY = 0;
-let beaconState = 0, shownFlame = -1, shownTide = -1, shownWood = -1;
+let aimX = 0, aimY = 0, terrainVersion = 0;
+let beaconState = 0, shownFlame = -1, shownTide = -1, shownWood = -1, shownRelay = -1;
 
 const vertex = `#version 300 es
 layout(location=0) in vec3 position;
@@ -73,20 +73,27 @@ out vec4 pixel;
 void main() {
   vec3 col=rgb;
   float alpha=1.0;
-  float haze=clamp((distance(eye,point)-23.0)/110.0,0.0,1.0);
+  float haze=clamp((distance(eye,point)-29.0)/94.0,0.0,1.0);
   if (pass==1) {
     vec3 normal=normalize(cross(dFdx(point),dFdy(point)));
     vec3 view=normalize(eye-point);
     float fresnel=pow(1.0-clamp(abs(dot(normal,view)),0.0,1.0),4.0);
     float ripple=sign(normal.y)*dot(normal.xz,vec2(-0.72,0.69));
-    vec3 water=vec3(0.07,0.38,0.43)+vec3(0.15,0.28,0.26)*ripple;
+    vec3 water=vec3(0.038,0.32,0.41)+vec3(0.16,0.27,0.23)*ripple;
+    vec3 reflected=reflect(-view,normal*sign(normal.y));
+    float glitter=pow(max(0.0,dot(reflected,normalize(vec3(-.83,.36,-.27)))),28.0);
+    water += vec3(.71,.57,.28)*glitter;
     col=mix(water,fog,0.72*fresnel);
     alpha=mix(0.55+0.37*fresnel,1.0,haze);
   } else if (pass==0) {
     if (rgb.z > 1.0) {
       col = rgb.z > 1.5 ? vec3(1.0,0.83,0.30) : vec3(0.88,0.39,0.09);
     } else {
-      col=texture(terrainAtlas,rgb.xy).rgb*rgb.z;
+      vec3 texel=texture(terrainAtlas,rgb.xy).rgb;
+      float macro=sin(point.x*.33+sin(point.z*.44))*sin(point.z*.29-point.y*.41);
+      float strata=sin(point.y*28.0+sin(point.x*3.7+point.z*3.1)*.8);
+      float grain=mix(strata,macro,clamp(abs(normalize(cross(dFdx(point),dFdy(point))).y),0.0,1.0));
+      col=texel*rgb.z*(.93+.06*macro+.045*grain)+vec3(.017,.026,.035)*(1.0-rgb.z);
     }
   }
   pixel=vec4(mix(col,fog,pow(haze,1.08)*0.94),alpha);
@@ -113,14 +120,41 @@ vec3 skyRay(mat4 matrix, vec2 screen) {
   if (r == 0.0 || u == 0.0) return normalize(vec3(screen, -1.9));
   return normalize(forward + screen.x*right/r + screen.y*up/u);
 }
+float hash(vec2 p) {
+  vec3 q=fract(vec3(p.xyx)*.1031);
+  q+=dot(q,q.yzx+33.33);
+  return fract((q.x+q.y)*q.z);
+}
+float noise(vec2 p) {
+  vec2 i=floor(p),f=fract(p);
+  f=f*f*(3.0-2.0*f);
+  return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),
+             mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);
+}
 void main() {
   vec3 ray = skyRay(skyProjection, uv*2.0-1.0);
   float height = max(0.0,ray.y);
-  vec3 col = mix(fog,vec3(.33,.60,.69),pow(height,.62));
-  vec3 sunDirection = normalize(vec3(-.83,.49,-.27));
+  vec3 sunDirection = normalize(vec3(-.83,.36,-.27));
   float d = length(ray-sunDirection);
-  col = mix(col,vec3(.98,.89,.66),.31*exp(-6.0*d));
-  col = mix(col,vec3(1.0,.95,.81),1.0-smoothstep(.019,.022,d));
+  vec3 col = mix(fog,vec3(.078,.32,.57),pow(height,.55));
+  float haze=exp(-8.0*height);
+  col=mix(col,vec3(.87,.76,.60),.58*haze*max(.15,1.0-d*.47));
+  if(ray.y>0.018) {
+    vec2 p=ray.xz/(ray.y+.16)*2.9+vec2(14.3,3.8);
+    float clouds=.67*noise(p)+.23*noise(p*2.07)+.10*noise(p*4.11);
+    float cover=smoothstep(.50,.71,clouds)*smoothstep(.018,.13,ray.y);
+    vec3 cloud=mix(vec3(.58,.70,.79),vec3(1.,.92,.80),smoothstep(.49,.75,clouds));
+    col=mix(col,cloud,cover*.91);
+  }
+  col=mix(col,vec3(1.,.79,.48),.33*exp(-8.0*d));
+  col=mix(col,vec3(1.,.96,.81),1.0-smoothstep(.018,.023,d));
+  if(ray.y<.065 && ray.y>-.035) {
+    float angle=atan(ray.x,ray.z);
+    float ridge=max(0.0,noise(vec2(angle*4.2,6.3))-.46);
+    float edge=.005+ridge*.13;
+    float land=(1.0-smoothstep(edge,edge+.004,ray.y))*smoothstep(.035,.082,ridge)*smoothstep(-.034,-.008,ray.y);
+    col=mix(col,vec3(.38,.55,.60),land*.76);
+  }
   pixel = vec4(col,1.0);
 }
 `;
@@ -174,7 +208,7 @@ function newGraphics() {
   const locations = (program, names) => Object.fromEntries(names.map((name) => [name, gl.getUniformLocation(program, name)]));
   gpu = {
     world, sky, terrainAtlas, skyVao: gl.createVertexArray(),
-    mesh: geometry(layers.mesh.data, gl.DYNAMIC_DRAW),
+    terrain: terrainChunks.map((chunk) => geometry(chunk.data, gl.DYNAMIC_DRAW)),
     water: waterGeometry(),
     outline: geometry(layers.outline.data, gl.DYNAMIC_DRAW),
     player: geometry(layers.player.data, gl.DYNAMIC_DRAW),
@@ -221,6 +255,20 @@ function bindLayer(name, stride) {
     gl.bindBuffer(gl.ARRAY_BUFFER, gpu[name].buffer);
     gl.bufferData(gl.ARRAY_BUFFER, layer.data, gl.DYNAMIC_DRAW);
   };
+}
+
+function bindMesh(pointer, count, id) {
+  const chunk = terrainChunks[id];
+  if (!chunk || !Number.isInteger(id) || !Number.isInteger(count) || count < 0 || count > 55296 || count % 3 !== 0) {
+    throw new Error("The engine returned an invalid terrain chunk.");
+  }
+  terrainVersion++;
+  chunk.count = count;
+  chunk.data = count ? memoryFloats(pointer, count * 6).slice() : null;
+  if (count > 0 && gpu && !contextLost) {
+    gl.bindBuffer(gl.ARRAY_BUFFER, gpu.terrain[id].buffer);
+    gl.bufferData(gl.ARRAY_BUFFER, chunk.data, gl.DYNAMIC_DRAW);
+  }
 }
 
 function waterGeometry() {
@@ -307,10 +355,10 @@ function toast(message) {
 }
 
 function generate(seed) {
-  const previousMesh = layers.mesh.version, previousWater = layers.water.version;
+  const previousMesh = terrainVersion, previousWater = layers.water.version;
   if (loaded) clearInputs();
   engine.generate(seed);
-  if (!atlas.data || previousMesh === layers.mesh.version || previousWater === layers.water.version) {
+  if (!atlas.data || previousMesh === terrainVersion || previousWater === layers.water.version) {
     throw new Error("The engine did not return geometry for the new island.");
   }
   try { localStorage.setItem("wosy-voxel-seed", String(seed)); } catch {}
@@ -324,13 +372,13 @@ async function boot() {
   }
   try {
     prepareGraphics();
-    const response = await fetch(new URL("./engine.wasm?v=beacon-1", import.meta.url));
+    const response = await fetch(new URL("./engine.wasm?v=beacon-3", import.meta.url));
     if (!response.ok) throw new Error(`Engine not found (HTTP ${response.status}).`);
     const bytes = await response.arrayBuffer();
     const api = {
       showcase: {
         atlas: bindAtlas,
-        mesh: bindLayer("mesh", 3),
+        mesh: bindMesh,
         water: bindWater,
         outline: bindLayer("outline", 2),
         player: bindLayer("player", 3),
@@ -383,7 +431,7 @@ function renderControls(flight, grounded, material) {
   flightTouch.setAttribute("aria-pressed", String(flight));
 }
 
-function renderMission(state, flame, tide, stock) {
+function renderMission(state, flame, tide, stock, relay) {
   if (state !== beaconState) {
     beaconState = state;
     shell.classList.toggle("beacon", state !== 0);
@@ -399,6 +447,10 @@ function renderMission(state, flame, tide, stock) {
     }
   }
   if (state !== 1) return;
+  if (shownRelay !== relay) {
+    shownRelay = relay;
+    relayGoal.textContent = ["Cross to the north watchfire", "Light the west watchfire", "Climb to the lighthouse"][relay];
+  }
   const flamePercent = Math.round(flame * 100);
   if (shownFlame !== flamePercent) {
     shownFlame = flamePercent;
@@ -417,8 +469,8 @@ function renderMission(state, flame, tide, stock) {
 
 function present(pointer, hit) {
   if (!gpu || contextLost || document.hidden) return;
-  const data = memoryFloats(pointer, 29);
-  renderMission(data[25], data[26], data[27], data[28]);
+  const data = memoryFloats(pointer, 30);
+  renderMission(data[25], data[26], data[27], data[28], data[29]);
   if (playing) renderControls(data[22] === 1, data[23] === 1, data[24]);
   reticle.classList.toggle("target", hit >= 0);
 
@@ -437,13 +489,16 @@ function present(pointer, hit) {
   gl.uniformMatrix4fv(gpu.main.projection, false, projection);
   gl.uniform3f(gpu.main.eye, data[16], data[17], data[18]);
   gl.uniform3fv(gpu.main.fog, fogColor);
-  if (layers.mesh.count > 0) {
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, gpu.terrainAtlas);
-    gl.uniform1i(gpu.main.terrainAtlas, 0);
-    gl.uniform1i(gpu.main.pass, 0);
-    gl.bindVertexArray(gpu.mesh.vao);
-    gl.drawArrays(gl.TRIANGLES, 0, layers.mesh.count);
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, gpu.terrainAtlas);
+  gl.uniform1i(gpu.main.terrainAtlas, 0);
+  gl.uniform1i(gpu.main.pass, 0);
+  for (let id = 0; id < terrainChunks.length; id++) {
+    const { count } = terrainChunks[id];
+    if (count > 0) {
+      gl.bindVertexArray(gpu.terrain[id].vao);
+      gl.drawArrays(gl.TRIANGLES, 0, count);
+    }
   }
   if (layers.player.count > 0) {
     gl.uniform1i(gpu.main.pass, 2);

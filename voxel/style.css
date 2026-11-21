@@ -175,3 +175,6 @@ kbd{display:inline-block;border:1px solid #ffffff4a;border-radius:.27rem;margin-
   .intro .world-options{margin-top:.25rem}
   .mission-hud{top:max(.85rem,env(safe-area-inset-top));left:max(.8rem,env(safe-area-inset-left));transform:none}
 }
+
+.mission-readouts:not([hidden]){display:grid;grid-template-columns:1.25fr auto auto}
+.mission-readouts strong{grid-column:1/-1;color:#ffe5a9;letter-spacing:.012em}
