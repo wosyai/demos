@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 
 function deferred() {
   let resolve;
@@ -9,7 +10,18 @@ function deferred() {
 class Element {
   constructor() {
     this.handlers = new Map();
-    this.classList = { add() {}, remove() {}, toggle() {} };
+    this.classes = new Set();
+    this.classList = {
+      add: (name) => this.classes.add(name),
+      remove: (name) => this.classes.delete(name),
+      toggle: (name, force) => force ? this.classes.add(name) : this.classes.delete(name),
+    };
+    this.captures = new Set();
+    this.properties = new Map();
+    this.style = {
+      setProperty: (name, value) => this.properties.set(name, value),
+      removeProperty: (name) => this.properties.delete(name),
+    };
     this.clientWidth = 800;
     this.clientHeight = 400;
     this.value = '471';
@@ -18,16 +30,23 @@ class Element {
   setAttribute(key, value) { this[key] = value; }
   addEventListener(name, fn) { this.handlers.set(name, fn); }
   dispatch(name, values = {}) {
-    this.handlers.get(name)?.({ preventDefault() {}, ...values });
+    const event = { button: 0, prevented: false, preventDefault() { this.prevented = true; }, ...values };
+    this.handlers.get(name)?.(event);
+    if (name === 'pointerup' || name === 'pointercancel') this.releasePointerCapture(event.pointerId);
+    return event;
   }
 
   replaceChildren(...children) { this.textContent = children.at(-1).trim(); }
   focus() {}
-  getBoundingClientRect() { return { left: 0, top: 0, right: 800, bottom: 400 }; }
-  setPointerCapture() {}
+  getBoundingClientRect() { return { left: 0, top: 0, right: 800, bottom: 400, width: 800, height: 400 }; }
+  setPointerCapture(id) { this.captures.add(id); }
+  hasPointerCapture(id) { return this.captures.has(id); }
+  releasePointerCapture(id) {
+    if (this.captures.delete(id)) this.dispatch('lostpointercapture', {pointerId: id});
+  }
 }
 
-async function loadHost(caseId, startsLost = false, stored = null) {
+async function loadHost(caseId, startsLost = false, stored = null, mobile = false, modernOrientation = false) {
   const nodes = new Map();
   const node = (id) => {
     if (!nodes.has(id)) nodes.set(id, new Element());
@@ -35,7 +54,11 @@ async function loadHost(caseId, startsLost = false, stored = null) {
   };
   const counters = { programs: 0, uploads: [], starts: 0, generations: 0, edits: [], controls: [], clears: 0, lockRequests: 0, lockExits: 0, selected: [], cycles: [], picked: 2, flying: false, grounded: true };
   const canv = node('scene');
-  const doc = new Element();
+  const doc = new Element(), win = new Element();
+  if (modernOrientation) win.screen = {orientation: new Element()};
+  node('move-stick').getBoundingClientRect = () => ({
+    left: 10, top: 360, right: 156, bottom: 504, width: 146, height: 144,
+  });
   const fetchResponse = deferred();
   const frames = new Map();
   const memory = new WebAssembly.Memory({ initial: 1 });
@@ -60,7 +83,7 @@ async function loadHost(caseId, startsLost = false, stored = null) {
     swatch.dataset = { material: (i + 1).toString() };
     return swatch;
   });
-  const touch = [["jump-touch", "Space"], ["up-touch", "KeyW"], ["remove", "KeyQ"], ["place", "KeyE"]].map(([id, move]) => {
+  const touch = [["jump-touch", "Space"], ["descend-touch", "KeyC"], ["remove", "KeyQ"], ["place", "KeyE"]].map(([id, move]) => {
     const button = node(id);
     button.dataset = { move };
     return button;
@@ -70,7 +93,7 @@ async function loadHost(caseId, startsLost = false, stored = null) {
   const controls = ['enter', 'apply-seed', 'random-seed'].map(node);
   for (const button of controls) button.disabled = true;
   const status = node('engine-status');
-  status.textContent = 'Carregando motor';
+  status.textContent = 'Loading engine';
   node('error').hidden = true;
   Object.assign(doc, {
     getElementById: node,
@@ -86,13 +109,14 @@ async function loadHost(caseId, startsLost = false, stored = null) {
   });
   Object.assign(globalThis, {
     document: doc,
-    window: new Element(),
+    window: win,
     HTMLInputElement: class extends Element {},
-    matchMedia: () => ({ matches: false }),
+    matchMedia: () => ({ matches: mobile }),
     localStorage: { getItem() { return stored; }, setItem(key, seed) { counters.stored.push([key, seed]); } },
     devicePixelRatio: 1,
     fetch(url) {
       assert(url.pathname.endsWith('/voxel/engine.wasm'));
+      assert.equal(url.search, '?v=creative-5');
       return fetchResponse.promise;
     },
     requestAnimationFrame(fn) { frames.set(++frameId, fn); return frameId; },
@@ -184,7 +208,7 @@ async function loadHost(caseId, startsLost = false, stored = null) {
     const [id, fn] = frames.entries().next().value;
     frames.delete(id); fn(mockTime += 16);
   };
-  return { node, doc, counters, status, controls, frames, memory, lostEvent, restoredEvent, resolveFetch, grantLock, frame };
+  return { node, doc, win, counters, status, controls, frames, memory, lostEvent, restoredEvent, resolveFetch, grantLock, frame };
 }
 
 function disabled(host, state) {
@@ -195,13 +219,13 @@ const pending = await loadHost('lost-pending');
 pending.lostEvent();
 await pending.resolveFetch();
 disabled(pending, true);
-assert.equal(pending.status.textContent, 'Recuperando gráficos');
+assert.equal(pending.status.textContent, 'Restoring graphics');
 assert.equal(pending.counters.starts, 1);
 assert.equal(pending.counters.uploads.length, 0);
 assert.equal(pending.frames.size, 0);
 pending.restoredEvent();
 disabled(pending, false);
-assert.equal(pending.status.textContent, 'Wosy · motor ativo');
+assert.equal(pending.status.textContent, 'Wosy · engine ready');
 assert.equal(pending.counters.uploads.length, 2, 'restore needs both engine geometry buffers');
 assert.equal(pending.frames.size, 1);
 pending.node('enter').dispatch('click');
@@ -238,7 +262,7 @@ const early = await loadHost('restored-pending');
 early.lostEvent();
 early.restoredEvent();
 disabled(early, true);
-assert.equal(early.status.textContent, 'Carregando motor');
+assert.equal(early.status.textContent, 'Loading engine');
 assert.equal(early.frames.size, 0);
 await early.resolveFetch();
 disabled(early, false);
@@ -266,7 +290,7 @@ try {
 }
 failed.restoredEvent();
 disabled(failed, true);
-assert.equal(failed.status.textContent, 'Motor indisponível');
+assert.equal(failed.status.textContent, 'Engine unavailable');
 assert.equal(failed.node('error').hidden, false);
 assert.equal(failed.frames.size, 0);
 
@@ -277,7 +301,7 @@ await creative.resolveFetch();
 creative.node('enter').dispatch('click');
 creative.frame();
 assert.equal(creative.node('slot-2')['aria-pressed'], 'true');
-assert.equal(creative.node('player-state').textContent, 'A pé');
+assert.equal(creative.node('player-state').textContent, 'On foot');
 creative.doc.dispatch('keydown', { code: 'Digit4' });
 assert.equal(creative.node('slot-4')['aria-pressed'], 'false', 'hotbar waits for Wosy confirmation');
 creative.frame();
@@ -297,10 +321,10 @@ creative.node('flight-touch').dispatch('click');
 creative.frame();
 assert.deepEqual(creative.counters.controls, [[4, 1], [4, 0]]);
 assert.deepEqual(creative.counters.pulses, [7]);
-assert.equal(creative.node('jump-touch').textContent, 'Subir');
+assert.equal(creative.node('jump-touch').textContent, 'Rise');
 assert.equal(creative.node('descend-touch').hidden, false);
 assert.equal(creative.node('flight-touch')['aria-pressed'], 'true');
-assert.equal(creative.node('player-state').textContent, 'Voando');
+assert.equal(creative.node('player-state').textContent, 'Flying');
 creative.node('flight-touch').dispatch('click');
 creative.node('flight-touch').dispatch('click');
 creative.frame();
@@ -316,7 +340,6 @@ const accessible = await loadHost('accessible');
 await accessible.resolveFetch();
 accessible.node('enter').dispatch('click');
 const jump = accessible.node('jump-touch');
-const arrow = accessible.node('up-touch');
 const transitions = accessible.counters.controls;
 
 jump.dispatch('click',{detail:0});
@@ -326,27 +349,27 @@ accessible.frame();
 accessible.frame();
 assert.deepEqual(accessible.counters.ticksWithPulses,[[4]]);
 assert.deepEqual(transitions,[],'host may not synthesize control edges');
-arrow.dispatch('pointerdown',{pointerId:12});
-arrow.dispatch('pointerup',{pointerId:12});
-arrow.dispatch('click',{detail:1});
-assert.deepEqual(transitions,[[0,1],[0,0]],'ordinary pointer click must not duplicate edges');
+jump.dispatch('pointerdown',{pointerId:12});
+jump.dispatch('pointerup',{pointerId:12});
+jump.dispatch('click',{detail:1});
+assert.deepEqual(transitions,[[4,1],[4,0]],'ordinary pointer click must not duplicate edges');
 assert.deepEqual(accessible.counters.pulses,[4],'ordinary pointer click must not add pulse');
-accessible.doc.dispatch('keydown',{code:'KeyW'});
-arrow.dispatch('click',{detail:0});
+accessible.doc.dispatch('keydown', { code:'Space' });
+jump.dispatch('click',{detail:0});
 accessible.frame();
-assert.deepEqual(transitions.slice(-2),[[0,0],[0,1]],'pulse must not touch a live keyboard hold');
-accessible.doc.dispatch('keyup',{code:'KeyW'});
-assert.deepEqual(transitions.slice(-2),[[0,1],[0,0]]);
-arrow.dispatch('click',{detail:0});
-assert.deepEqual(accessible.counters.pulses,[4,0,0]);
+assert.deepEqual(transitions.slice(-2),[[4,0],[4,1]],'pulse must not touch a live keyboard hold');
+accessible.doc.dispatch('keyup',{code:'Space'});
+assert.deepEqual(transitions.slice(-2),[[4,1],[4,0]]);
+jump.dispatch('click',{detail:0});
+assert.deepEqual(accessible.counters.pulses,[4,4,4]);
 accessible.lostEvent();
 assert.equal(accessible.counters.clears,1);
 accessible.restoredEvent();
 accessible.node('enter').dispatch('click');
 accessible.frame();
 accessible.frame();
-assert.deepEqual(accessible.counters.ticksWithPulses,[[4],[0]],'engine reset consumes stale pulse');
-assert.deepEqual(transitions,[[0,1],[0,0],[0,1],[0,0]]);
+assert.deepEqual(accessible.counters.ticksWithPulses,[[4],[4]],'engine reset consumes stale pulse');
+assert.deepEqual(transitions,[[4,1],[4,0],[4,1],[4,0]]);
 console.log('Accessible pulse delegates exactly once; physical overlaps and graphics reset preserved.');
 
 const parsed = await loadHost('engine-parses-seed', false, '7');
@@ -438,7 +461,7 @@ try {
   console.warn = warn;
 }
 disabled(invalidAtlas, true);
-assert.equal(invalidAtlas.status.textContent, 'Motor indisponível');
+assert.equal(invalidAtlas.status.textContent, 'Engine unavailable');
 assert.equal(invalidAtlas.counters.atlasUploads.length, 0);
 assert.equal(invalidAtlas.node('error').hidden, false);
 console.log('Same-byte-count malformed atlas dimensions rejected before GPU upload.');
@@ -468,3 +491,91 @@ for (const code of ['KeyQ', 'KeyE', 'KeyF', 'KeyW']) {
 assert.deepEqual(cleared.counters.editStates, [[0,1],[1,1],[0,1],[1,1]]);
 assert.deepEqual(cleared.counters.controls, [[7,1],[0,1],[7,1],[0,1]]);
 console.log('Blur reset ignored repeated key-down and accepted a fresh press.');
+
+const page = await readFile(new URL('../voxel/index.html', import.meta.url), 'utf8');
+assert.match(page, /<html lang="en">/);
+assert.match(page, /<title>Pocket Island • Wosy<\/title>/);
+assert.match(page, /href="\.\/style\.css\?v=creative-5"/);
+assert.match(page, /src="\.\/main\.js\?v=creative-5"/);
+assert.match(page, /id="move-stick"/);
+assert.doesNotMatch(page, /class="dpad"|data-move="Key[WASD]"/);
+assert.match(page, /title="Dirt · 2"/);
+
+const mobile = await loadHost('mobile-stick', false, null, true, true);
+await mobile.resolveFetch();
+mobile.node('enter').dispatch('click');
+const touchPoint = (pointerId, clientX, clientY) => ({pointerId, pointerType:'touch', clientX, clientY});
+const stick = mobile.node('move-stick'), scene = mobile.node('scene');
+const base = touchPoint(36, 78, 418), shift = (dx, dy, point = base) =>
+  ({...point, clientX:point.clientX + dx, clientY:point.clientY + dy});
+const go = (dx, dy) => stick.dispatch('pointermove', shift(dx, dy));
+assert.equal(mobile.counters.lockRequests, 0, 'touch playback never needs pointer lock');
+assert.equal(stick.dispatch('pointerdown',base).prevented,true);
+assert.equal(stick.captures.has(36),true);
+go(5,5);
+assert.deepEqual(mobile.counters.controls, [], 'deadzone is neutral');
+go(24,-25);
+assert.deepEqual(mobile.counters.controls, [[0,1],[3,1]],'diagonal holds both Wosy inputs');
+go(14,-14);
+assert.deepEqual(mobile.counters.controls, [[0,1],[3,1]],'sub-engage motions retain a held direction via hysteresis');
+const lookPoint = touchPoint(37, 246, 202);
+scene.dispatch('pointerdown',lookPoint);
+scene.dispatch('pointermove',shift(25,-16,lookPoint));
+assert.deepEqual(mobile.counters.looks,[[25,-16]],'right-side camera drag is separate from movement');
+mobile.node('jump-touch').dispatch('pointerdown',touchPoint(38, 275, 330));
+mobile.node('place').dispatch('pointerdown',touchPoint(39, 292, 377));
+assert.deepEqual(mobile.counters.controls.at(-1),[4,1]);
+assert.deepEqual(mobile.counters.editStates,[[1,1]]);
+mobile.doc.dispatch('keydown',{code:'KeyD'});
+go(0,0);
+assert.deepEqual(mobile.counters.controls,[[0,1],[3,1],[4,1],[0,0]],'hardware overlap retains its own direction');
+mobile.doc.dispatch('keyup',{code:'KeyD'});
+assert.deepEqual(mobile.counters.controls.at(-1),[3,0]);
+go(-27,0);
+assert.deepEqual(mobile.counters.controls.at(-1),[2,1]);
+stick.dispatch('pointercancel',base);
+assert.deepEqual(mobile.counters.controls.at(-1),[2,0]);
+assert.equal(stick.properties.size,0);
+assert.deepEqual(mobile.counters.editStates,[[1,1]],'move cancellation does not stop the Place hold');
+assert.equal(scene.captures.size,1,'move cancellation does not stop right look');
+mobile.node('place').dispatch('pointerup',touchPoint(39, 292, 377));
+assert.deepEqual(mobile.counters.editStates.at(-1),[1,0]);
+const newBase = touchPoint(40, 72, 425);
+stick.dispatch('pointerdown',newBase);
+stick.dispatch('pointermove',shift(0,27,newBase));
+assert.deepEqual(mobile.counters.controls.at(-1),[1,1]);
+mobile.win.screen.orientation.dispatch('change');
+assert.equal(mobile.counters.clears,1);
+assert.equal(scene.captures.size,0);
+assert.equal(stick.captures.size,0);
+assert.equal(mobile.node('jump-touch').captures.size,0);
+const postRotate = mobile.counters.controls.length, postLooks = mobile.counters.looks.length;
+stick.dispatch('pointermove',shift(-50,0,newBase));
+scene.dispatch('pointermove',shift(-20,0,lookPoint));
+assert.equal(mobile.counters.controls.length,postRotate);
+assert.equal(mobile.counters.looks.length,postLooks);
+const fresh = touchPoint(41, 88, 430);
+stick.dispatch('pointerdown',fresh);
+stick.dispatch('pointermove',shift(31,0,fresh));
+assert.deepEqual(mobile.counters.controls.at(-1),[3,1]);
+mobile.node('flight-touch').dispatch('click');
+mobile.frame();
+assert.equal(mobile.node('player-state').textContent,'Flying');
+assert.equal(mobile.node('jump-touch').textContent,'Rise');
+mobile.node('descend-touch').dispatch('pointerdown',touchPoint(42, 270, 310));
+assert.deepEqual(mobile.counters.controls.at(-1),[5,1]);
+mobile.win.dispatch('blur');
+assert.equal(mobile.counters.clears,2);
+assert.equal(mobile.node('descend-touch').captures.size,0);
+mobile.doc.hidden = true;
+mobile.doc.dispatch('visibilitychange');
+assert.equal(mobile.counters.clears,3);
+console.log('English and touch host passed: tagged release, joystick hysteresis, concurrent movement/look/edit/jump/flight and capture lifecycle.');
+
+const rotateFallback = await loadHost('old-mobile-orientation', false, null, true);
+await rotateFallback.resolveFetch();
+rotateFallback.node('enter').dispatch('click');
+rotateFallback.node('move-stick').dispatch('pointerdown',base);
+rotateFallback.win.dispatch('orientationchange');
+assert.equal(rotateFallback.node('move-stick').captures.size,0);
+assert.equal(rotateFallback.counters.clears,1);
