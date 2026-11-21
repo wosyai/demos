@@ -18,7 +18,7 @@ class Hub {
 }
 
 function graphicsFixture() {
-  const draws = [], uploads = [];
+  const draws = [], uploads = [], matrices = [];
   const gl = {
     ARRAY_BUFFER: 34962, FLOAT: 5126, TRIANGLES: 4,
     STATIC_DRAW: 35044, DYNAMIC_DRAW: 35048,
@@ -27,18 +27,19 @@ function graphicsFixture() {
     getShaderParameter: () => true, getProgramParameter: () => true,
     getUniformLocation: (_, name) => name,
     drawArrays: (...args) => draws.push(args),
+    uniformMatrix4fv: (name, transpose, values) => matrices.push([name, transpose, [...values]]),
     bufferData: (_, values, usage) => uploads.push([values.length, usage]),
   };
-  for (const name of "shaderSource compileShader attachShader linkProgram deleteShader enableVertexAttribArray vertexAttribPointer bindVertexArray bindBuffer viewport clearColor clear disable enable useProgram uniform3fv uniform1f uniformMatrix4fv".split(" ")) gl[name] = () => {};
-  return { gl, draws, uploads };
+  for (const name of "shaderSource compileShader attachShader linkProgram deleteShader enableVertexAttribArray vertexAttribPointer bindVertexArray bindBuffer viewport clearColor clear disable enable useProgram uniform3fv uniform1f".split(" ")) gl[name] = () => {};
+  return { gl, draws, uploads, matrices };
 }
 
-function mock({ noGraphics = false, badMesh = false, initialLost = false, exitAtStart = false, inputVersion = null, orientationAPI = false, frameLength = 28 } = {}) {
+function mock({ noGraphics = false, badMesh = false, initialLost = false, exitAtStart = false, inputVersion = null, orientationAPI = false, frameLength = 32 } = {}) {
   const doc = new Hub(), win = new Hub(), nodes = new Map(), raf = new Map(), data = new Map();
-  const g = graphicsFixture(), called = { reset: [], tick: [], replay: [], requests: [], begin: 0 };
+  const g = graphicsFixture(), called = { reset: [], tick: [], replay: [], requests: [], begin: 0, cancel: 0 };
   const wasmExports = new WebAssembly.Memory({initial: 1});
-  let index = 0, shouldComplete = false, current = 0, imported, distance = 122, completedGates = 3, landing = false;
-  let guidance = [0, 0, 0];
+  let index = 0, shouldComplete = false, current = 0, imported, distance = 122, phase = 2, dropStatus = 0, route = 0, eventCode = 0;
+  let guidance = [0, 4, 0, 0];
   function element(name, dataset = {}) {
     const node = new Hub();
     const captures = new Set(), classes = new Set(), properties = new Map();
@@ -57,8 +58,8 @@ function mock({ noGraphics = false, badMesh = false, initialLost = false, exitAt
     return node;
   }
   const courses = [element("farm", {course: "0"}), element("paris", {course: "1"})];
-  const controls = ["power", "brake"].map((value) => element(value, {action: value}));
-  for (const name of "game view menu hud engine problem keys touch flight-stick summary summary-title summary-detail summary-kicker again choose callout flight-cue time gates speed altitude best restart pause track".split(" ")) element(name);
+  const controls = ["power", "brake", "drop"].map((value) => element(value, {action: value}));
+  for (const name of "game view menu hud engine problem keys touch flight-stick summary summary-title summary-detail summary-kicker again choose callout flight-cue time mission-phase speed altitude best restart pause track drop-key".split(" ")) element(name);
   const canvas = nodes.get("view");
   Object.assign(canvas, { clientWidth: 820, clientHeight: 420, getContext: () => noGraphics ? null : g.gl });
   Object.assign(doc, { hidden: false, getElementById: (name) => nodes.get(name),
@@ -79,9 +80,11 @@ function mock({ noGraphics = false, badMesh = false, initialLost = false, exitAt
         ...(inputVersion === null ? {} : {input_version: () => inputVersion}),
         reset(course) {
           current = course;
+          phase = course === 1 ? 0 : 2; dropStatus = 0; route = 0; eventCode = 0;
           called.reset.push(course);
           imported.world(0, badMesh ? 16 : 18);
         },
+        cancel_drop() { called.cancel++; },
         ghost_begin() { called.begin++; },
         ghost_byte(byte) { called.replay.push(byte); },
         ghost_end() { called.replay.push(-1); },
@@ -89,8 +92,8 @@ function mock({ noGraphics = false, badMesh = false, initialLost = false, exitAt
           called.tick.push([dt, mask, aspect]);
           imported.aircraft(128, 18);
           const frame = new Float32Array(wasmExports.buffer, 256, frameLength);
-          frame.set([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1, current,12.125,31,22,completedGates,8,shouldComplete ? 1 : 0,12.125,250,0,landing ? 1 : 0,distance]);
-          if (frameLength === 31) frame.set(guidance, 28);
+          frame.set([aspect,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1, current,12.125,31,22,phase,dropStatus,shouldComplete ? 1 : 0,12.125,250,route,eventCode,distance]);
+          if (frameLength === 32) frame.set(guidance, 28);
           imported.frame(256, frameLength);
           if (shouldComplete) {
             new Uint8Array(wasmExports.buffer, 512, 3).set([3,4,255]);
@@ -105,8 +108,12 @@ function mock({ noGraphics = false, badMesh = false, initialLost = false, exitAt
   const host = bootFlight(win, doc);
   return { ...host, ...g, doc, win, nodes, data, courses, canvas, called, raf,
     complete(value = true) { shouldComplete = value; },
-    cue(values) { ({distance, completedGates, landing} = values); },
-    guidance(turn, instruction, shortcut = false) { guidance = [turn, instruction, shortcut ? 1 : 0]; },
+    cue(next) {
+      ({distance = 122, phase = 2, dropStatus = 0, route = 0, eventCode = 0} = next);
+    },
+    guidance(turn, instruction, climb = false, delivered = false) {
+      guidance = [turn, instruction, Number(climb), Number(delivered)];
+    },
     frame(t) {
       const entry = raf.entries().next().value;
       assert.ok(entry, "a frame is pending");
@@ -154,7 +161,7 @@ test("boots to course selection, selects Paris, forwards concurrent desktop and 
   assert.equal(sim.courses[1].disabled, false);
   sim.courses[1].events("click");
   assert.deepEqual(sim.called.reset, [0,1]);
-  assert.equal(sim.nodes.get("track").textContent, "Seine Sprint");
+  assert.equal(sim.nodes.get("track").textContent, "Paris Air Mail");
   const key = sim.win.events("keydown", {code: "KeyS"});
   assert.equal(key.prevented, true);
   const stick = sim.nodes.get("flight-stick");
@@ -189,11 +196,11 @@ test("reports a result, stores only the active course, restores replay on retry 
   sim.complete();
   sim.frame(16);
   assert.equal(sim.nodes.get("summary").hidden, false);
-  assert.equal(sim.nodes.get("summary-title").textContent, "Run complete");
+  assert.equal(sim.nodes.get("summary-title").textContent, "Mail delivered");
   assert.match(sim.nodes.get("summary-detail").textContent, /250 points/);
   assert.equal(sim.nodes.get("touch").hidden, true);
   assert.equal(sim.data.size, 1);
-  assert.ok(sim.data.has("wosy-flying-low/v1/1"));
+  assert.ok(sim.data.has("wosy-flying-low/missions-v3/1"));
   sim.complete(false);
   sim.nodes.get("again").events("click");
   assert.deepEqual(sim.called.replay, [3,4,255,-1]);
@@ -245,20 +252,21 @@ test("unsupported graphics or invalid WebAssembly mesh shows a useful error and 
   assert.equal(exited.courses[0].disabled, true);
 });
 
-test("changing distance stays visual; live text updates only for gate or landing progress", async () => {
+test("distance stays visual, while the live status announces meaningful mission progress", async () => {
   const sim = mock();
   await sim.ready;
   sim.courses[0].events("click");
   const live = sim.nodes.get("flight-cue");
   sim.frame(10);
-  assert.equal(live.textContent, "Gates cleared: 3 of 8.");
-  sim.cue({distance: 45, completedGates: 3, landing: false});
+  assert.match(live.textContent, /^Land in the pasture/);
+  const before = live.textContent;
+  sim.cue({distance: 45, phase: 2});
   sim.frame(150);
   assert.match(sim.nodes.get("callout").textContent, /45 m/);
-  assert.equal(live.textContent, "Gates cleared: 3 of 8.");
-  sim.cue({distance: 1, completedGates: 8, landing: true});
+  assert.equal(live.textContent, before);
+  sim.cue({distance: 31, phase: 3});
   sim.frame(250);
-  assert.equal(live.textContent, "Land in the marked strip.");
+  assert.equal(live.textContent, "Rollout. Steer gently and hold Brake to stop.");
 });
 
 test("radial stick keeps a deadzone, scales proportionally, and clamps diagonals without a square bias", () => {
@@ -316,14 +324,31 @@ test("analog motion packs both axes while thumbs stay independent across pause, 
   assert.equal(stick.captures.size, 0);
 });
 
+test("the sky uses the live world camera projection before and after resize", async () => {
+  const sim = mock();
+  await sim.ready;
+  sim.courses[0].events("click");
+  sim.frame(16);
+  const [firstSky, firstScene] = sim.matrices.slice(-2);
+  assert.equal(firstSky[0], "skyProjection");
+  assert.deepEqual(firstScene, ["viewProjection", false, firstSky[2]]);
+  sim.canvas.clientWidth = 390;
+  sim.canvas.clientHeight = 680;
+  sim.frame(32);
+  const [secondSky, secondScene] = sim.matrices.slice(-2);
+  assert.equal(secondSky[0], "skyProjection");
+  assert.deepEqual(secondScene, ["viewProjection", false, secondSky[2]]);
+  assert.notEqual(secondSky[2][0], firstSky[2][0]);
+});
+
 test("the light shell and its flight engine share the same release token", async () => {
   const sim = mock();
   await sim.ready;
   const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
-  assert.match(html, /href="\.\/style\.css\?v=motion-v3"/);
-  assert.match(html, /src="\.\/host\.mjs\?v=motion-v3"/);
+  assert.match(html, /href="\.\/style\.css\?v=missions-v5"/);
+  assert.match(html, /src="\.\/host\.mjs\?v=missions-v5"/);
   assert.deepEqual(sim.called.requests.map((url) => [url.pathname.split("/").at(-1), url.search]),
-    [["flight.wasm", "?v=motion-v3"]]);
+    [["flight.wasm", "?v=missions-v5"]]);
 });
 
 test("phone rotation releases the old touch and accepts a fresh steer in the new aspect", async () => {
@@ -352,41 +377,71 @@ test("phone rotation releases the old touch and accepts a fresh steer in the new
   }
 });
 
-test("optional guidance shows turns, the cyan shortcut and corrective landing instructions without live spam", async () => {
-  const sim = mock({frameLength: 31});
+test("the Paris drop control supports quick taps and keyboard without swallowing other controls", async () => {
+  const sim = mock({inputVersion: 1});
   await sim.ready;
+  const drop = sim.nodes.get("drop"), callout = sim.nodes.get("callout");
+  sim.courses[0].events("click");
+  assert.equal(drop.hidden, true);
   sim.courses[1].events("click");
-  const callout = sim.nodes.get("callout"), live = sim.nodes.get("flight-cue");
-  sim.guidance(-.76, 0, true);
+  assert.equal(drop.disabled, true);
+  assert.equal(drop.hidden, false);
+  sim.guidance(0, 0, true);
   sim.frame(20);
-  assert.equal(callout.textContent, "← Gate left · 122 m · Cyan shortcut");
-  assert.equal(live.textContent, "Gates cleared: 3 of 8.");
-  sim.guidance(.71, 0);
+  assert.equal(callout.textContent, "Climb now to clear the bridge");
+  sim.cue({phase: 1, dropStatus: 9, route: 2});
   sim.frame(120);
-  assert.equal(callout.textContent, "Gate right → · 122 m");
-  assert.equal(live.textContent, "Gates cleared: 3 of 8.");
-  sim.guidance(.06, 0);
-  sim.frame(230);
-  assert.equal(callout.textContent, "Gate ahead · 122 m");
-  sim.cue({distance: 0, completedGates: 8, landing: true});
+  assert.equal(drop.disabled, false);
+  assert.equal(drop.classes.has("drop-ready"), true);
+  assert.equal(callout.textContent, "Drop now");
+  drop.events("pointerdown", {pointerId: 17});
+  sim.win.events("pointerup", {pointerId: 17});
+  sim.win.events("keydown", {code: "KeyQ"});
+  sim.frame(135);
+  assert.equal(sim.called.tick.at(-1)[1] & 160, 160, "tapped Drop and held Brake coexist");
+  sim.frame(150);
+  assert.equal(sim.called.tick.at(-1)[1] & 128, 0, "tap is sent only once");
+  assert.equal(sim.win.events("keydown", {code: "Space"}).prevented, true);
+  sim.win.events("keyup", {code: "Space"});
+  sim.frame(165);
+  assert.equal(sim.called.tick.at(-1)[1] & 128, 128);
+  sim.win.events("keydown", {code: "Space"});
+  const beforeBlur = sim.called.cancel;
+  sim.win.events("blur");
+  assert.equal(sim.called.cancel, beforeBlur + 1, "blur clears a queued engine release");
+  sim.frame(175);
+  assert.equal(sim.called.tick.at(-1)[1] & 128, 0, "blur clears a pending browser release");
+  sim.cue({phase: 5, route: 2});
+  sim.frame(260);
+  assert.equal(drop.hidden, true);
+  assert.match(callout.textContent, /Pouch away/);
+  sim.cue({phase: 2, route: 2});
   for (const [instruction, title] of [
-    [1, "Line up with the landing strip"], [2, "Brake to slow down"],
+    [1, "Level wings and align with the strip"], [2, "Brake to slow down"],
     [3, "Ease your descent"], [4, "Aligned · ease onto the strip"], [9, "Land in the marked strip"],
   ]) {
-    sim.guidance(-.99, instruction, true);
-    sim.frame(350 + instruction * 100);
-    assert.equal(callout.textContent, title);
-    assert.equal(live.textContent, "Land in the marked strip.");
+    sim.guidance(-.99, instruction, false, true);
+    sim.frame(450 + instruction * 100);
+    assert.equal(callout.textContent, `← ${title} · 122 m`);
+    assert.match(sim.nodes.get("flight-cue").textContent, /Mail delivered/);
   }
 });
 
-test("legacy returns range only, and an unknown ABI frame length is not treated as ready", async () => {
-  const legacy = mock();
-  await legacy.ready;
-  legacy.courses[0].events("click");
-  assert.equal(legacy.nodes.get("callout").textContent, "Next gate · 122 m");
-  const unknown = mock({frameLength: 30});
-  await unknown.ready;
-  assert.equal(unknown.courses[0].disabled, true);
-  assert.match(unknown.nodes.get("problem").textContent, /restart/);
+test("mission storage never reads or clobbers legacy race data", () => {
+  const legacy = "wosy-flying-low/v1/1";
+  const data = new Map([[legacy, "legacy race binary"]]);
+  const store = replayStore(() => ({getItem: data.get.bind(data), setItem: data.set.bind(data)}));
+  assert.equal(store.load(1), null);
+  store.save(1, Uint8Array.of(0, 87));
+  assert.equal(data.get(legacy), "legacy race binary");
+  assert.equal(data.has("wosy-flying-low/missions-v3/1"), true);
+});
+
+test("only the exact mission frame ABI is accepted", async () => {
+  for (const frameLength of [28, 30, 31, 33]) {
+    const unknown = mock({frameLength});
+    await unknown.ready;
+    assert.equal(unknown.courses[0].disabled, true);
+    assert.match(unknown.nodes.get("problem").textContent, /restart/);
+  }
 });
