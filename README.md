@@ -4,15 +4,15 @@ Playable examples built with the [Wosy language](https://github.com/wosyai/lang)
 
 ## Last Ferry
 
-Pick up a tape at a coastal drive-in and reach the last ferry before it leaves.
-Drive a longer boulevard around traffic, take an alley, or get out and cut
-through on foot. Try the district without a time limit in **Free roam**.
+Pick up a tape at Sunset Video and reach Pier 8 before the last ferry leaves.
+Choose the coastal boulevard, cut through the neighborhood streets, or get
+out of the car. Explore the district without a time limit in **Free roam**.
 The town and its moving objects are full 3D; Wosy runs the vehicle, traffic,
 pedestrians, collisions, and mission. See the [build guide](ferry/BUILD.md).
 
 ## Flying Low
 
-A third-person game with two early-aviation missions. In **Pasture Landing**, bring the Wright Flyer down gently and stop before the short field ends. In **Paris Air Mail**, take the low cyan approach over the bridge or the wider amber detour, release the pouch over its target, then land. Fly again against a ghost of your best completed mission.
+A third-person game with two early-aviation missions. Land at the marked pickup strip, collect the payload, and take off again. In Paris, drop the mail pouch over its target. On the Wright Flyer, dust the marked crop strips before returning to land. Fly again against a ghost of your best completed mission.
 
 Flying Low runs in English on desktop and mobile in a WebGL 2 browser. Wosy owns flight dynamics, the chase camera, mission geometry and outcome, scoring, and replay. The browser handles input, drawing, and storing replays on the device.
 
@@ -20,7 +20,7 @@ See the [build guide](flight/BUILD.md). Verify both missions and replay behavior
 
 ## Pocket Island
 
-Explore a seeded island in **Creative**, or carry a flame to the lighthouse in **Beacon Run**. Take the longer dry ridge, build across the channel, or risk a shortcut through the tidal cut. Waves affect buoyancy and drag, and the tide can submerge the flame. Your creative terrain is restored when you leave the mission.
+Explore a seeded island in **Creative**, or carry a flame to two watchfires and then to the lighthouse in **Beacon Run**. Take the longer dry ridge, build across the channel, or risk the tidal cut. Waves affect buoyancy and drag, and the tide can submerge the flame. Your creative terrain is restored when you leave the mission.
 
 Wosy owns terrain, texture pixels, collisions, water geometry and swimming, camera and editable targets, and all mission rules. The browser only handles input and submits the meshes to WebGL 2.
 
