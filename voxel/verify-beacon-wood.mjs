@@ -6,12 +6,13 @@ const module = new WebAssembly.Module(readFileSync(process.argv[2]));
 for (const aspect of [.56, 1.67]) {
   let engine, hud, target;
   const changed = [];
-  const hashes = new Map();
+  const hashes = new Map(), counts = new Map();
   engine = new WebAssembly.Instance(module, {
     showcase: {
       aim() {}, atlas() {}, outline() {}, player() {}, water() {},
       mesh(pointer, count, chunk) {
         changed.push(chunk);
+        counts.set(chunk, count);
         const bytes = new Uint8Array(engine.memory.buffer, pointer, count * 6 * 4);
         hashes.set(chunk, createHash('sha256').update(bytes).digest('hex'));
       },
@@ -107,7 +108,12 @@ for (const aspect of [.56, 1.67]) {
 
   engine.look(-yaw / .0034, hud[19] / .0034);
   tick();
+  const harbor = [12, 13, 14, 15];
+  assert(harbor.every((id) => counts.get(id) > 0));
+  changed.length = 0;
   forwardTo(11.5);
+  assert.deepEqual(changed, harbor, 'north movement retires only the far harbor row');
+  assert(harbor.every((id) => counts.get(id) === 0), 'retirement uploads an empty callback for each old slot');
   const caveZ = hud[18];
   assert(caveZ >= 10.8 && caveZ <= 11.5, 'reach the middle of the cave entrance lane');
   assert.deepEqual(hitCell(engine.pick(34.5, 6.25, caveZ, 0, 1, 0)), [34, 8, Math.floor(caveZ)],
@@ -131,6 +137,19 @@ for (const aspect of [.56, 1.67]) {
     assert((limit - hud[16]) * sign <= 0, 'walk out of the opposite cave mouth');
     assert.deepEqual([...visited].sort((a, b) => a - b), [30, 31, 32, 33, 34, 35, 36, 37, 38]);
   };
+  const west = [0, 4, 8];
+  assert(west.every((id) => counts.get(id) > 0), 'west terrain starts resident');
+  const westBefore = west.map((id) => hashes.get(id));
+  changed.length = 0;
   coastTraverse(3, 40.1, 1);
+  assert.deepEqual(changed, west);
+  assert(west.every((id) => counts.get(id) === 0));
+  changed.length = 0;
+  engine.tick(.05, aspect, 1);
+  assert.deepEqual(changed, [], 'stationary positive ticks do not publish terrain');
   coastTraverse(2, 28.8, -1);
+  assert.deepEqual(changed, west, 'ordinary return reloads only the entering west column');
+  assert(west.every((id) => counts.get(id) > 0));
+  assert.deepEqual(west.map((id) => hashes.get(id)), westBefore, 'reload restores the real previous mesh bytes');
+  assert(harbor.every((id) => counts.get(id) === 0), 'reload does not bring unrelated retired chunks back');
 }
