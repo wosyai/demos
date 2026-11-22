@@ -1091,11 +1091,15 @@ bool(f32,f32) in_strip = fn(x,z) {
 	abs_f(x-strip_x()) < strip_w()/2.0 && z >= strip_z() && z < strip_z()+strip_l()
 };
 
-i32(u64) landing_issue = fn(plane) {
-	f32 limit = if (course == 0) { 24.0 } else { 27.0 };
-	if (abs_f(poses[plane].roll) >= 0.28 || cos_small(poses[plane].heading) <= 0.90) { 1 } else {
-		if (poses[plane].speed >= limit) { 2 } else {
-			if (poses[plane].climb < -4.3 || abs_f(poses[plane].pitch) > 0.25) { 3 } else { 0 }
+i32(u64,bool) landing_issue = fn(plane,survivable) {
+	f32 speed_limit = (if (course == 0) { 24.0 } else { 27.0 }) + (if (survivable) { 5.0 } else { 0.0 });
+	f32 roll_limit = if (survivable) { 0.44 } else { 0.28 };
+	f32 alignment_limit = if (survivable) { 0.84 } else { 0.90 };
+	f32 sink_limit = if (survivable) { -7.0 } else { -4.3 };
+	f32 pitch_limit = if (survivable) { 0.34 } else { 0.25 };
+	if (abs_f(poses[plane].roll) >= roll_limit || cos_small(poses[plane].heading) <= alignment_limit) { 1 } else {
+		if (poses[plane].speed >= speed_limit) { 2 } else {
+			if (poses[plane].climb < sink_limit || abs_f(poses[plane].pitch) > pitch_limit) { 3 } else { 0 }
 		}
 	}
 };
@@ -1227,7 +1231,7 @@ unit() store_record = fn {
 		best_ticks = record_ticks;
 		set_best_byte(0,87);
 		set_best_byte(1,70);
-		set_best_byte(2,4);
+		set_best_byte(2,6);
 		set_best_byte(3,core.int_trunc<u8>(course));
 		set_best_byte(4,core.int_trunc<u8>(record_ticks % 256));
 		set_best_byte(5,core.int_trunc<u8>(record_ticks / 256));
@@ -1297,13 +1301,14 @@ unit(u64,u64,i32) step_course = fn(plane,race,input) {
 		};
 		if (y <= 1.0) {
 			poses[plane].y = 1.0;
-			i32 issue = landing_issue(plane);
+			i32 issue = landing_issue(plane,true);
 			bool pickup = current == MissionPhase::supply_approach;
 			bool in_pickup = abs_f(next_x-pickup_x()) < pickup_w()*0.5 && z >= pickup_z() && z < pickup_z()+pickup_l()-34.0;
 			if (!pickup && phase[race] != MissionPhase::landing_approach) { result[race] = 7; } else {
 				if (!(if (pickup) { in_pickup } else { in_strip(next_x,z) })) { result[race] = 4; } else {
 					if (issue != 0) { result[race] = if (issue == 3) { 10 } else { 4+issue }; } else {
 						phase[race] = if (pickup) { MissionPhase::supply_rollout } else { MissionPhase::final_rollout };
+						event_code[race] = if (landing_issue(plane,false) == 0) { 0 } else { 13 };
 						poses[plane].pitch = 0.0;
 						poses[plane].roll = 0.0;
 						poses[plane].climb = 0.0;
@@ -1381,7 +1386,7 @@ unit() ghost_end = fn {
 	    packet_byte(3)==core.int_trunc<u8>(course)) {
 		i32 version = core.int_extend<i32>(packet_byte(2));
 		i32 length = core.int_extend<i32>(packet_byte(4)) + 256*core.int_extend<i32>(packet_byte(5));
-		if (version == 4 && length >= 180 && length <= 8100 && length*2+6 == incoming_count &&
+		if (version == 6 && length >= 180 && length <= 8100 && length*2+6 == incoming_count &&
 		    stage_tick[0] == 0 && (best_ticks == 0 || length < best_ticks) && validate_replay(length)) {
 			best_ticks = length;
 			copy_packet(0,incoming_count);
@@ -1631,7 +1636,7 @@ unit() frame = fn {
 		if (right < 0.0) { -1.0 } else { 1.0 }
 	} else { clamp(right*1.6/ahead,-1.0,1.0) };
 	display[29] = if ((stage == MissionPhase::landing_approach || stage == MissionPhase::supply_approach) && result[0] == 0) {
-		i32 issue = landing_issue(0);
+		i32 issue = landing_issue(0,false);
 		if (mx > (if (stage == MissionPhase::supply_approach) { pickup_w() } else { strip_w() })*0.42 || issue == 1) { 1.0 } else {
 			if (issue == 0) { 4.0 } else { float_i(issue) }
 		}

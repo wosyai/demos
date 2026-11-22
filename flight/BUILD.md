@@ -1,6 +1,6 @@
 # Building Flying Low
 From the demos checkout, with Wosy compiler revision
-`4e6e51710d4d129df8dd5c00574a31b8c4234f91`:
+`2c8f459b94f0262e306f5c7b1bf7486b59ee1332`:
 
 ```sh
 cd flight
@@ -34,7 +34,7 @@ and score in [24]. Mission-specific fields are:
 | 20 | Phase: 0 cross the Seine, 1 approach drop, 2 landing approach, 3 rollout, 5 falling pouch, 6 takeoff, 7 supply approach, 8 supply rollout, 9 cargo pickup, 10 cargo relaunch, 11 spray rows |
 | 21 | Delivery action window: 0 inactive, 5 high, 6 low, 7 misaligned, 8 not yet over target, 9 release |
 | 22 | End: 0 active, 1 complete, 2 obstacle, 3 bounds/time, 4 outside strip, 5 alignment, 6 speed, 7 delivery not completed, 8 bridge, 9 overrun, 10 descent, 11 lateral exit |
-| 25–26 | Route (0 none, 1 low, 2 wide) and last rejected action reason (12 premature cargo pickup) |
+| 25–26 | Route (0 none, 1 low, 2 wide) and last action status (12 premature cargo pickup, 13 rough but survivable touchdown) |
 | 27–28 | Distance to target (or rollout remaining) and signed normalized turn cue |
 | 29–31 | Landing instruction (1 align, 2 slow down, 3 ease descent, 4 ready), climb warning, delivered pouch or completed crop rows |
 | 32–34 | Gates earned, current gate index, and seconds remaining for the current gate |
@@ -47,15 +47,19 @@ axes to ±7. Bit 7 is a one-shot contextual mission action (load, spray, or mail
 `cancel_drop()` clears a not-yet-consumed release when input is interrupted
 without changing the simulation clock or undoing a pouch already launched.
 
-Mission replay format uses magic bytes `WF`, version byte 4, mission byte, a
+Mission replay format uses magic bytes `WF`, version byte 6, mission byte, a
 little-endian 16-bit step count, then one little-endian canonical control word
 per step. The mission action is included in its original step. Only legally completed
 missions on the final step are admitted, up to 8,100 steps and 16,206 bytes.
-The former race rules used versions 1 to 3 with different storage; the
-browser leaves those save keys untouched.
+The browser stores v6 separately from v4/v5 mission records and older race records.
+Older packets are not accepted under the changed landing physics; the browser
+neither reads nor overwrites the earlier save keys.
 
 Touchdown and rollout use the same strip limits used to draw the markings.
-Steering during rollout is slower than airborne banking. The Eiffel Tower
+A touchdown beyond the suggested approach limits can still enter roll-out, but
+severe angle, speed, or descent still fails. Rollout still requires staying on
+the strip and stopping fully; a rough supply touchdown does not load cargo or
+skip take-off. Steering during rollout is slower than airborne banking. The Eiffel Tower
 uses tapered leg, platform, lattice, and arch collision envelopes rather
 than an invisible solid box; these approximate the drawn ironwork.
 

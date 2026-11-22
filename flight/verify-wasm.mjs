@@ -438,7 +438,7 @@ for (const {course, visited, result, time, data, actions, gates} of [goodFarm,go
     assert.equal(actions,course?1:3);
     assert(gates>0 && gates<=3,"timed gate score is earned by a real flight path");
     reset(1-course); reset(course);
-    assert.equal(data[2],4);
+    assert.equal(data[2],6);
     assert.equal(data.length,6+2*(data[4]+data[5]*256));
     const noActions = data.slice();
     for (let i=6;i<noActions.length;i+=2) noActions[i] &= 127;
@@ -483,7 +483,7 @@ for (const course of [0, 1]) {
 }
 function visibleGhost(rejectedCandidate) {
     reset(1); reset(0);
-    for (const oldVersion of [1, 2, 3]) {
+    for (const oldVersion of [1, 2, 3, 4, 5]) {
         const oldPacket = goodFarm.data.slice();
         oldPacket[2] = oldVersion;
         load(oldPacket);
