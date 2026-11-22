@@ -18,7 +18,7 @@ for (const item of imports) {
 let engine;
 let frame, missionFlameFloor = 1;
 let mesh;
-const meshChunks = Array.from({ length: 16 }, () => ({count: 0, hash: "", lantern: []}));
+const meshChunks = Array.from({ length: 64 }, () => ({count: 0, hash: "", lantern: []}));
 const meshPublications = [];
 let water;
 let outline;
@@ -60,13 +60,13 @@ engine = new WebAssembly.Instance(binary, {
       atlasCount++;
     },
     mesh(pointer, count, chunk) {
-      assert(Number.isInteger(chunk) && chunk >= 0 && chunk < 16, 'valid terrain chunk id');
+      assert(Number.isInteger(chunk) && chunk >= 0 && chunk < 64, 'valid terrain chunk id');
       const current = layer(pointer, count, 3, 55296);
       const data = view(pointer, count * 6);
       const lantern = new Set();
       for (let i = 0; i < data.length; i += 6) {
-        assert(data[i] >= (chunk % 4) * 12 && data[i] <= (chunk % 4 + 1) * 12);
-        assert(data[i + 2] >= Math.floor(chunk / 4) * 12 && data[i + 2] <= (Math.floor(chunk / 4) + 1) * 12);
+        assert(data[i] >= (chunk % 8) * 12 && data[i] <= (chunk % 8 + 1) * 12);
+        assert(data[i + 2] >= Math.floor(chunk / 8) * 12 && data[i + 2] <= (Math.floor(chunk / 8) + 1) * 12);
         assert(data[i + 3] > 0 && data[i + 3] < 1, 'baked atlas U outside bounds');
         assert(data[i + 4] > 0 && data[i + 4] < 1, 'baked atlas V outside bounds');
         const light = data[i + 5];
@@ -79,7 +79,7 @@ engine = new WebAssembly.Instance(binary, {
       mesh = { pointer, count: meshChunks.reduce((sum, part) => sum + part.count, 0),
         hash: meshChunks.map((part) => part.hash).join(':') };
     },
-    water(pointer, count) { water = layer(pointer, count, 3, 3456); },
+    water(pointer, count) { water = layer(pointer, count, 3, 7776); },
     outline(pointer, count) { outline = layer(pointer, count, 2, 24); },
     player(pointer, count) { avatar = layer(pointer, count, 3, 576); avatarUploads++; },
     aim(x, y) {
@@ -127,7 +127,7 @@ for (const [text, expect] of [
 ]) assert.equal(seed(text, 1), expect, JSON.stringify(text));
 generate(42);
 assert(mesh.count > 0);
-assert.equal(water.count, 3456, 'one continuous sea surface surrounds the island');
+assert.equal(water.count, 7776, 'one continuous sea surface surrounds the island');
 const initialSea = water;
 assert.equal((pick(12.5, 15, 0.5, 0, -1, 0) >>> 6) & 15, 0, 'shore bed should emerge from the sea');
 assert.equal((pick(12.5, 15, 1.5, 0, -1, 0) >>> 6) & 15, 1, 'shore should have a shallow intermediate step');
@@ -354,10 +354,10 @@ assert.equal(frame.values[17], 10);
 assert.equal(frame.values[22], 1, 'an empty world must use a stable flight spawn');
 assert.equal(frame.values[23], 0);
 function renderedSeaAt(x, z) {
-  const data = view(water.pointer, 3456 * 6);
-  const col = Math.min(21, Math.floor((x + 20) / 4));
-  const row = Math.min(21, Math.floor((z + 20) / 4));
-  const cell = ((row + 1) * 24 + col + 1) * 36;
+  const data = view(water.pointer, 7776 * 6);
+  const col = Math.min(33, Math.floor((x + 20) / 4));
+  const row = Math.min(33, Math.floor((z + 20) / 4));
+  const cell = ((row + 1) * 36 + col + 1) * 36;
   const u = (x - data[cell]) / 4, v = (z - data[cell + 2]) / 4;
   const a = data[cell + 1], c = data[cell + 7], b = data[cell + 13], d = data[cell + 19];
   return u + v <= 1 ? a * (1 - u - v) + b * u + c * v : d * (u + v - 1) + b * (1 - v) + c * (1 - u);
@@ -626,7 +626,7 @@ assert.equal(edit_view(0), -4, 'the authored piling cannot be broken');
 assert.equal(meshPublications.length, beforeRejectedEdit, 'rejected edit does not publish geometry');
 const editBoundary = meshPublications.length;
 assert.equal(place_selected(), 1);
-assert.deepEqual(meshPublications.slice(editBoundary).map((p) => p.chunk), [10, 9],
+assert.deepEqual(meshPublications.slice(editBoundary).map((p) => p.chunk), [18, 17],
   "a seam edit replaces only the owner and face-adjacent chunk");
 assert(meshPublications.slice(editBoundary).reduce((sum, chunk) => sum + chunk.count, 0) < freshMission.count / 3,
   "seam editing moves only a fraction of the level geometry");
