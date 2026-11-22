@@ -69,3 +69,8 @@ stays available until the deadline. Gate points never unlock a mission phase.
 
 The Paris route extends beyond the old northeast bank to the quay station.
 The station uses the same typed gable dimensions for its visible walls and flight contact.
+
+The Wright course's western county has a terraced reservoir and gravel service
+track. All new scenery within flyable airspace remains below landing height;
+the raised water tower visibly marks the county boundary beyond it. This visual
+change leaves replay v7 and the route physics unchanged.

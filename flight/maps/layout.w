@@ -19,4 +19,12 @@ struct copy GabledLandmark {
 	f32 eaves;
 	f32 ridge;
 }
+struct copy CountyReservoir {
+	f32 x;
+	f32 z;
+	f32 across;
+	f32 along;
+	f32 tower_x;
+	f32 tower_z;
+}
 %%end

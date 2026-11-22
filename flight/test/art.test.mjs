@@ -80,6 +80,23 @@ test("Paris has a continuous northeast river and a complete gabled quay station"
     "a seven-bay window rhythm distinguishes the station facade");
 });
 
+test("Wright county has a terraced reservoir and raised tower outside the playable boundary", async () => {
+  const {world, plane} = (await art()).sample(0);
+  assert(world.length <= 32768 * 6 && plane.length <= 2048 * 6);
+  const lake = vertices(world, [.23, .48, .54]);
+  assert.equal(lake.length, 16 * 3);
+  assert(lake.every(([x,y,z]) => x >= -405 && x <= -299 && z >= 251 && z <= 323 && close(y,.105)));
+  assert(lake.filter(([x,,z]) => close(x,-352) && close(z,287)).length === 16);
+  const banks = [...vertices(world, [.52, .51, .39]), ...vertices(world, [.61, .61, .48])];
+  assert.equal(banks.length, 2 * 16 * 6);
+  assert(banks.every(([x,y,z]) => x > -415 && x < -289 && z > 240 && z < 334 && y <= .6602));
+  assert(banks.some(([,y]) => close(y,.66)), "the embankment rises above the water");
+  const towerRoof = vertices(world, [.43, .27, .19]).filter(([x]) => x < -448);
+  assert.equal(towerRoof.length, 12 * 3);
+  assert(towerRoof.every(([x,y,z]) => x < -460.5 && y >= 28 && z >= 291.5 && z <= 306.5));
+  assert(towerRoof.some(([x,y,z]) => close(x,-468) && close(y,32) && close(z,299)));
+});
+
 test("Wright Flyer has thirteen striped cells and a navy canton; Paris has one Brazilian flag mark", async () => {
   const demo = await art();
   const farm = demo.sample(0).plane;

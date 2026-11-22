@@ -347,10 +347,10 @@ test("the light shell and its flight engine share the same release token", async
   const sim = mock();
   await sim.ready;
   const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
-  assert.match(html, /href="\.\/style\.css\?v=paris-quay-flight-v7"/);
-  assert.match(html, /src="\.\/host\.mjs\?v=paris-quay-flight-v7"/);
+  assert.match(html, /href="\.\/style\.css\?v=county-reservoir-flight-v7"/);
+  assert.match(html, /src="\.\/host\.mjs\?v=county-reservoir-flight-v7"/);
   assert.deepEqual(sim.called.requests.map((url) => [url.pathname.split("/").at(-1), url.search]),
-    [["flight.wasm", "?v=paris-quay-flight-v7"]]);
+    [["flight.wasm", "?v=county-reservoir-flight-v7"]]);
 });
 
 test("phone rotation releases the old touch and accepts a fresh steer in the new aspect", async () => {
