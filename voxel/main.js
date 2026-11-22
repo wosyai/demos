@@ -372,7 +372,7 @@ async function boot() {
   }
   try {
     prepareGraphics();
-    const response = await fetch(new URL("./engine.wasm?v=beacon-wood-rebuild-v1", import.meta.url));
+    const response = await fetch(new URL("./engine.wasm?v=beacon-loose-wood-rebuild-v1", import.meta.url));
     if (!response.ok) throw new Error(`Engine not found (HTTP ${response.status}).`);
     const bytes = await response.arrayBuffer();
     const api = {
@@ -645,7 +645,11 @@ function sendEdit(mode, state) {
     if (result === -1) toast("Aim at a block.");
     if (result === -2) toast("You reached the island boundary.");
     if (result === -3) toast("That block would be in your way.");
-    if (result === -4 && beaconState === 1) toast("Dig the sand gate or build across the marked channel.");
+    if (result === -4 && beaconState === 1) {
+      toast(mode === 0 ? "That block cannot be mined in Beacon Run." : "Choose an empty spot and make sure you have wood.");
+    }
+    if (result === -5) toast("Pick up the loose wood before building here.");
+    if (result === -6) toast("Too much loose wood. Pick some up before mining again.");
   } catch (e) { fail("The engine could not update the island.", e); }
 }
 

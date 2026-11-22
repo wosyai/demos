@@ -48,18 +48,23 @@ for (const aspect of [.56, 1.67]) {
   assert.deepEqual(hitCell(target), [24, 5, 40]);
 
   changed.length = 0;
-  assert.equal(engine.edit_view(0), 1, 'ordinary reticle mining recovers the same wood');
+  assert.equal(engine.edit_view(0), 1, 'ordinary reticle mining leaves loose wood');
   assert.deepEqual(changed, [14, 13]);
-  assert.deepEqual([hashes.get(14), hashes.get(13)], before, 'both edited chunk streams restore exactly');
+  const loose = [hashes.get(14), hashes.get(13)];
+  assert.notEqual(loose[0], before[0], 'the loose item adds real owner-chunk geometry');
+  assert.equal(loose[1], before[1], 'no loose geometry was added in the neighbor');
   tick();
-  assert.equal(hud[28], 12);
+  assert.equal(hud[28], 11, 'breaking does not credit wood before pickup');
   assert.deepEqual(hitCell(target), [24, 4, 40]);
 
   changed.length = 0;
+  assert.equal(engine.place_selected(), -5, 'cannot bury uncollected wood');
   assert.equal(engine.edit_view(0), -4, 'the authored ground underneath remains protected');
   assert.deepEqual(changed, [], 'rejected edits do not rebuild chunks');
-  tick();
-  assert.deepEqual(hud.slice(25, 30), [1, 1, 0, 12, 0], 'no loss, duplication, or progression change');
+  for (let i = 0; i < 4; i++) engine.tick(.05, aspect, 1);
+  assert.equal(hud[28], 11, 'active time alone cannot collect distant wood');
+  assert.deepEqual(changed, []);
+  assert.deepEqual([hashes.get(14), hashes.get(13)], loose);
 
   const forwardTo = (z) => {
     engine.control(0, 1);
@@ -67,6 +72,14 @@ for (const aspect of [.56, 1.67]) {
     engine.control(0, 0);
     assert(hud[18] <= z && hud[25] === 1, 'reach normal route waypoint ' + z);
   };
+  forwardTo(41.15);
+  assert.equal(hud[28], 12, 'reaching the visible item recovers exactly one wood');
+  assert.deepEqual(changed, [14], 'pickup changes only the item owner chunk');
+  assert.deepEqual([hashes.get(14), hashes.get(13)], before, 'both edited streams restore exactly');
+  for (let i = 0; i < 4; i++) engine.tick(.05, aspect, 1);
+  assert.equal(hud[28], 12, 'standing by the collected spot cannot collect it twice');
+  assert.deepEqual(changed, [14]);
+
   forwardTo(30.52);
   for (const piling of [28, 26, 24, 22, 20, 18]) {
     aimNorthAt(4, piling + .50);

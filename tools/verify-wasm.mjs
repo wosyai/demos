@@ -607,10 +607,23 @@ cycle_material(1);
 tick(0, 1, 1);
 assert.equal(frame.values[24], 5, 'mission stock is one material, regardless of sandbox keys');
 
+aimNorthAt(5, 40.5);
+assert.equal(place_selected(), 1, 'place one wood on the harbor path before starting the bridge');
+tick(0, 1, 1);
+assert.equal(frame.values[28], 11);
+assert.equal(edit_view(0), 1);
+tick(0, 1, 1);
+assert.equal(frame.values[28], 11, 'breaking leaves the wood outside the stock');
+moveOn(0, 2, 41.15, -1, 'walk to collect the loose wood before starting the bridge');
+assert.equal(frame.values[28], 12, 'ordinary body pickup recovers the full stock for the twelve-cell bridge');
+
 moveOn(0, 2, 30.52, -1, 'reach the south end of the long bridge corridor');
 aimNorthAt(4, 28.5);
 assert(frame.hit >= 0 && (frame.hit & 63) === 24 && ((frame.hit >>> 10) & 63) === 28 &&
   (frame.hit >>> 16) === 3, 'first piling is four-cell-ray aimable');
+const beforeRejectedEdit = meshPublications.length;
+assert.equal(edit_view(0), -4, 'the authored piling cannot be broken');
+assert.equal(meshPublications.length, beforeRejectedEdit, 'rejected edit does not publish geometry');
 const editBoundary = meshPublications.length;
 assert.equal(place_selected(), 1);
 assert.deepEqual(meshPublications.slice(editBoundary).map((p) => p.chunk), [10, 9],
@@ -619,16 +632,12 @@ assert(meshPublications.slice(editBoundary).reduce((sum, chunk) => sum + chunk.c
   "seam editing moves only a fraction of the level geometry");
 tick(0, 1, 1);
 assert.equal(frame.values[28], 11, 'placing a beam consumes one wood');
-assert.equal(edit_view(0), 1);
-tick(0, 1, 1);
-assert.equal(frame.values[28], 12, 'breaking a placed beam recovers its piece of wood');
-const beforeRejectedEdit = meshPublications.length;
-assert.equal(edit_view(0), -4, 'the authored piling cannot be broken');
-assert.equal(meshPublications.length, beforeRejectedEdit, 'rejected edit does not publish geometry');
 
 for (const piling of [28, 26, 24, 22, 20, 18]) {
-  aimNorthAt(4, piling + .50);
-  assert.equal(place_selected(), 1, 'extend the dry surface above piling ' + piling);
+  if (piling !== 28) {
+    aimNorthAt(4, piling + .50);
+    assert.equal(place_selected(), 1, 'extend the dry surface above piling ' + piling);
+  }
   aimNorthAt(4.5, piling + 1);
   assert.equal(place_selected(), 1, 'place adjacent wood in the next unbridged cell');
   moveOn(0, 2, piling + .55, -1, 'walk the completed portion of the bridge');
