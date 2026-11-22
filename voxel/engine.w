@@ -142,6 +142,13 @@ enum copy BeaconPhase {
 }
 BeaconPhase beacon_phase = BeaconPhase::sandbox;
 i32 bridge_blocks = 12;
+i32[48] loose_wood = [
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+];
+i32 loose_count = 0;
 i32 relay_stage = 0;
 i32 sandbox_material = 2;
 f32 beacon_elapsed = 0.0;
@@ -427,10 +434,10 @@ unit(f32, f32, f32, f32, f32, f32) vertex = fn(x, y, z, u, v, light) {
 	write_position = at + 1;
 };
 
-unit(i32, i32, i32, i32, u8) face = fn(ix, iy, iz, side, material) {
-	f32 x = core.sint_to_float<f32>(ix);
-	f32 y = core.sint_to_float<f32>(iy);
-	f32 z = core.sint_to_float<f32>(iz);
+unit(f32, f32, f32, f32, i32, u8) box_face = fn(x, y, z, size, side, material) {
+	f32 east = x + size;
+	f32 top = y + size;
+	f32 south = z + size;
 	f32 tile = core.sint_to_float<f32>(face_tile(material, side));
 	f32 u0 = tile * 0.125 + 0.00390625;
 	f32 u1 = tile * 0.125 + 0.12109375;
@@ -443,51 +450,80 @@ unit(i32, i32, i32, i32, u8) face = fn(ix, iy, iz, side, material) {
 	};
 	if (side == 0) {
 		vertex(x, y, z, u0, v0, light);
-		vertex(x, y, z + 1.0, u1, v0, light);
-		vertex(x, y + 1.0, z + 1.0, u1, v1, light);
+		vertex(x, y, south, u1, v0, light);
+		vertex(x, top, south, u1, v1, light);
 		vertex(x, y, z, u0, v0, light);
-		vertex(x, y + 1.0, z + 1.0, u1, v1, light);
-		vertex(x, y + 1.0, z, u0, v1, light);
+		vertex(x, top, south, u1, v1, light);
+		vertex(x, top, z, u0, v1, light);
 	};
 	if (side == 1) {
-		vertex(x + 1.0, y, z + 1.0, u0, v0, light);
-		vertex(x + 1.0, y, z, u1, v0, light);
-		vertex(x + 1.0, y + 1.0, z, u1, v1, light);
-		vertex(x + 1.0, y, z + 1.0, u0, v0, light);
-		vertex(x + 1.0, y + 1.0, z, u1, v1, light);
-		vertex(x + 1.0, y + 1.0, z + 1.0, u0, v1, light);
+		vertex(east, y, south, u0, v0, light);
+		vertex(east, y, z, u1, v0, light);
+		vertex(east, top, z, u1, v1, light);
+		vertex(east, y, south, u0, v0, light);
+		vertex(east, top, z, u1, v1, light);
+		vertex(east, top, south, u0, v1, light);
 	};
 	if (side == 2) {
-		vertex(x, y, z + 1.0, u0, v0, light);
+		vertex(x, y, south, u0, v0, light);
 		vertex(x, y, z, u1, v0, light);
-		vertex(x + 1.0, y, z, u1, v1, light);
-		vertex(x, y, z + 1.0, u0, v0, light);
-		vertex(x + 1.0, y, z, u1, v1, light);
-		vertex(x + 1.0, y, z + 1.0, u0, v1, light);
+		vertex(east, y, z, u1, v1, light);
+		vertex(x, y, south, u0, v0, light);
+		vertex(east, y, z, u1, v1, light);
+		vertex(east, y, south, u0, v1, light);
 	};
 	if (side == 3) {
-		vertex(x, y + 1.0, z, u0, v0, light);
-		vertex(x, y + 1.0, z + 1.0, u1, v0, light);
-		vertex(x + 1.0, y + 1.0, z + 1.0, u1, v1, light);
-		vertex(x, y + 1.0, z, u0, v0, light);
-		vertex(x + 1.0, y + 1.0, z + 1.0, u1, v1, light);
-		vertex(x + 1.0, y + 1.0, z, u0, v1, light);
+		vertex(x, top, z, u0, v0, light);
+		vertex(x, top, south, u1, v0, light);
+		vertex(east, top, south, u1, v1, light);
+		vertex(x, top, z, u0, v0, light);
+		vertex(east, top, south, u1, v1, light);
+		vertex(east, top, z, u0, v1, light);
 	};
 	if (side == 4) {
-		vertex(x + 1.0, y, z, u0, v0, light);
+		vertex(east, y, z, u0, v0, light);
 		vertex(x, y, z, u1, v0, light);
-		vertex(x, y + 1.0, z, u1, v1, light);
-		vertex(x + 1.0, y, z, u0, v0, light);
-		vertex(x, y + 1.0, z, u1, v1, light);
-		vertex(x + 1.0, y + 1.0, z, u0, v1, light);
+		vertex(x, top, z, u1, v1, light);
+		vertex(east, y, z, u0, v0, light);
+		vertex(x, top, z, u1, v1, light);
+		vertex(east, top, z, u0, v1, light);
 	};
 	if (side == 5) {
-		vertex(x, y, z + 1.0, u0, v0, light);
-		vertex(x + 1.0, y, z + 1.0, u1, v0, light);
-		vertex(x + 1.0, y + 1.0, z + 1.0, u1, v1, light);
-		vertex(x, y, z + 1.0, u0, v0, light);
-		vertex(x + 1.0, y + 1.0, z + 1.0, u1, v1, light);
-		vertex(x, y + 1.0, z + 1.0, u0, v1, light);
+		vertex(x, y, south, u0, v0, light);
+		vertex(east, y, south, u1, v0, light);
+		vertex(east, top, south, u1, v1, light);
+		vertex(x, y, south, u0, v0, light);
+		vertex(east, top, south, u1, v1, light);
+		vertex(x, top, south, u0, v1, light);
+	};
+};
+
+unit(i32, i32, i32, i32, u8) face = fn(ix, iy, iz, side, material) {
+	box_face(core.sint_to_float<f32>(ix), core.sint_to_float<f32>(iy), core.sint_to_float<f32>(iz), 1.0, side, material);
+};
+
+i32(i32, i32, i32) loot_key = fn(x, y, z) { x + y * 64 + z * 1024 };
+
+i32(i32) loot_x = fn(key) { key % 64 };
+i32(i32) loot_y = fn(key) { (key / 64) % 16 };
+i32(i32) loot_z = fn(key) { key / 1024 };
+
+i32(i32, i32) chunk_at = fn(x, z) { x / 12 + (z / 12) * 4 };
+
+unit(f32, f32, f32, i32) draw_loose_cube = fn(x, y, z, side) {
+	if (side < 6) { box_face(x, y, z, 0.24, side, 5); draw_loose_cube(x, y, z, side + 1); };
+};
+
+unit(i32, i32) mesh_loose = fn(at, chunk) {
+	if (at < loose_count) {
+		i32 key = loose_wood[index_of(at)];
+		i32 x = loot_x(key);
+		i32 z = loot_z(key);
+		if (chunk_at(x, z) == chunk) {
+			draw_loose_cube(core.sint_to_float<f32>(x) + 0.38,
+				core.sint_to_float<f32>(loot_y(key)) + 0.02, core.sint_to_float<f32>(z) + 0.38, 0);
+		};
+		mesh_loose(at + 1, chunk);
 	};
 };
 
@@ -523,6 +559,7 @@ unit(i32, i32, i32) mesh_cells = fn(y, start_x, start_z) {
 i32(i32) rebuild_chunk = fn(chunk) {
 	write_position = 0;
 	mesh_cells(0, (chunk % 4) * 12, (chunk / 4) * 12);
+	if (loose_count > 0) { mesh_loose(0, chunk); };
 	i32 count = write_position;
 	unsafe { host.mesh(core.pointer_cast<*?u8>(&?vertices[0][0][0][0][0]), count, chunk); };
 	count
@@ -536,8 +573,6 @@ i32(i32) rebuild_chunks = fn(chunk) {
 };
 
 i32() rebuild = fn { rebuild_chunks(0) };
-
-i32(i32, i32) chunk_at = fn(x, z) { x / 12 + (z / 12) * 4 };
 
 unit(i32, i32) rebuild_near = fn(x, z) {
 	i32 chunk = chunk_at(x, z);
@@ -708,6 +743,7 @@ i32() start_beacon = fn {
 	lamp_wet = 0.0;
 	tide_progress = 0.0;
 	bridge_blocks = 12;
+	loose_count = 0;
 	relay_stage = 0;
 	sea_level = sea_low;
 	sea_phase = 0.0;
@@ -738,6 +774,7 @@ i32() start_beacon = fn {
 i32() leave_beacon = fn {
 	if (beacon_phase == BeaconPhase::sandbox) { 0 } else {
 		beacon_phase = BeaconPhase::sandbox;
+		loose_count = 0;
 		world = sandbox_cells;
 		selected_material = sandbox_material;
 		sea_level = sea_low;
@@ -751,6 +788,7 @@ i32() leave_beacon = fn {
 i32(i32) generate = fn(seed) {
 	if (beacon_phase != BeaconPhase::sandbox) { selected_material = sandbox_material; };
 	beacon_phase = BeaconPhase::sandbox;
+	loose_count = 0;
 	sea_level = sea_low;
 	i32 bounded = seed % 16381;
 	fill_terrain(0, bounded);
@@ -1620,6 +1658,54 @@ unit(f32) update_beacon = fn(dt) {
 	};
 };
 
+i32(i32, i32, i32) loose_floor = fn(x, y, z) {
+	if (y > 0 && cell(x, y - 1, z) == 0) { loose_floor(x, y - 1, z) } else { y }
+};
+
+unit(i32, i32, i32, i32) settle_wood = fn(at, x, y, z) {
+	if (at < loose_count) {
+		u64 index = index_of(at);
+		i32 key = loose_wood[index];
+		if (loot_x(key) == x && loot_z(key) == z && loot_y(key) == y + 1) {
+			loose_wood[index] = loot_key(x, loose_floor(x, y, z), z);
+		};
+		settle_wood(at + 1, x, y, z);
+	};
+};
+
+bool(i32, i32) has_loose_wood = fn(at, key) {
+	if (at == loose_count) { false } else {
+		loose_wood[index_of(at)] == key || has_loose_wood(at + 1, key)
+	}
+};
+
+i32(i32) reachable_wood = fn(at) {
+	if (at == loose_count) { -1 } else {
+		i32 key = loose_wood[index_of(at)];
+		f32 x = core.sint_to_float<f32>(loot_x(key)) + 0.50;
+		f32 y = core.sint_to_float<f32>(loot_y(key)) + 0.14;
+		f32 z = core.sint_to_float<f32>(loot_z(key)) + 0.50;
+		f32 oy = clamp_f(y, camera_pose.y - player_feet + contact_skin, camera_pose.y + player_head - contact_skin);
+		f32 dx = x - camera_pose.x;
+		f32 dy = y - oy;
+		f32 dz = z - camera_pose.z;
+		if (dx * dx + dy * dy + dz * dz <= 0.64
+			&& pick_in_range(camera_pose.x, oy, camera_pose.z, dx, dy, dz, 1.0) < 0) { at } else { reachable_wood(at + 1) }
+	}
+};
+
+unit() collect_wood = fn {
+	i32 at = reachable_wood(0);
+	if (at >= 0) {
+		u64 index = index_of(at);
+		i32 key = loose_wood[index];
+		loose_count = loose_count - 1;
+		loose_wood[index] = loose_wood[index_of(loose_count)];
+		bridge_blocks = bridge_blocks + 1;
+		rebuild_chunk(chunk_at(loot_x(key), loot_z(key)));
+	};
+};
+
 unit(f32, f32, i32) tick = fn(dt, aspect, playing) {
 	f32 zero = 0.0;
 	f32 upper_step = 0.06;
@@ -1635,6 +1721,7 @@ unit(f32, f32, i32) tick = fn(dt, aspect, playing) {
 				publish_water();
 			};
 			move_camera(step, sin_yaw, cos_yaw);
+			if (beacon_phase == BeaconPhase::active && step > 0.0 && loose_count > 0) { collect_wood(); };
 			advance_edits(step);
 			if (beacon_phase == BeaconPhase::active && step > 0.0) { update_beacon(step); };
 		};
@@ -1652,17 +1739,26 @@ unit(f32, f32, i32) tick = fn(dt, aspect, playing) {
 i32(i32, i32, i32, i32) edit_beacon = fn(x, y, z, material) {
 	if (beacon_phase != BeaconPhase::active || harbor_hut(x, y, z)) { -4 } else {
 		u8 present = cell(x, y, z);
-		i32 stock_change = if (material == 0 && present == 5 && !mission_fixed_wood(x, y, z)) { 1 } else {
-			if (material == 5 && present == 0 && bridge_blocks > 0) { -1 } else { 0 }
-		};
+		bool loosen = material == 0 && present == 5 && !mission_fixed_wood(x, y, z);
 		bool open_tunnel = material == 0 && present == 4 && soft_plug(x, y, z);
-		if (stock_change == 0 && !open_tunnel) { -4 } else {
-			i32 changed = write_cell(x, y, z, material);
-			if (changed == 1) {
-				bridge_blocks = bridge_blocks + stock_change;
-				rebuild_near(x, z);
-			};
-			changed
+		bool place = material == 5 && present == 0 && bridge_blocks > 0;
+		if (!(loosen || open_tunnel || place)) { -4 } else {
+			if (loosen && loose_count >= 48) { -6 } else {
+				if (place && has_loose_wood(0, loot_key(x, y, z))) { -5 } else {
+					i32 changed = write_cell(x, y, z, material);
+					if (changed == 1) {
+						if (place) { bridge_blocks = bridge_blocks - 1; } else {
+							if (loose_count > 0) { settle_wood(0, x, y, z); };
+							if (loosen) {
+								loose_wood[index_of(loose_count)] = loot_key(x, loose_floor(x, y, z), z);
+								loose_count = loose_count + 1;
+							};
+						};
+						rebuild_near(x, z);
+					};
+					changed
+				}
+			}
 		}
 	}
 };
