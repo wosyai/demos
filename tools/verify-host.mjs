@@ -5,12 +5,13 @@ const markup = await readFile(new URL('../voxel/index.html', import.meta.url), '
 for (const id of ['pause', 'fullscreen', 'camera-view', 'view-touch', 'jump-touch', 'descend-touch', 'flight-touch', 'remove', 'place']) {
   const button = markup.match(new RegExp(`<button[^>]+id="${id}"[^>]*>([\\s\\S]*?)</button>`));
   assert(button && /aria-label="[^"]+"/.test(button[0]) && /<svg /.test(button[1]), id + ' is an accessible icon button');
-  assert.equal(button[1].replace(/<[^>]+>/g, '').trim(), '', id + ' has no persistent text label');
+  const label = id === 'remove' ? 'Break' : id === 'place' ? 'Place' : '';
+  assert.equal(button[1].replace(/<[^>]+>/g, '').trim(), label, id + ' has the expected visible label');
 }
 assert.match(markup, /<details class="entry-guide">[\s\S]*?<p class="camera-legend">[\s\S]*?href="#glyph-view"[\s\S]*?href="#glyph-person"[\s\S]*?Switch first \/ third person/);
 assert.match(markup, /<header class="top">[\s\S]*?id="mission-hud"[\s\S]*?class="top-actions"[\s\S]*?<\/header>/);
 assert.match(markup, /<details class="world-options">/);
-assert.match(markup, /<h1 id="title">Pocket<br>Island/);
+assert.match(markup, /<h1 id="title">Pocket Island<\/h1>/);
 
 function deferred() {
   let resolve;
@@ -147,7 +148,7 @@ async function loadHost(caseId, startsLost = false, stored = null, mobile = fals
     devicePixelRatio: 1,
     fetch(url) {
       assert(url.pathname.endsWith('/voxel/engine.wasm'));
-      assert.equal(url.search, '?v=typed-state-v1');
+      assert.equal(url.search, '?v=beacon-wood-guide-v1');
       return fetchResponse.promise;
     },
     requestAnimationFrame(fn) { frames.set(++frameId, fn); return frameId; },
@@ -548,8 +549,8 @@ console.log('Blur reset ignored repeated key-down and accepted a fresh press.');
 const page = await readFile(new URL('../voxel/index.html', import.meta.url), 'utf8');
 assert.match(page, /<html lang="en">/);
 assert.match(page, /<title>Pocket Island • Wosy<\/title>/);
-assert.match(page, /href="\.\/style\.css\?v=beacon-5"/);
-assert.match(page, /src="\.\/main\.js\?v=typed-state-v1"/);
+assert.match(page, /href="\.\/style\.css\?v=beacon-6-arcade-ui4"/);
+assert.match(page, /src="\.\/main\.js\?v=beacon-wood-guide-v1-arcade-ui4"/);
 assert.match(page, /id="move-stick"/);
 assert.doesNotMatch(page, /class="dpad"|data-move="Key[WASD]"/);
 assert.match(page, /title="Dirt · 2"/);
