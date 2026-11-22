@@ -1,5 +1,14 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, mkdirSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { join } from "node:path";
+
+const captureRoot = process.env.FLIGHT_MARKER_CAPTURE;
+const comparisonBaseline = process.env.FLIGHT_MARKER_BASELINE === "1";
+assert(!comparisonBaseline || captureRoot, "baseline mode requires an isolated capture directory");
+const captureProfiles = [[420, 750], [1000, 600]];
+const floatBytes = (array) => Buffer.from(array.buffer, array.byteOffset, array.byteLength);
+const digest = (array) => createHash("sha256").update(floatBytes(array)).digest("hex");
 
 const module = new WebAssembly.Module(readFileSync(process.argv[2] ?? new URL("flight.wasm", import.meta.url)));
 assert.deepEqual(WebAssembly.Module.imports(module).map(({ module, name }) => `${module}.${name}`).sort(), [
@@ -207,15 +216,135 @@ function marker(color, minY = -Infinity) {
     }
     return result;
 }
+if (!comparisonBaseline) {
+    for (const course of [0,1]) {
+        reset(course);
+        const bright = marker([.28,1,.89]), rim = marker([.035,.095,.10]);
+        assert.equal(bright.length,6,"the directional fill is two triangles");
+        assert.equal(rim.length,24,"only the outline surrounds the fill");
+        const tip = rim.reduce((a,b) => a[2]>b[2] ? a : b);
+        const x = course ? -111 : -15;
+        const z = (course ? -199 : -74) + 3;
+        assert(Math.abs(tip[0]-x) < .001 && Math.abs(tip[2]-z-13.1) < .01,
+            "takeoff arrow tip remains on the original course centreline and extent");
+    }
+}
+
+function cueRanges() {
+    let offset = 0;
+    const ranges = {};
+    function group(name, vertices, palette) {
+        const end = offset + vertices * 6;
+        assert(end <= aircraft.length);
+        for (let i=offset; i<end; i+=6) {
+            assert(palette.some(color => color.every((value,c) => Math.abs(aircraft[i+3+c]-value)<.001)),
+                `unexpected ${name} vertex at ${i/6}`);
+        }
+        ranges[name] = [offset/6,vertices];
+        offset = end;
+    }
+    const cyan = [.28,1,.89], amber = [1,.66,.19], green = [.22,1,.43];
+    const rim = comparisonBaseline ? [.05,.30,.28] : [.035,.095,.10];
+    if (frame[33] < 3) group("amber",84,[amber]);
+    if (marker(green).length === 84) group("green",84,[green]);
+    if (rim.every((value,c) => Math.abs(aircraft[offset+3+c]-value)<.001))
+        group("arrow",comparisonBaseline ? 12 : 30,[cyan,rim]);
+    if ([7,8,9].includes(frame[20]))
+        group("pickup",12,[1,.89,.77,.95].map(scale => cyan.map(value => value*scale)));
+    return ranges;
+}
+
+function observeMarkers(course, mode) {
+    if (!captureRoot) return null;
+    const trace = createHash("sha256");
+    trace.update(floatBytes(frame));
+    let ticks = 0;
+    const samples = {};
+    const views = mode === "normal" ? captureProfiles.map(([width, height]) => {
+        const directory = join(captureRoot, String(course), `${width}x${height}`);
+        mkdirSync(directory, { recursive: true });
+        writeFileSync(join(directory, "world.bin"), floatBytes(world));
+        return { directory, width, height, snapshots: [] };
+    }) : [];
+    const capture = (name) => {
+        if (!views.length || samples[name]) return;
+        const start = frame.slice();
+        const originalAircraft = digest(aircraft);
+        const ranges = cueRanges();
+        if (name === "ring-approach") assert(ranges.amber && ranges.arrow);
+        if (name === "ring-cleared") assert(ranges.green);
+        if (name === "cargo" || name === "supply-approach") assert(ranges.pickup);
+        for (const view of views) {
+            tick(0, 0, view.width / view.height);
+            assert.deepEqual(frame.subarray(16), start.subarray(16), "render capture cannot advance the mission");
+            assert.equal(digest(aircraft), originalAircraft, "aspect-only capture cannot change world markers");
+            const i = view.snapshots.length;
+            writeFileSync(join(view.directory, `moving-${i}.bin`), floatBytes(aircraft));
+            view.snapshots.push({ i, name, matrix: Array.from(frame.subarray(0, 16)), moving: aircraft.length, ranges });
+        }
+        tick(0, 0, 1.65);
+        assert.deepEqual(frame, start, "restore original camera before the next scripted control step");
+        samples[name] = {phase: frame[20], altitude: frame[19], gates: frame[32]};
+        const cue = name === "ring-cleared" ? "green" : (name === "cargo" || name === "supply-approach") ? "pickup" : null;
+        if (cue) {
+            const [from,count] = ranges[cue];
+            samples[name][cue] = Array.from(aircraft.subarray(from*6,(from+count)*6));
+        }
+    };
+    return {
+        before(p, phase) {
+            const firstGateZ = course ? -99 : 40;
+            if (phase === 7 && p.y > 2 && p.z >= firstGateZ - 23 && p.z < firstGateZ && frame[32] === 0)
+                capture("ring-approach");
+            if (phase === 7 && p.y > 2 && frame[32] === 1 && p.z > firstGateZ + 3)
+                capture("supply-approach");
+            if (phase === 9) capture("cargo");
+            if (phase === 0 && p.z >= 100) capture("river");
+            if (phase === 11 && p.y >= 4) capture("crop");
+        },
+        step(gates,input,dt,aspect) {
+            ticks++;
+            trace.update(JSON.stringify([input,dt,aspect]) + "\n");
+            trace.update(floatBytes(frame));
+            if (gates === 0 && frame[32] === 1) capture("ring-cleared");
+        },
+        cancel() { trace.update("cancel\n"); },
+        finish(outcome = frame[22]) {
+            if (views.length) {
+                for (const name of ["ring-approach","ring-cleared","supply-approach","cargo",course ? "river" : "crop"])
+                    assert(samples[name], `missing deterministic checkpoint: ${name}`);
+                for (const {directory,width,height,snapshots} of views)
+                    writeFileSync(join(directory,"frames.json"),JSON.stringify({course,width,height,world:world.length,snapshots}));
+            }
+            const dir = join(captureRoot,String(course));
+            mkdirSync(dir,{recursive:true});
+            writeFileSync(join(dir,`${mode}.json`),JSON.stringify({
+                ticks, trace: trace.digest("hex"), replay: packet ? digest(packet) : null,
+                outcome, final: Array.from(frame), samples,
+            }));
+        },
+    };
+}
 function sortie(course, mode = "normal") {
     reset(1-course); reset(course);
     packet = undefined;
     const supply = course ? -71 : 68;
     const visited = new Set();
+    const observer = observeMarkers(course, mode);
     let premature = false, canceled = false, wrongWindow = false, confirmed = 0;
+    function step(input = 0, dt = 1/30, aspect = 1.65) {
+        const gates = frame[32];
+        tick(input,dt,aspect);
+        observer?.step(gates,input,dt,aspect);
+        if (frame[32] > gates) {
+            assert(marker([.22,1,.43]).length === 84, "an earned ring immediately turns green");
+            confirmed++;
+        }
+    }
     for (let i = 0; i < 1700 && frame[22] === 0; i++) {
         const p = aircraftPose(), phase = frame[20], status = frame[21];
         visited.add(phase);
+        observer?.before(p, phase);
         let input = 0;
         if (phase === 6 || phase === 10) input = 20;
         if (phase === 7) {
@@ -226,7 +355,7 @@ function sortie(course, mode = "normal") {
             const height = Math.min(6.5,1+distance*.064);
             input = pilot(p,0,height,distance>80 ? 0 : -.064,p.z>supply-43 ? 32 : 0);
             if (!premature) {
-                tick(input | 128);
+                step(input | 128);
                 assert.equal(frame[20], 7);
                 assert.equal(frame[26], 12, "airborne cargo pickup is rejected");
                 premature = true;
@@ -239,9 +368,10 @@ function sortie(course, mode = "normal") {
             assert(marker([.28, 1, .89]).length >= 3, "stopped cargo pickup has a world-space marker");
             if (!canceled) {
                 assert.equal(p.speed, 0);
-                tick(128,0);
+                step(128,0);
                 engine.cancel_drop();
-                tick(0);
+                observer?.cancel();
+                step(0);
                 assert.equal(frame[20],9,"a canceled load cannot relaunch");
                 canceled = true;
                 continue;
@@ -252,7 +382,7 @@ function sortie(course, mode = "normal") {
             input = pilot(p,0,7,0,0);
             if (!wrongWindow) {
                 assert.notEqual(status,9);
-                tick(input|128);
+                step(input|128);
                 assert.equal(frame[31],0,"spray outside the marked pass changes no coverage");
                 assert.notEqual(frame[26],0);
                 wrongWindow = true;
@@ -271,9 +401,10 @@ function sortie(course, mode = "normal") {
         if (phase === 1) {
             input = pilot(p,Math.atan2(109-p.x,218-p.z),mode === "high" ? 20 : 11,0,32);
             if (mode === "high" && status === 5) {
-                tick(input|128);
+                step(input|128);
                 assert.equal(frame[26],5);
                 assert.equal(frame[20],1,"late/high mail cannot be scored in flight");
+                observer?.finish("invalid release");
                 return {result:"invalid release"};
             }
             if (status === 9) input |= 128;
@@ -285,14 +416,10 @@ function sortie(course, mode = "normal") {
             const height = Math.min(12.3,1+(p.z-target)*slope);
             input = pilot(p,bearing,height,height<12.3?slope:0,p.z>final-50?32:0);
         }
-        const before = frame[32];
-        tick(input);
-        if (frame[32] > before) {
-            assert(marker([.22, 1, .43]).length === 84, "an earned ring immediately turns green");
-            confirmed += 1;
-        }
+        step(input);
     }
     assert.equal(confirmed, frame[32], "for each scored gate, the mesh confirms the score");
+    observer?.finish();
     return {result:frame[22], course, visited, time:frame[17], data:packet, actions:frame[31], gates:frame[32], route:frame[25]};
 }
 const goodFarm = sortie(0), goodParis = sortie(1), cyanParis = sortie(1,"cyan");
@@ -338,6 +465,19 @@ for (const course of [0, 1]) {
         const amber = marker([1,.66,.19]);
         assert.equal(amber.length,84,"each course presents exactly one active ring");
         assert(amber.every(([, , depth]) => Math.abs(depth-z) < .001),"active ring geometry matches the scoring plane");
+        if (!comparisonBaseline) {
+            const x = course ? [-111, 5, 89][index] : -15;
+            const y = index === 0 ? 5 : course ? 15.5 : 9.5;
+            for (let i=0; i<14; i++) {
+                const [first, last] = [amber[i*6], amber[i*6+1]];
+                for (const [gx,gy] of [first,last])
+                    assert(Math.abs(Math.hypot((gx-x)/9.5,(gy-y)/5.3) - 1) < .01,
+                        "each optional dash retains the outer ring ellipse");
+                const next = amber[((i+1)%14)*6];
+                const gap = Math.hypot(last[0]-next[0],last[1]-next[1]);
+                assert(gap > .35 && gap < .9, "all optional ring dashes are visibly separated in world space");
+            }
+        }
         assert.equal(marker([.22,1,.43]).length,0,"missing a ring never plays success coloring");
     }
 }
