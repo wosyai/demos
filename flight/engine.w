@@ -1139,21 +1139,31 @@ f32(f32,f32,i32) gravity_root = fn(d,t,n) {
 
 f32(f32) mail_time = fn(y) { gravity_root((y-0.85)/9.0,1.0,4) };
 
-i32(u64) drop_status = fn(plane) {
-	f32 x = poses[plane].x;
+i32(u64) mail_eligibility = fn(plane) {
 	f32 y = poses[plane].y;
-	f32 z = poses[plane].z;
 	f32 bearing = wrap(poses[plane].heading-0.80);
 	if (y > 14.0) { 5 } else {
 		if (y < 3.0) { 6 } else {
-			if (abs_f(bearing) > 0.53 || abs_f(poses[plane].roll) > 0.32) { 7 } else {
-				f32 speed = poses[plane].speed;
-				f32 lead = speed * mail_time(y);
-				f32 dx = x + sin_small(poses[plane].heading)*lead - drop_x();
-				f32 dz = z + cos_small(poses[plane].heading)*lead - drop_z();
-				if (dx*dx+dz*dz <= 90.25) { 9 } else { 8 }
-			}
+			if (abs_f(bearing) > 0.53 || abs_f(poses[plane].roll) > 0.32) { 7 } else { 0 }
 		}
+	}
+};
+
+f32(u64) mail_lead = fn(plane) { poses[plane].speed * mail_time(poses[plane].y) };
+f32(u64,f32) predicted_mail_x = fn(plane,lead) { poses[plane].x + sin_small(poses[plane].heading)*lead };
+f32(u64,f32) predicted_mail_z = fn(plane,lead) { poses[plane].z + cos_small(poses[plane].heading)*lead };
+
+i32(f32,f32) mail_impact_status = fn(impact_x,impact_z) {
+	f32 dx = impact_x-drop_x();
+	f32 dz = impact_z-drop_z();
+	if (dx*dx+dz*dz <= 90.25) { 9 } else { 8 }
+};
+
+i32(u64) drop_status = fn(plane) {
+	i32 eligibility = mail_eligibility(plane);
+	if (eligibility != 0) { eligibility } else {
+		f32 lead = mail_lead(plane);
+		mail_impact_status(predicted_mail_x(plane,lead),predicted_mail_z(plane,lead))
 	}
 };
 
@@ -1677,6 +1687,20 @@ unit(f32,f32) drop_waypoint = fn(hx,hz) {
 	drop_ink(ix0,iz0,rx,rz,2.68,7.32,1.08,0.28);
 };
 
+unit(f32,f32,f32,f32,f32,f32,f32) impact_ink = fn(px,pz,side_x,side_z,left,bottom,width) {
+	f32 ax = px+side_x*left;
+	f32 az = pz+side_z*left;
+	f32 bx = ax+side_x*width;
+	f32 bz = az+side_z*width;
+	quad(ax,bottom,az,bx,bottom,bz,bx,bottom+0.26,bz,ax,bottom+0.26,az,0.44,0.84,1.0);
+};
+
+unit(f32,f32,f32,f32) impact_pipper = fn(px,pz,hx,hz) {
+	impact_ink(px,pz,hz,-hx,-2.55,5.64,1.8);
+	impact_ink(px,pz,hz,-hx,0.75,5.64,1.8);
+	diamond(px,5.77,pz,0.60,-0.90,0.44,0.84,1.0);
+};
+
 bool() ring_celebrating = fn { gate_flash >= 0 && stage_tick[0] < gate_flash_until };
 
 unit(i32,bool) passed_guides = fn(n,celebrating) {
@@ -1688,7 +1712,7 @@ unit(i32,bool) passed_guides = fn(n,celebrating) {
 	};
 };
 
-unit() flight_guides = fn {
+unit(i32,f32,f32) flight_guides = fn(mail_status,impact_x,impact_z) {
 	i32 next = next_gate[0];
 	if (next < 3) { gate_arch(gate_x(next),gate_y(next),gate_z(next),0,0); };
 	bool celebrating = ring_celebrating();
@@ -1719,7 +1743,10 @@ unit() flight_guides = fn {
 			if (abs_f(dx)+abs_f(dz) > 2.0) {
 				direction_arrow(x+hx*10.0,y+3.9,z+hz*10.0,dx,dz);
 			};
-			if (stage == MissionPhase::mail_approach) { drop_waypoint(hx,hz); };
+			if (stage == MissionPhase::mail_approach) {
+				drop_waypoint(hx,hz);
+				if (mail_status == 8 || mail_status == 9) { impact_pipper(impact_x,impact_z,hx,hz); };
+			};
 			if (stage == MissionPhase::supply_approach || stage == MissionPhase::supply_rollout) {
 				supply_beacon();
 			};
@@ -1727,10 +1754,10 @@ unit() flight_guides = fn {
 	};
 };
 
-unit(f32) draw_aircraft = fn(alpha) {
+unit(f32,i32,f32,f32) draw_aircraft = fn(alpha,mail_status,impact_x,impact_z) {
 	vertex_count = 0;
 	drawing_world = false;
-	flight_guides();
+	flight_guides(mail_status,impact_x,impact_z);
 	if (course == 0) {
 		paint_crops(0);
 		i32 age = stage_tick[0]-spray_tick;
@@ -1780,7 +1807,7 @@ unit(i32) select_view = fn(view) {
 	cockpit_view = view == 1;
 };
 
-unit() frame = fn {
+unit(i32) frame = fn(mail_status) {
 	f32 hx = sin_small(presented_pose[0].heading);
 	f32 hz = cos_small(presented_pose[0].heading);
 	f32 pitch = if (cockpit_view) { presented_pose[0].pitch } else { -0.20 + presented_pose[0].pitch*0.62 };
@@ -1829,7 +1856,7 @@ unit() frame = fn {
 	display[18] = poses[0].speed;
 	display[19] = poses[0].y;
 	display[20] = phase_code(phase[0]);
-	display[21] = if (course == 1 && phase[0] == MissionPhase::mail_approach) { float_i(drop_status(0)) } else { if (phase[0] == MissionPhase::crop_spray) { float_i(spray_status(0,0)) } else { 0.0 } };
+	display[21] = if (course == 1 && phase[0] == MissionPhase::mail_approach) { float_i(mail_status) } else { if (phase[0] == MissionPhase::crop_spray) { float_i(spray_status(0,0)) } else { 0.0 } };
 	display[22] = float_i(result[0]);
 	display[23] = float_i(best_ticks)/30.0;
 	i32 remaining = if (stage_tick[0] < 8100) { 8100-stage_tick[0] } else { 0 };
@@ -1904,7 +1931,19 @@ unit(f32,i32,f32) tick = fn(dt,input,aspect) {
 	advance(canonical_input(input & -129),5);
 	f32 alpha = if (result[0] == 0) { clamp(accumulator*30.0,0.0,1.0) } else { 1.0 };
 	present_pose(0,alpha);
-	draw_aircraft(alpha);
-	frame();
+	i32 render_mail_status = 0;
+	f32 render_impact_x = 0.0;
+	f32 render_impact_z = 0.0;
+	if (course == 1 && phase[0] == MissionPhase::mail_approach) {
+		render_mail_status = mail_eligibility(0);
+		if (render_mail_status == 0) {
+			f32 lead = mail_lead(0);
+			render_impact_x = predicted_mail_x(0,lead);
+			render_impact_z = predicted_mail_z(0,lead);
+			render_mail_status = mail_impact_status(render_impact_x,render_impact_z);
+		};
+	};
+	draw_aircraft(alpha,render_mail_status,render_impact_x,render_impact_z);
+	frame(render_mail_status);
 };
 %%end

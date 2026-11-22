@@ -375,6 +375,7 @@ function sortie(course, mode = "normal") {
     let premature = false, canceled = false, wrongWindow = false, checkedSupply = false, confirmed = 0;
     let surveyCruise = false, surveyEast = false;
     let checkedPortraitDrop = false, checkedChaseDrop = false, checkedSupplyFrustum = false;
+    let checkedPredictedImpact = false;
     const checkedLoadVisibility = new Set();
     function step(input = 0, dt = 1/30, aspect = 1.65) {
         const gates = frame[32];
@@ -541,7 +542,28 @@ function sortie(course, mode = "normal") {
                     "the tip stays anchored to the actual mail target");
             }
             input = pilot(p,Math.atan2(109-p.x,218-p.z),mode === "high" ? 20 : 11,0,32);
+            if (!comparisonBaseline && mode === "normal" && status === 9 && !checkedPredictedImpact) {
+                const impactColor = [.44,.84,1];
+                const observedImpact = marker(impactColor);
+                assert.equal(observedImpact.length,15,"impact geometry is two brackets and one visible central face");
+                const tip = observedImpact.reduce((a,b) => a[1]<b[1] ? a : b);
+                assert((tip[0]-109)**2 + (tip[2]-218)**2 <= 90.26,
+                    "the Wosy pipper points inside the same legal impact circle while release is ready");
+                verifyCueProjection("predicted mail impact", () => marker(impactColor), .10, .015);
+                checkedPredictedImpact = true;
+            }
+            if (!comparisonBaseline && mode === "early" && status === 8) {
+                const impact = marker([.44,.84,1]);
+                assert(impact.length > 0,"a valid-height early approach previews the actual miss");
+                const tip = impact.reduce((a,b) => a[1]<b[1] ? a : b);
+                assert((tip[0]-109)**2 + (tip[2]-218)**2 > 90.24,"the early pipper stays outside the actual drop circle");
+                step(input|128);
+                assert.equal(frame[26],8,"an early input is rejected by the Wosy release gate");
+                assert.equal(frame[20],1,"early mail does not launch");
+                return {result:"early release rejected"};
+            }
             if (mode === "high" && status === 5) {
+                if (!comparisonBaseline) assert.equal(marker([.44,.84,1]).length,0,"above the drop window, do not show an actionable prediction");
                 step(input|128);
                 assert.equal(frame[26],5);
                 assert.equal(frame[20],1,"late/high mail cannot be scored in flight");
@@ -551,8 +573,11 @@ function sortie(course, mode = "normal") {
             if (status === 9) input |= 128;
         }
         if (phase === 5 || phase === 2) {
-            if (!comparisonBaseline && course === 1 && mode === "normal")
+            if (!comparisonBaseline && course === 1 && mode === "normal") {
+                assert(checkedPredictedImpact,"a completed ordinary Paris release was observed with a visible prediction");
                 assert.equal(marker([.99,.72,.29]).length, 0, "the delivery objective clears after release");
+                assert.equal(marker([.44,.84,1]).length,0,"the prediction does not linger after release");
+            }
             const final = course ? 290 : 331, endX = course ? 125 : -15;
             const bearing = p.z >= final-13 ? 0 : clamp(Math.atan2(endX-p.x,Math.max(22,final+8-p.z)),-.38,.38);
             const target = final+(course?15:10), slope = course?-.207:-.133;
@@ -587,6 +612,7 @@ assert.equal(sortie(0,"overrun").result,9,"pickup overrun remains an explicit fa
 const noCargo = sortie(0,"no cargo");
 assert(noCargo.visited.has(9) && !noCargo.visited.has(10) && !noCargo.data,"throttling without loading cargo never advances the mission");
 assert.equal(sortie(1,"high").result,"invalid release");
+if (!comparisonBaseline) assert.equal(sortie(1,"early").result,"early release rejected");
 for (const {course, visited, result, time, data, actions, gates} of [goodFarm,goodParis,cyanParis]) {
     assert.equal(result,1,"complete delivery plus final stop earns a successful sortie");
     for (const phase of [6,7,8,9,10,2,3,...(course?[0,1,5]:[11])]) assert(visited.has(phase),`sortie passed phase ${phase}`);
