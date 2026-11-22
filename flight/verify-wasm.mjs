@@ -329,6 +329,12 @@ function observeMarkers(course, mode) {
 }
 function sortie(course, mode = "normal") {
     reset(1-course); reset(course);
+    if (!comparisonBaseline) {
+        const start = aircraftPose();
+        assert(Math.abs(start.x - (course ? -111 : -15)) < .02, "course switch restored that course's home center");
+        assert(Math.abs(start.z - (course ? -196 : -71)) < .02, "the aircraft starts three meters down its own home strip");
+        assert(Math.abs(frame[27] - 61) < .02, "the takeoff guide points down that same strip");
+    }
     packet = undefined;
     const supply = course ? -71 : 68;
     const visited = new Set();
