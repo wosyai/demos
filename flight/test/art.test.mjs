@@ -59,7 +59,7 @@ test("Paris scenery includes four tapered feet, an arch apex, separate decks, an
   assert(point(world, [228, 84, 359]), "mast reaches the original height");
 });
 
-test("Wright Flyer has thirteen striped cells and a navy canton; Paris has two Brazilian flag marks", async () => {
+test("Wright Flyer has thirteen striped cells and a navy canton; Paris has one Brazilian flag mark", async () => {
   const demo = await art();
   const farm = demo.sample(0).plane;
   assert(farm.length <= 2048 * 6);
@@ -77,12 +77,10 @@ test("Wright Flyer has thirteen striped cells and a navy canton; Paris has two B
   const green = vertices(paris, [.035, .59, .25]);
   const gold = vertices(paris, [1, .84, .12]);
   const blue = vertices(paris, [.028, .248, .63]);
-  assert.equal(green.length, 12);
-  assert.equal(gold.length, 12);
-  assert.equal(blue.length, 2 * 16 * 3);
-  assert.equal(vertices(paris, [.98, .96, .83]).length, 2 * 3 * 6);
-  for (let flag = 0; flag < 2; flag++) {
-    assert(gold[flag*6][1] - green[flag*6][1] > .018, "gold marking is not coplanar with the base");
-    assert(blue[flag*48][1] - gold[flag*6][1] > .018, "blue disk is not coplanar with the diamond");
-  }
+  assert.equal(green.length, 6);
+  assert.equal(gold.length, 6);
+  assert.equal(blue.length, 16 * 3);
+  assert.equal(vertices(paris, [.98, .96, .83]).length, 3 * 6);
+  assert(gold[0][1] - green[0][1] > .018, "gold marking is not coplanar with the base");
+  assert(blue[0][1] - gold[0][1] > .018, "blue disk is not coplanar with the diamond");
 });

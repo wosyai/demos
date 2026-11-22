@@ -347,10 +347,10 @@ test("the light shell and its flight engine share the same release token", async
   const sim = mock();
   await sim.ready;
   const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
-  assert.match(html, /href="\.\/style\.css\?v=sortie-v1"/);
-  assert.match(html, /src="\.\/host\.mjs\?v=sortie-v1"/);
+  assert.match(html, /href="\.\/style\.css\?v=wayfind-v1"/);
+  assert.match(html, /src="\.\/host\.mjs\?v=wayfind-v1"/);
   assert.deepEqual(sim.called.requests.map((url) => [url.pathname.split("/").at(-1), url.search]),
-    [["flight.wasm", "?v=sortie-v1"]]);
+    [["flight.wasm", "?v=wayfind-v1"]]);
 });
 
 test("phone rotation releases the old touch and accepts a fresh steer in the new aspect", async () => {
@@ -424,7 +424,7 @@ test("the Paris drop control supports quick taps and keyboard without swallowing
   ]) {
     sim.guidance(-.99, instruction, false, true);
     sim.frame(450 + instruction * 100);
-    assert.equal(callout.textContent, `← ${title} · 122 m`);
+    assert.equal(callout.textContent, `${title} · 122 m`);
     assert.match(sim.nodes.get("flight-cue").textContent, /Mail delivered/);
   }
 });
