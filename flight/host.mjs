@@ -301,6 +301,7 @@ export function bootFlight(win, doc) {
   const status = get("engine"), problem = get("problem"), keys = get("keys"), touch = get("touch");
   const summary = get("summary"), summaryTitle = get("summary-title"), summaryDetail = get("summary-detail");
   const summaryKicker = get("summary-kicker"), again = get("again"), choose = get("choose");
+  const summarySettings = get("flight-dialog-settings");
   const callout = get("callout"), flightCue = get("flight-cue"), buttons = Array.from(doc.querySelectorAll("[data-course]"));
   const actionButtons = Array.from(doc.querySelectorAll("[data-action]"));
   const stick = get("flight-stick");
@@ -491,6 +492,7 @@ export function bootFlight(win, doc) {
   function finishModal() {
     modal = null;
     summary.hidden = true;
+    summarySettings.open = false;
     previous = null;
     capability();
   }
@@ -599,10 +601,15 @@ export function bootFlight(win, doc) {
       return;
     }
     if (down && event.code === "Tab" && modal) {
+      const available = Array.from(summary.querySelectorAll("button:not(:disabled), a[href], summary"))
+        .filter((node) => node.tabIndex >= 0 && node.getClientRects().length &&
+          win.getComputedStyle(node).visibility === "visible");
+      if (!available.length) return;
       const target = doc.activeElement;
-      if ((event.shiftKey && target === again) || (!event.shiftKey && target === choose)) {
+      const first = available[0], last = available.at(-1);
+      if (!available.includes(target) || target === (event.shiftKey ? first : last)) {
         event.preventDefault();
-        (event.shiftKey ? choose : again).focus();
+        (event.shiftKey ? last : first).focus();
       }
       return;
     }

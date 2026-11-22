@@ -7,7 +7,7 @@
   <title>Flying Low · Wosy Arcade</title>
   <meta name="description" content="Fly two pioneering aircraft on crop patrol and an aerial mail delivery. An original Wosy browser game.">
   <link rel="stylesheet" href="./style.css?v=typed-flight-v1">
-  <script type="module" src="./host.mjs?v=typed-flight-v1"></script>
+  <script type="module" src="./host.mjs?v=typed-flight-v1-arcade-pause-1"></script>
   <link rel="stylesheet" href="../arcade/shell.css?v=1">
 </head>
 <body>
@@ -73,6 +73,19 @@
         <button id="again" type="button" class="primary">Fly again</button>
         <button id="choose" type="button" class="secondary">Choose a mission</button>
       </div>
+      <nav class="arcade-menu-tools" aria-label="Arcade menu">
+        <details id="flight-dialog-settings" class="arcade-settings">
+          <summary><svg class="arcade-tool-icon" aria-hidden="true" focusable="false"><use href="../arcade/icons.svg?v=1#settings"></use></svg> Settings</summary>
+          <div class="arcade-settings-body">
+            <details>
+              <summary>Flight controls</summary>
+              <p>WASD or arrows to steer. Q and E control power. Space triggers a mission action. Press R to restart.</p>
+              <p>On touchscreens, drag the stick to steer and hold Throttle or Brake to adjust power.</p>
+            </details>
+          </div>
+        </details>
+        <a class="arcade-back" href="../"><svg class="arcade-tool-icon" aria-hidden="true" focusable="false"><use href="../arcade/icons.svg?v=1#back"></use></svg> Back to Wosy Arcade</a>
+      </nav>
     </section>
 
     <div id="touch" class="touch" aria-label="Touch flight controls" hidden>
