@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {readFile} from "node:fs/promises";
 import test from "node:test";
-import {axes,inputState,frameData,ENGINE_PATH,boot} from "../host.mjs";
+import {axes,inputState,frameData,ENGINE_PATH,readRouteMap,boot} from "../host.mjs";
 
 test("floating stick is radial and one thumb can steer and move simultaneously",()=>{
   assert.deepEqual(axes(3,2,40),[0,0]);
@@ -68,6 +68,14 @@ function shell({defer=false,missing="",cue=1}={}) {
     if(!nodes.has(id))nodes.set(id,Object.assign(new Target(),{id}));
     return nodes.get(id);
   };
+  const mapPaint=[];
+  const chart=get("city-chart");
+  chart.width=224; chart.height=152;
+  chart.getContext=()=>({
+    canvas:chart, clearRect(){mapPaint.push(["clear"]);},
+    fillRect(...args){mapPaint.push(["road",...args]);},
+    beginPath(){}, arc(...args){mapPaint.push(["dot",this.fillStyle,...args]);}, fill(){},
+  });
   const window=new Target(), document=Object.assign(new Target(),{getElementById:get});
   window.screen={orientation:new Target()};
   const memory=new WebAssembly.Memory({initial:1});
@@ -93,6 +101,7 @@ function shell({defer=false,missing="",cue=1}={}) {
           reset(mode){resets.push(mode);bus.world(240,18);bus.moving(360,18);publish();},
           tick(...values){ticks.push(values);publish();},
           cancel_action(){cancellations++;},
+          map_value(row,column){ return row===-1 ? 1 : [-1,2,3,4][column]; },
         };
         if(missing)delete exports[missing];
         return {instance:{exports}};
@@ -101,7 +110,7 @@ function shell({defer=false,missing="",cue=1}={}) {
   };
   const started=boot(env,()=>({draw(...args){draws.push(args);},upload(...args){uploads.push(args);}}));
   return {
-    get,window,document,ticks,draws,uploads,resets,started,finishFetch,
+    get,window,document,ticks,draws,uploads,resets,started,finishFetch,mapPaint,
     advance(){ const frame=frames.shift(); assert(frame,"animation callback was scheduled");frame(time+=16); },
     mission(next){({state,seconds,turn,cue}={state,seconds,turn,cue,...next});},
     get wasmStarts(){return wasmStarts;},
@@ -277,4 +286,35 @@ test("camera is a one-shot command, works with interact, and cannot queue during
   camera.emit("click");
   app.get("start").emit("click");
   app.advance(); assert.equal(app.ticks.at(-1)[3],0);
+});
+
+
+test("route map reads only the engine count and four components per road",()=>{
+  const calls=[], data=[[-12,8,7,1],[5,-9,3,4]];
+  const values=readRouteMap((r,c)=>{calls.push([r,c]); return r===-1 ? data.length : data[r][c];});
+  assert.deepEqual(values,data);
+  assert.deepEqual(calls,[[-1,0],[0,0],[0,1],[0,2],[0,3],[1,0],[1,1],[1,2],[1,3]]);
+  assert.throws(()=>readRouteMap(()=>65),/unreadable/);
+  assert.throws(()=>readRouteMap((row)=>row===-1 ? 1 : 0),/unreadable/);
+});
+
+
+test("map paints canonical roads and active markers only when expanded and playing",async()=>{
+  const app=shell(); await app.started;
+  const map=app.get("city-map");
+  assert.equal(map.hidden,true);
+  app.get("start").emit("click");
+  assert.equal(map.hidden,false);
+  app.advance(); assert.deepEqual(app.mapPaint,[]);
+  map.open=true; map.emit("toggle");
+  assert.deepEqual(app.mapPaint.map(entry=>entry.slice(0,entry[0]==="dot" ? 2 : 1)),
+    [["clear"],["road"],["dot","#ffc276"],["dot","#fff5e1"]]);
+  map.open=false; map.emit("toggle"); app.advance(); assert.equal(app.mapPaint.length,4);
+  app.mission({state:4}); app.advance();
+  map.open=true; map.emit("toggle");
+  assert.deepEqual(app.mapPaint.slice(4).map(entry=>entry.slice(0,entry[0]==="dot" ? 2 : 1)),
+    [["clear"],["road"],["dot","#fff5e1"]]);
+  app.get("pause").emit("click");
+  assert.equal(map.hidden,true);
+  map.emit("toggle"); app.advance(); assert.equal(app.mapPaint.length,7);
 });
