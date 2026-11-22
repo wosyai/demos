@@ -429,14 +429,39 @@ test("the Paris drop control supports quick taps and keyboard without swallowing
   }
 });
 
-test("mission storage never reads or clobbers legacy race data", () => {
-  const legacy = "wosy-flying-low/v1/1";
-  const data = new Map([[legacy, "legacy race binary"]]);
-  const store = replayStore(() => ({getItem: data.get.bind(data), setItem: data.set.bind(data)}));
+test("mission replay storage isolates both courses and other replay namespaces", () => {
+  const prefix = "wosy-flying-low/";
+  const active = prefix + "missions-v4/";
+  const preserved = new Map([
+    [prefix + "v1/1", btoa("legacy race binary")],
+    [prefix + "missions-v5/0", btoa("synthetic v5 Wright")],
+    [prefix + "missions-v5/1", btoa("synthetic v5 Paris")],
+  ]);
+  const data = new Map(preserved);
+  const reads = [], writes = [];
+  const open = () => replayStore(() => ({
+    getItem(key) { reads.push(key); return data.get(key); },
+    setItem(key, value) { writes.push(key); data.set(key, value); },
+  }));
+  const wright = Uint8Array.of(87, 70, 4, 0, 255);
+  const paris = Uint8Array.of(87, 70, 4, 1, 0);
+  const wrightRecord = String.fromCharCode(...wright);
+  const parisRecord = String.fromCharCode(...paris);
+  const store = open();
+  assert.equal(store.load(0), null);
   assert.equal(store.load(1), null);
-  store.save(1, Uint8Array.of(0, 87));
-  assert.equal(data.get(legacy), "legacy race binary");
-  assert.equal(data.has("wosy-flying-low/missions-v4/1"), true);
+
+  store.save(0, wright);
+  assert.equal(open().load(1), null, "Wright replay is not loaded for Paris");
+  assert.equal(open().load(0), wrightRecord);
+
+  store.save(1, paris);
+  const reopened = open();
+  assert.equal(reopened.load(1), parisRecord);
+  assert.equal(reopened.load(0), wrightRecord, "Paris save did not change Wright");
+  assert.deepEqual(writes, [active + "0", active + "1"]);
+  assert.deepEqual(reads, ["0", "1", "1", "0", "1", "0"].map((course) => active + course));
+  assert.deepEqual(data, new Map([...preserved, [active + "0", btoa(wrightRecord)], [active + "1", btoa(parisRecord)]]));
 });
 
 test("only the exact mission frame ABI is accepted", async () => {
