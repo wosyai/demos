@@ -97,6 +97,15 @@ f32 avatar_x = 0.0;
 f32 avatar_y = 0.0;
 f32 avatar_z = 0.0;
 f32 avatar_yaw = 0.0;
+f32 gait_phase = 0.0;
+f32 gait_weight = 0.0;
+f32 air_weight = 0.0;
+f32 avatar_phase = 0.0;
+f32 avatar_gait = 0.0;
+f32 avatar_air = 0.0;
+f32 avatar_joint_y = 0.0;
+f32 avatar_joint_sine = 0.0;
+f32 avatar_joint_cosine = 1.0;
 f32 view_scale = 1.77;
 f32 player_radius = 0.30;
 f32 player_feet = 1.62;
@@ -684,6 +693,9 @@ i32() start_beacon = fn {
 	flying = false;
 	ground_contact_dirty = false;
 	vertical_speed = 0.0;
+	gait_phase = 0.0;
+	gait_weight = 0.0;
+	air_weight = 0.0;
 	selected_material = 5;
 	prepare_atlas();
 	publish_water();
@@ -864,6 +876,9 @@ unit() spawn_player = fn {
 	ground_contact_dirty = false;
 	jump_pending = false;
 	vertical_speed = 0.0;
+	gait_phase = 0.0;
+	gait_weight = 0.0;
+	air_weight = if (grounded) { 0.0 } else { 1.0 };
 	selected_hit = -2;
 	target_dirty = true;
 };
@@ -1019,8 +1034,10 @@ unit(f32, f32, f32) move_camera = fn(dt, sy, cy) {
 		f32 stride = dt * speed * normal * (1.0 - 0.65 * immersion);
 		f32 f = core.sint_to_float<f32>(forward);
 		f32 r = core.sint_to_float<f32>(right);
-		f32 dx = (sy * f + cy * r) * stride;
-		f32 dz = (0.0 - cy * f + sy * r) * stride;
+		f32 motion_x = sy * f + cy * r;
+		f32 motion_z = 0.0 - cy * f + sy * r;
+		f32 dx = motion_x * stride;
+		f32 dz = motion_z * stride;
 		if (!flying) {
 			if (ground_contact_dirty) {
 				grounded = vertical_speed <= 0.0 && player_collides(camera_x, camera_y - 0.018, camera_z);
@@ -1055,6 +1072,18 @@ unit(f32, f32, f32) move_camera = fn(dt, sy, cy) {
 			};
 			if (!flying) { grounded = vertical_speed <= 0.0 && player_collides(camera_x, camera_y - 0.018, camera_z); };
 		};
+		gait_weight = 0.0;
+		if (grounded && !flying && (camera_x != previous_x || camera_z != previous_z)) {
+			f32 travelled = ((camera_x - previous_x) * motion_x + (camera_z - previous_z) * motion_z) * normal;
+			gait_weight = clamp_f((travelled / dt - 0.04) * 0.15, 0.0, 1.0);
+			if (gait_weight > 0.0) {
+				f32 stride_phase = travelled * (if (forward < 0) { -5.2 } else { 5.2 });
+				gait_phase = wrap_yaw(gait_phase + stride_phase);
+			};
+		};
+		f32 air_target = if (grounded && !flying) { 0.0 } else { 1.0 };
+		f32 air_step = dt * 9.0;
+		air_weight = air_weight + clamp_f(air_target - air_weight, 0.0 - air_step, air_step);
 		if (camera_y < -6.0) { spawn_player(); };
 		if (camera_x != previous_x || camera_y != previous_y || camera_z != previous_z) { target_dirty = true; };
 		pulse_controls = 0;
@@ -1256,9 +1285,11 @@ i32() cycle_camera = fn {
 unit(f32, f32, f32, f32, f32, f32) avatar_vertex = fn(x, y, z, r, g, b) {
 	u64 row = index_of(avatar_position / 24);
 	u64 col = index_of(avatar_position % 24);
-	avatar_vertices[row][col][0] = camera_x + cos_yaw * x + sin_yaw * z;
-	avatar_vertices[row][col][1] = camera_y + y;
-	avatar_vertices[row][col][2] = camera_z + sin_yaw * x - cos_yaw * z;
+	f32 dy = y - avatar_joint_y;
+	f32 joint_z = dy * avatar_joint_sine + z * avatar_joint_cosine;
+	avatar_vertices[row][col][0] = camera_x + cos_yaw * x + sin_yaw * joint_z;
+	avatar_vertices[row][col][1] = camera_y + avatar_joint_y + dy * avatar_joint_cosine - z * avatar_joint_sine;
+	avatar_vertices[row][col][2] = camera_z + sin_yaw * x - cos_yaw * joint_z;
 	avatar_vertices[row][col][3] = r;
 	avatar_vertices[row][col][4] = g;
 	avatar_vertices[row][col][5] = b;
@@ -1283,24 +1314,40 @@ unit(f32, f32, f32, f32, f32, f32, f32, f32, f32) avatar_box = fn(x0, x1, y0, y1
 	avatar_face(x0,y0,z1, x1,y0,z1, x1,y1,z1, x0,y1,z1, r*0.75,g*0.75,b*0.75);
 };
 
+unit(f32, f32) avatar_joint = fn(pivot, angle) {
+	avatar_joint_y = pivot;
+	avatar_joint_sine = if (angle == 0.0) { 0.0 } else { sine(angle) };
+	avatar_joint_cosine = if (angle == 0.0) { 1.0 } else { cosine(angle) };
+};
+
 unit(bool) publish_avatar = fn(visible) {
 	if (visible) {
-		if (!avatar_visible || avatar_x != camera_x || avatar_y != camera_y || avatar_z != camera_z || avatar_yaw != yaw) {
+		if (!avatar_visible || avatar_x != camera_x || avatar_y != camera_y || avatar_z != camera_z || avatar_yaw != yaw
+			|| avatar_phase != gait_phase || avatar_gait != gait_weight || avatar_air != air_weight) {
 			avatar_x = camera_x;
 			avatar_y = camera_y;
 			avatar_z = camera_z;
 			avatar_yaw = yaw;
+			avatar_phase = gait_phase;
+			avatar_gait = gait_weight;
+			avatar_air = air_weight;
 			avatar_position = 0;
+			f32 swing = sine(gait_phase) * gait_weight * (1.0 - air_weight);
+			avatar_joint(0.0, 0.0);
 			avatar_box(-0.19,0.19, -0.23,0.15, -0.18,0.18, 0.91,0.66,0.39);
 			avatar_box(-0.21,0.21, -0.84,-0.24, -0.14,0.14, 0.91,0.61,0.14);
-			avatar_box(-0.28,-0.202, -0.79,-0.25, -0.095,0.095, 0.63,0.42,0.26);
-			avatar_box(0.202,0.28, -0.79,-0.25, -0.095,0.095, 0.63,0.42,0.26);
-			avatar_box(-0.17,-0.021, -1.59,-0.84, -0.13,0.13, 0.22,0.32,0.45);
-			avatar_box(0.021,0.17, -1.59,-0.84, -0.13,0.13, 0.22,0.32,0.45);
 			avatar_box(-0.205,0.205, 0.10,0.178, -0.20,0.20, 0.21,0.36,0.34);
 			avatar_box(-0.18,0.18, 0.081,0.11, 0.16,0.28, 0.26,0.44,0.40);
 			avatar_box(-0.15,0.15, -0.76,-0.30, -0.26,-0.127, 0.26,0.40,0.29);
+			avatar_joint(-0.25, swing * 0.60 - air_weight * 0.57);
+			avatar_box(-0.28,-0.202, -0.79,-0.25, -0.095,0.095, 0.63,0.42,0.26);
+			avatar_joint(-0.25, 0.0 - swing * 0.60 - air_weight * 0.37);
+			avatar_box(0.202,0.28, -0.79,-0.25, -0.095,0.095, 0.63,0.42,0.26);
+			avatar_joint(-0.84, 0.0 - swing * 0.66 - air_weight * 0.44);
+			avatar_box(-0.17,-0.021, -1.59,-0.84, -0.13,0.13, 0.22,0.32,0.45);
 			avatar_box(-0.18,-0.02, -1.62,-1.42, -0.14,0.20, 0.23,0.14,0.09);
+			avatar_joint(-0.84, swing * 0.66 + air_weight * 0.29);
+			avatar_box(0.021,0.17, -1.59,-0.84, -0.13,0.13, 0.22,0.32,0.45);
 			avatar_box(0.02,0.18, -1.62,-1.42, -0.14,0.20, 0.23,0.14,0.09);
 			unsafe { host.player(core.pointer_cast<*?u8>(&?avatar_vertices[0][0][0]), avatar_position); };
 		};

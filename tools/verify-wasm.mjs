@@ -732,3 +732,94 @@ pulse_control(7);
 tick(0, 1, 1);
 assert.equal(frame.values[22], 1, 'sandbox flight is restored after the mission');
 console.log('Verified 48-cell world, watchfire progression, shortcut denial, twelve-beam bridge, open-water failure, west tunnel and ridge victories, retry, and exact sandbox restoration.');
+
+
+clear_controls();
+generate(42);
+reset_camera();
+look(0.72664234 / 0.0034, -0.10 / 0.0034);
+tick(0, 1, 1);
+const [walkX, walkY, walkZ] = coords().map(Math.floor);
+for (let x = walkX - 2; x <= walkX + 2; x++) {
+  for (let z = walkZ - 5; z <= walkZ + 5; z++) {
+    edit(x, walkY - 2, z, 3);
+    for (let y = walkY - 1; y <= walkY + 2; y++) edit(x, y, z, 0);
+  }
+}
+tick(.02, 1, 1);
+assert.equal(frame.values[23], 1, 'avatar animation starts on the flat ground fixture');
+assert.equal(cycle_camera(), 1);
+tick(0, .66, 1);
+function bootDelta() {
+  assert.equal(avatar.count, 396, 'articulated poses use the original geometry budget');
+  const data = view(avatar.pointer, avatar.count * 6);
+  const boot = (box) => data[(box * 36) * 6 + 2];
+  return boot(8) - boot(10);
+}
+assert(Math.abs(bootDelta()) < .01, 'idle boots are aligned');
+control(0, 1);
+tick(.05, .66, 1);
+const forwardSwing = bootDelta();
+assert(Math.abs(forwardSwing) > .15, 'grounded movement swings the legs in opposition');
+tick(.05, .66, 1);
+tick(.05, .66, 1);
+assert(forwardSwing * bootDelta() < 0, 'successive grounded steps swap leading feet');
+control(0, 0);
+tick(.05, 1, 1);
+assert(Math.abs(bootDelta()) < .01, 'letting go returns to neutral');
+const idleUploads = avatarUploads;
+tick(.05, .66, 1);
+assert.equal(avatarUploads, idleUploads, 'stationary grounded avatar does not resubmit geometry');
+control(4, 1);
+tick(.05, .66, 1);
+control(4, 0);
+assert.equal(frame.values[23], 0);
+const airPose = bootDelta();
+assert(Math.abs(airPose) > .1, 'jumping changes the pose even without horizontal motion');
+assert.equal(cycle_camera(), 0);
+tick(0, .66, 1);
+assert.equal(avatar.count, 0);
+assert.equal(cycle_camera(), 1);
+tick(0, .66, 1);
+assert(Math.abs(bootDelta() - airPose) < .001, 'camera toggles retain air pose');
+steps(24);
+assert.equal(frame.values[23], 1);
+assert(Math.abs(bootDelta()) < .01, 'landing blends back to idle');
+console.log('Verified Wosy distance-driven gait, pivoted boots, jump pose, and perspective transitions.');
+
+
+function torsoGroundPoint() {
+  assert.equal(avatar.count, 396);
+  const data = view(avatar.pointer, avatar.count * 6);
+  return [data[36 * 6], data[36 * 6 + 2]];
+}
+function travelledAlongGround(start) {
+  return Math.hypot(...torsoGroundPoint().map((value, i) => value - start[i]));
+}
+const sprintOrigin = torsoGroundPoint();
+control(0, 1);
+control(6, 1);
+tick(.05, .66, 1);
+control(6, 0);
+assert(Math.abs(travelledAlongGround(sprintOrigin) - .4) < .01, 'sprint uses its physical ground speed');
+assert(Math.abs(bootDelta()) > .05, 'sprint animates the feet');
+const diagonalOrigin = torsoGroundPoint();
+control(3, 1);
+tick(.05, .66, 1);
+control(3, 0);
+assert(Math.abs(travelledAlongGround(diagonalOrigin) - .24) < .01, 'diagonal travel stays normalized');
+assert(Math.abs(bootDelta()) > .05, 'diagonal movement animates the feet');
+for (let x = walkX - 1; x <= walkX + 1; x++) {
+  for (let y = walkY - 1; y <= walkY; y++) assert.equal(edit(x, y, walkZ - 3, 3), 1);
+}
+steps(12);
+const blocked = torsoGroundPoint();
+assert(Math.abs(blocked[1] - (walkZ - 2 + .30 + .14)) < .02, 'the explorer actually reached the wall boundary');
+const blockedUploads = avatarUploads;
+steps(4);
+assert.equal(frame.values[23], 1, 'pushing into a wall does not lift the player');
+assert(Math.abs(bootDelta()) < .01, 'pushing into a wall keeps a neutral stance');
+assert.deepEqual(torsoGroundPoint(), blocked, 'the blocking wall prevents travel');
+assert.equal(avatarUploads, blockedUploads, 'held input at a wall does not keep submitting gait frames');
+control(0, 0);
+console.log('Verified Wosy sprint and normalized diagonal strides, and no false gait at contact.');
