@@ -1763,18 +1763,27 @@ unit(i32,f32,f32) flight_guides = fn(mail_status,impact_x,impact_z) {
 	};
 };
 
-unit(f32,f32,f32,f32,f32,f32,bool) cockpit_dial_segment = fn(cx,sx,sy,tx,ty,metal,tick_mark) {
-	f32 cy = -0.97;
+unit(f32,f32,f32,f32,f32,f32,i32,i32) cockpit_dial_segment = fn(cx,sx,sy,tx,ty,metal,dial_kind,spoke) {
+	f32 cy = -0.81;
 	f32 depth = 2.10;
-	f32 radius = 0.116;
+	f32 radius = 0.132;
 	f32 inner = radius*0.87;
 	quad(cx+sx*radius,cy+sy*radius,depth,cx+tx*radius,cy+ty*radius,depth,
 		cx+tx*inner,cy+ty*inner,depth,cx+sx*inner,cy+sy*inner,depth,metal,metal*0.72,metal*0.39);
-	tri(cx,cy,depth+0.009,cx+sx*inner,cy+sy*inner,depth+0.009,cx+tx*inner,cy+ty*inner,depth+0.009,0.12,0.135,0.125);
-	if (tick_mark) {
-		tri(cx+sx*inner*0.80,cy+sy*inner*0.80,depth-0.012,
-			cx+sx*inner*0.94-sy*0.009,cy+sy*inner*0.94+sx*0.009,depth-0.012,
-			cx+sx*inner*0.94+sy*0.009,cy+sy*inner*0.94-sx*0.009,depth-0.012,0.81,0.76,0.61);
+	f32 face_red = if (dial_kind == 0) { 0.195 } else { if (dial_kind == 1) { 0.087 } else { 0.119 } };
+	f32 face_green = if (dial_kind == 0) { 0.136 } else { if (dial_kind == 1) { 0.172 } else { 0.195 } };
+	f32 face_blue = if (dial_kind == 0) { 0.083 } else { if (dial_kind == 1) { 0.209 } else { 0.126 } };
+	tri(cx,cy,depth+0.009,cx+sx*inner,cy+sy*inner,depth+0.009,cx+tx*inner,cy+ty*inner,depth+0.009,face_red,face_green,face_blue);
+	bool center = spoke == 0;
+	bool marked = if (dial_kind == 2) { center || spoke == 1 || spoke == 11 || spoke == 2 || spoke == 10 } else { spoke < 5 || spoke >= 8 };
+	if (marked) {
+		f32 reach = if (dial_kind == 2 && center) { 0.57 } else { if (spoke % 2 == 0) { 0.71 } else { 0.80 } };
+		f32 mark_r = if (dial_kind == 0) { 0.95 } else { if (dial_kind == 1) { 0.58 } else { 0.77 } };
+		f32 mark_g = if (dial_kind == 0) { 0.68 } else { if (dial_kind == 1) { 0.85 } else { 0.93 } };
+		f32 mark_b = if (dial_kind == 0) { 0.33 } else { if (dial_kind == 1) { 0.94 } else { 0.64 } };
+		tri(cx+sx*inner*reach,cy+sy*inner*reach,depth-0.012,
+			cx+sx*inner*0.95-sy*0.009,cy+sy*inner*0.95+sx*0.009,depth-0.012,
+			cx+sx*inner*0.95+sy*0.009,cy+sy*inner*0.95-sx*0.009,depth-0.012,mark_r,mark_g,mark_b);
 	};
 };
 
@@ -1783,10 +1792,9 @@ unit(f32,i32,f32,f32) cockpit_dials = fn(metal,segment,sx,sy) {
 		f32 angle = wrap(float_i(segment+1)*0.5235988);
 		f32 tx = sin_small(angle);
 		f32 ty = cos_small(angle);
-		bool tick_mark = segment % 2 == 0;
-		cockpit_dial_segment(-0.35,sx,sy,tx,ty,metal,tick_mark);
-		cockpit_dial_segment(-0.10,sx,sy,tx,ty,metal,tick_mark);
-		cockpit_dial_segment(0.15,sx,sy,tx,ty,metal,tick_mark);
+		cockpit_dial_segment(-0.39,sx,sy,tx,ty,metal,0,segment);
+		cockpit_dial_segment(-0.10,sx,sy,tx,ty,metal,1,segment);
+		cockpit_dial_segment(0.19,sx,sy,tx,ty,metal,2,segment);
 		cockpit_dials(metal,segment+1,tx,ty);
 	};
 };
@@ -1794,7 +1802,95 @@ unit(f32,i32,f32,f32) cockpit_dials = fn(metal,segment,sx,sy) {
 unit(f32,f32,f32,f32,f32,f32,f32) cockpit_pointer = fn(cx,cy,depth,angle,red,green,blue) {
 	f32 ns = sin_small(angle);
 	f32 nc = cos_small(angle);
-	tri(cx-nc*0.010,cy+ns*0.010,depth,cx+ns*0.079,cy+nc*0.079,depth,cx+nc*0.010,cy-ns*0.010,depth,red,green,blue);
+	tri(cx-nc*0.014,cy+ns*0.014,depth,cx+ns*0.094,cy+nc*0.094,depth,cx+nc*0.014,cy-ns*0.014,depth,red,green,blue);
+};
+
+unit(f32,f32,f32,f32,f32) cockpit_letter_stroke = fn(left,from_x,from_y,to_x,to_y) {
+	f32 ax = left+from_x*0.021;
+	f32 ay = -0.656+from_y*0.024;
+	f32 bx = left+to_x*0.021;
+	f32 by = -0.656+to_y*0.024;
+	f32 dx = to_x-from_x;
+	f32 dy = to_y-from_y;
+	f32 length = abs_f(dx)+abs_f(dy);
+	f32 nx = -dy/length*0.009;
+	f32 ny = dx/length*0.009;
+	f32 letter_depth = 2.059;
+	quad(ax-nx,ay-ny,letter_depth,bx-nx,by-ny,letter_depth,bx+nx,by+ny,letter_depth,ax+nx,ay+ny,letter_depth,0.99,0.91,0.71);
+};
+
+unit(f32) cockpit_letter_s = fn(left) {
+	cockpit_letter_stroke(left,0.0,4.0,2.0,4.0);
+	cockpit_letter_stroke(left,0.0,4.0,0.0,2.0);
+	cockpit_letter_stroke(left,0.0,2.0,2.0,2.0);
+	cockpit_letter_stroke(left,2.0,2.0,2.0,0.0);
+	cockpit_letter_stroke(left,2.0,0.0,0.0,0.0);
+};
+
+unit(f32) cockpit_letter_p = fn(left) {
+	cockpit_letter_stroke(left,0.0,0.0,0.0,4.0);
+	cockpit_letter_stroke(left,0.0,4.0,2.0,4.0);
+	cockpit_letter_stroke(left,2.0,4.0,2.0,2.0);
+	cockpit_letter_stroke(left,2.0,2.0,0.0,2.0);
+};
+
+unit(f32) cockpit_letter_d = fn(left) {
+	cockpit_letter_stroke(left,0.0,0.0,0.0,4.0);
+	cockpit_letter_stroke(left,0.0,4.0,2.0,3.0);
+	cockpit_letter_stroke(left,2.0,3.0,2.0,1.0);
+	cockpit_letter_stroke(left,2.0,1.0,0.0,0.0);
+};
+
+unit(f32) cockpit_letter_a = fn(left) {
+	cockpit_letter_stroke(left,0.0,0.0,0.0,3.0);
+	cockpit_letter_stroke(left,0.0,3.0,1.0,4.0);
+	cockpit_letter_stroke(left,1.0,4.0,2.0,3.0);
+	cockpit_letter_stroke(left,2.0,3.0,2.0,0.0);
+	cockpit_letter_stroke(left,0.0,2.0,2.0,2.0);
+};
+
+unit(f32) cockpit_letter_l = fn(left) {
+	cockpit_letter_stroke(left,0.0,4.0,0.0,0.0);
+	cockpit_letter_stroke(left,0.0,0.0,2.0,0.0);
+};
+
+unit(f32) cockpit_letter_t = fn(left) {
+	cockpit_letter_stroke(left,0.0,4.0,2.0,4.0);
+	cockpit_letter_stroke(left,1.0,4.0,1.0,0.0);
+};
+
+unit(f32) cockpit_letter_b = fn(left) {
+	cockpit_letter_stroke(left,0.0,0.0,0.0,4.0);
+	cockpit_letter_stroke(left,0.0,4.0,2.0,4.0);
+	cockpit_letter_stroke(left,2.0,4.0,2.0,0.0);
+	cockpit_letter_stroke(left,2.0,2.0,0.0,2.0);
+	cockpit_letter_stroke(left,2.0,0.0,0.0,0.0);
+};
+
+unit(f32) cockpit_letter_n = fn(left) {
+	cockpit_letter_stroke(left,0.0,0.0,0.0,4.0);
+	cockpit_letter_stroke(left,0.0,4.0,2.0,0.0);
+	cockpit_letter_stroke(left,2.0,0.0,2.0,4.0);
+};
+
+unit(f32) cockpit_letter_k = fn(left) {
+	cockpit_letter_stroke(left,0.0,0.0,0.0,4.0);
+	cockpit_letter_stroke(left,0.0,2.0,2.0,4.0);
+	cockpit_letter_stroke(left,0.0,2.0,2.0,0.0);
+};
+
+unit() cockpit_plaques = fn {
+	quad(-0.528,-0.674,2.064,0.329,-0.674,2.064,0.329,-0.534,2.064,-0.528,-0.534,2.064,0.128,0.107,0.073);
+	cockpit_letter_s(-0.473);
+	cockpit_letter_p(-0.411);
+	cockpit_letter_d(-0.349);
+	cockpit_letter_a(-0.183);
+	cockpit_letter_l(-0.121);
+	cockpit_letter_t(-0.059);
+	cockpit_letter_b(0.076);
+	cockpit_letter_a(0.138);
+	cockpit_letter_n(0.200);
+	cockpit_letter_k(0.262);
 };
 
 unit() cockpit_model = fn {
@@ -1805,7 +1901,7 @@ unit() cockpit_model = fn {
 	model_local = true;
 	if (course == 0) {
 		box(-1.14,-1.14,2.20,2.28,0.22,0.32,0.48,0.29,0.16);
-		box(-0.61,-1.02,2.17,1.22,0.17,0.15,0.55,0.34,0.19);
+		box(-0.61,-1.02,2.17,1.22,0.48,0.15,0.55,0.34,0.19);
 		box(-1.24,-1.30,1.09,0.12,0.33,2.10,0.67,0.43,0.23);
 		box(1.12,-1.30,1.09,0.12,0.33,2.10,0.67,0.43,0.23);
 		box(-1.08,-1.08,2.28,0.33,0.05,1.46,0.73,0.63,0.44);
@@ -1815,17 +1911,18 @@ unit() cockpit_model = fn {
 		box(-0.84,-1.35,1.30,0.18,0.27,2.80,0.34,0.18,0.12);
 		box(0.66,-1.35,1.30,0.18,0.27,2.80,0.34,0.18,0.12);
 		box(-0.75,-1.15,2.16,1.50,0.27,0.42,0.27,0.14,0.10);
-		box(-0.51,-1.00,2.15,1.02,0.14,0.22,0.39,0.22,0.14);
+		box(-0.56,-1.00,2.15,1.12,0.47,0.22,0.39,0.22,0.14);
 		box(-0.49,-1.16,2.60,0.98,0.61,1.23,0.64,0.60,0.42);
 		box(-0.50,-1.10,2.53,1.00,0.055,0.10,0.72,0.46,0.21);
 	};
 	f32 metal = if (course == 0) { 0.62 } else { 0.84 };
 	cockpit_dials(metal,0,0.0,1.0);
-	cockpit_pointer(-0.35,-0.97,2.074,poses[0].speed*(4.4/45.0)-2.2,0.98,0.52,0.28);
-	cockpit_pointer(-0.10,-0.97,2.074,clamp(poses[0].y,0.0,125.0)*(4.4/125.0)-2.2,0.46,0.86,0.95);
-	cockpit_pointer(0.15,-0.97,2.074,-poses[0].roll,0.59,0.96,0.54);
-	box(0.36,-1.08,2.078,0.093,0.22,0.10,0.17,0.13,0.10);
-	box(0.352,-0.998+cockpit_drive*0.071,2.013,0.109,0.052,0.097,0.94,0.62,0.27);
+	cockpit_plaques();
+	cockpit_pointer(-0.39,-0.81,2.074,poses[0].speed*(4.1887902/45.0)-2.0943951,0.98,0.52,0.28);
+	cockpit_pointer(-0.10,-0.81,2.074,clamp(poses[0].y,0.0,125.0)*(4.1887902/125.0)-2.0943951,0.46,0.86,0.95);
+	cockpit_pointer(0.19,-0.81,2.074,-poses[0].roll,0.59,0.96,0.54);
+	box(0.397,-0.950,2.078,0.104,0.26,0.10,0.17,0.13,0.10);
+	box(0.387,-0.846+cockpit_drive*0.071,2.013,0.124,0.060,0.097,0.94,0.62,0.27);
 	model_local = false;
 };
 

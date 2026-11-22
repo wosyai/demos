@@ -262,6 +262,12 @@ if (!comparisonBaseline) {
     const controls = [
         [.98,.52,.28], [.46,.86,.95], [.59,.96,.54], [.94,.62,.27],
     ];
+    const plaqueInk = [.99,.91,.71];
+    const scales = [
+        [[.195,.136,.083],[.95,.68,.33],27],
+        [[.087,.172,.209],[.58,.85,.94],27],
+        [[.119,.195,.126],[.77,.93,.64],15],
+    ];
     const materials = [[.67,.43,.23],[.34,.18,.12]];
     const projection = ([x,y,z], i) => frame[i]*x+frame[i+4]*y+frame[i+8]*z+frame[i+12];
     const instrument = points => points.map(point => [0,1,2].map(i => projection(point,i)/projection(point,3)));
@@ -271,10 +277,28 @@ if (!comparisonBaseline) {
         reset(kind);
         assert.equal(marker(materials[kind]).length,0,"the actual interior is absent in chase view");
         engine.select_view(1);
-        for (const aspect of [1.65,.45]) {
+        for (const aspect of [1.65,.54,.45]) {
             tick(0,0,aspect);
             assert(marker(materials[kind]).length > 5,"the cockpit has real airframe-specific framing");
             assert.equal(marker(materials[1-kind]).length,0,"the other cockpit geometry is absent");
+            for (const [face, marks, count] of scales) {
+                assert.equal(marker(face).length,36,"each role has an independent Wosy dial face");
+                assert.equal(marker(marks).length,count,"the live instruments carry distinct scale marks");
+            }
+            const labels = instrument(marker(plaqueInk));
+            assert(labels.every(([x,y,z]) => Math.abs(x)<.90 && y>-.57 && y<-.29 && Math.abs(z)<1),
+                "all physical labeling is visible below the main forward scene");
+            for (const [left,right,count] of [[-.53,-.25,78],[-.24,.04,54],[.05,.34,96]]) {
+                const label = marker(plaqueInk).filter(point => {
+                    const cameraX = projection(point,0) / Math.hypot(frame[0],frame[8]);
+                    return cameraX >= left && cameraX <= right;
+                });
+                const points = instrument(label);
+                const x = points.map(p => p[0]), y = points.map(p => p[1]);
+                assert.equal(label.length,count,"all three engraved words have distinct bounded strokes");
+                assert((Math.max(...x)-Math.min(...x))*.5*(720*aspect) > 30 &&
+                    (Math.max(...y)-Math.min(...y))*.5*720 > 18,"at 720 px height the word has readable size");
+            }
             for (const color of controls) {
                 const points = marker(color);
                 assert(points.length >= 3,"each instrument emits actual mesh geometry");
@@ -741,6 +765,40 @@ function visibleGhost(rejectedCandidate) {
 }
 assert.deepEqual(visibleGhost(true), visibleGhost(false),
     "rejected candidate validation never mutates a previously restored ghost's mission state");
+
+if (!comparisonBaseline) {
+    const rails = [[.67,.43,.23],[.34,.18,.12]];
+    for (const completed of [goodFarm,goodParis]) {
+        const course = completed.course;
+        reset(1-course); reset(course);
+        load(completed.data);
+        tick(0,0);
+        assert.equal(frame[23],completed.time, "the approved full replay is actually loaded");
+        engine.select_view(1);
+        const wing = course ? [.96,.96,.86] : [.98*1.12,.83*1.12,.58*1.12];
+        const ghostWing = wing.map((component,index) => component*.19+[.28,.72,.78][index]);
+        let seen = false;
+        for (let n=0;n<160;n++) {
+            tick(0,1/30,.54);
+            if (!marker(ghostWing).length) continue;
+            assert.equal(marker(ghostWing).length,6,"the actual separate replay aircraft is in the cockpit's moving mesh");
+            assert.equal(marker(wing).length,0,"only the replay's wings are drawn here");
+            assert.equal(marker(rails[course]).length,12);
+            assert.equal(marker([.99,.91,.71]).length,228,"the full ink remains with a separate replay aircraft");
+            assert.equal(marker([1,.66,.19]).length,84,"the active ring remains under real replay rendering");
+            const live = aircraft.length/6;
+            // Max independent constituents: cockpit 918, Wright ghost 720,
+            // three 84-vertex gates, 30 arrow, 18 crop strips and 84 plume.
+            // Paris cockpit/ghost are smaller; even DROP (114 + 24 impact)
+            // fits with their three gates and arrow. Mission sign phases exclude.
+            assert(live <= 2022 && live < 2048,"live artwork fits the interval mesh allocation");
+            seen = true;
+            break;
+        }
+        assert(seen,"the recorded flight genuinely moved more than 11 m from the stationary pilot");
+        engine.select_view(0);
+    }
+}
 
 // Recheck that the plane and chase camera share the same presentation pose.
 function playerWingCorner() {
