@@ -1,4 +1,10 @@
 %%start
+layout = namespace flight "maps/layout.w";
+wright = namespace flight "maps/wright.w";
+paris = namespace flight "maps/paris.w";
+
+layout.Course map_plan = wright.course_layout();
+
 host = extern wasm "flight" {
 	unsafe unit(*?u8, i32) world;
 	unsafe unit(*?u8, i32) aircraft;
@@ -478,23 +484,26 @@ unit() tower = fn {
 	diamond(tower_x(),83.45,tower_z(),0.44,0.55,0.68,0.53,0.36);
 };
 
-f32() strip_x = fn { if (course == 0) { -15.0 } else { 125.0 } };
-f32() strip_z = fn { if (course == 0) { 331.0 } else { 290.0 } };
-f32() strip_w = fn { if (course == 0) { 25.0 } else { 41.0 } };
-f32() strip_l = fn { if (course == 0) { 74.0 } else { 124.0 } };
+f32() strip_x = fn { map_plan.finish.x };
+f32() strip_z = fn { map_plan.finish.z };
+f32() strip_w = fn { map_plan.finish.width };
+f32() strip_l = fn { map_plan.finish.length };
 f32() drop_x = fn { 109.0 };
 f32() drop_z = fn { 218.0 };
 
-f32() pickup_x = fn { if (course == 0) { -15.0 } else { -111.0 } };
-f32() pickup_z = fn { if (course == 0) { 68.0 } else { -71.0 } };
-f32() pickup_w = fn { if (course == 0) { 29.0 } else { 36.0 } };
-f32() pickup_l = fn { 109.0 };
+f32() pickup_x = fn { map_plan.supply.x };
+f32() pickup_z = fn { map_plan.supply.z };
+f32() pickup_w = fn { map_plan.supply.width };
+f32() pickup_l = fn { map_plan.supply.length };
 f32() service_x = fn { pickup_x()+pickup_w()*0.5+4.0 };
 f32() service_z = fn { pickup_z()+45.0 };
 f32() service_w = fn { 7.0 };
 f32() service_h = fn { 4.32 };
 f32() service_l = fn { 10.0 };
-f32() home_z = fn { if (course == 0) { -74.0 } else { -199.0 } };
+f32() home_x = fn { map_plan.home.x };
+f32() home_z = fn { map_plan.home.z };
+f32() home_w = fn { map_plan.home.width };
+f32() home_l = fn { map_plan.home.length };
 f32(i32) crop_z = fn(i) { 185.0+40.0*float_i(i) };
 f32(i32) gate_x = fn(i) { if (i == 0 || course == 0) { pickup_x() } else { if (i == 1) { 5.0 } else { 89.0 } } };
 f32(i32) gate_z = fn(i) {
@@ -716,7 +725,7 @@ unit() render_land = fn {
 	distant_hills(0,0);
 	distant_hills(1,0);
 	runway();
-	service_runway(pickup_x(),home_z(),pickup_w(),67.0);
+	service_runway(home_x(),home_z(),home_w(),home_l());
 	service_runway(pickup_x(),pickup_z(),pickup_w(),pickup_l());
 	f32 stop_z = pickup_z()+pickup_l()-34.0;
 	ground_patch(pickup_x()-pickup_w()*0.46,stop_z,0.85*pickup_w(),0.83,0.26,0.94,0.56,0.26);
@@ -920,7 +929,7 @@ i32(i32) canonical_input = fn(mask) {
 };
 
 unit(u64) spawn = fn(lane) {
-	poses[lane].x = pickup_x();
+	poses[lane].x = home_x();
 	poses[lane].y = 1.0;
 	poses[lane].z = home_z()+3.0;
 	poses[lane].heading = 0.0;
@@ -1137,11 +1146,13 @@ unit(u64,u64,i32,bool) take_off = fn(plane,race,input,loaded) {
 	poses[plane].x = poses[plane].x+next*sin_small(bearing)/30.0;
 	poses[plane].z = poses[plane].z+next*cos_small(bearing)/30.0;
 	poses[plane].speed = next;
-	f32 end = if (loaded) { pickup_z()+pickup_l() } else { home_z()+67.0 };
+	f32 end = if (loaded) { pickup_z()+pickup_l() } else { home_z()+home_l() };
 	f32 begin = if (loaded) { pickup_z() } else { home_z() };
 	f32 pitch = if (held(input,64)) { float_i(((input>>12)&15)-7)/7.0 } else { axis(input,4,8) };
 	if (poses[plane].z >= end || poses[plane].z < begin) { result[race] = 9; } else {
-		if (abs_f(poses[plane].x-pickup_x()) >= pickup_w()*0.5) { result[race] = 11; } else {
+		f32 cx = if (loaded) { pickup_x() } else { home_x() };
+		f32 width = if (loaded) { pickup_w() } else { home_w() };
+		if (abs_f(poses[plane].x-cx) >= width*0.5) { result[race] = 11; } else {
 			if (next > 17.0 && pitch > 0.12) {
 				poses[plane].y = 1.16;
 				poses[plane].pitch = 0.12;
@@ -1441,7 +1452,7 @@ unit(i32,i32) spray_mist = fn(n,age) {
 
 f32(MissionPhase,f32,f32) objective_x = fn(stage,x,z) {
 	if (stage == MissionPhase::seine_crossing) { if (z < 100.0) { pickup_x() } else { if (x < 27.0) { 38.0 } else { 67.0 } } } else {
-		if (stage == MissionPhase::mail_approach) { drop_x() } else { if (stage == MissionPhase::landing_approach || stage == MissionPhase::final_rollout || stage == MissionPhase::mail_in_flight) { strip_x() } else { pickup_x() } }
+		if (stage == MissionPhase::mail_approach) { drop_x() } else { if (stage == MissionPhase::landing_approach || stage == MissionPhase::final_rollout || stage == MissionPhase::mail_in_flight) { strip_x() } else { if (stage == MissionPhase::takeoff) { home_x() } else { pickup_x() } } }
 	}
 };
 
@@ -1449,7 +1460,7 @@ f32(MissionPhase,f32,f32) objective_z = fn(stage,x,z) {
 	if (stage == MissionPhase::seine_crossing) { if (z < 100.0) { 120.0 } else { if (x < 27.0) { 169.0 } else { 189.0 } } } else {
 		if (stage == MissionPhase::mail_approach) { drop_z() } else {
 			if (stage == MissionPhase::crop_spray) { crop_z(spray_count[0])+10.0 } else {
-				if (stage == MissionPhase::takeoff) { home_z()+64.0 } else {
+				if (stage == MissionPhase::takeoff) { home_z()+home_l()-3.0 } else {
 					if (stage == MissionPhase::supply_approach) { pickup_z()+12.0 } else {
 						if (stage == MissionPhase::cargo_takeoff) { pickup_z()+pickup_l()-3.0 } else { if (stage == MissionPhase::supply_rollout || stage == MissionPhase::cargo_pickup) { pickup_z()+pickup_l()-38.0 } else { strip_z()+15.0 } }
 					}
@@ -1663,7 +1674,11 @@ unit() frame = fn {
 
 unit(i32) reset = fn(requested) {
 	i32 next = if (requested == 1) { 1 } else { 0 };
-	if (course != next) { best_ticks = 0; world_ready = false; };
+	if (course != next) {
+		map_plan = if (next == 1) { paris.course_layout() } else { wright.course_layout() };
+		best_ticks = 0;
+		world_ready = false;
+	};
 	course = next;
 	cancel_drop();
 	spray_tick = -50;

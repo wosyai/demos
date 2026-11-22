@@ -26,5 +26,14 @@ output = "wasm-wasip1"
 builder = "web"
 run_runner = "web"
 
+[targets.app.artifacts.main.profiles.dev.exports]
+reset = "reset"
+tick = "tick"
+input_version = "input_version"
+cancel_drop = "cancel_drop"
+ghost_begin = "ghost_begin"
+ghost_byte = "ghost_byte"
+ghost_end = "ghost_end"
+
 [targets.app.profiles.dev]
 main_artifact = "main"
