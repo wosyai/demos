@@ -719,6 +719,59 @@ unit(f32,f32,f32,f32,f32,f32) seine_reach = fn(x0,a0,b0,x1,a1,b1) {
 	promenade(x0,b0+6.0,x1,b1+6.0);
 };
 
+unit(f32,f32,f32,f32,i32) reservoir_bank = fn(x,z,w,l,n) {
+	if (n < 16) {
+		f32 a = wrap(float_i(n)*0.39269908);
+		f32 b = wrap(float_i(n+1)*0.39269908);
+		f32 ux = sin_small(a);
+		f32 uz = cos_small(a);
+		f32 vx = sin_small(b);
+		f32 vz = cos_small(b);
+		f32 ix0 = x+w*ux;
+		f32 iz0 = z+l*uz;
+		f32 ix1 = x+w*vx;
+		f32 iz1 = z+l*vz;
+		tri(x,0.105,z,ix0,0.105,iz0,ix1,0.105,iz1,0.23,0.48,0.54);
+		quad(ix0,0.105,iz0,ix1,0.105,iz1,x+(w+3.0)*vx,0.66,z+(l+3.0)*vz,x+(w+3.0)*ux,0.66,z+(l+3.0)*uz,0.52,0.51,0.39);
+		quad(x+(w+3.0)*ux,0.66,z+(l+3.0)*uz,x+(w+3.0)*vx,0.66,z+(l+3.0)*vz,x+(w+6.0)*vx,0.0,z+(l+6.0)*vz,x+(w+6.0)*ux,0.0,z+(l+6.0)*uz,0.61,0.61,0.48);
+		reservoir_bank(x,z,w,l,n+1);
+	};
+};
+
+unit(f32,f32,i32) county_tank = fn(x,z,n) {
+	if (n < 12) {
+		f32 a = wrap(float_i(n)*0.52359879);
+		f32 b = wrap(float_i(n+1)*0.52359879);
+		f32 x0 = x+7.0*sin_small(a);
+		f32 z0 = z+7.0*cos_small(a);
+		f32 x1 = x+7.0*sin_small(b);
+		f32 z1 = z+7.0*cos_small(b);
+		f32 band = if (n%2 == 0) { 0.04 } else { 0.0 };
+		quad(x0,20.0,z0,x1,20.0,z1,x1,28.0,z1,x0,28.0,z0,0.67+band,0.67+band,0.60+band);
+		tri(x0,28.0,z0,x1,28.0,z1,x,32.0,z,0.43,0.27,0.19);
+		tri(x0,20.0,z0,x1,20.0,z1,x,17.1,z,0.46,0.45,0.39);
+		county_tank(x,z,n+1);
+	};
+};
+
+unit() county_reservoir = fn {
+	f32 x = wright.reservoir_x();
+	f32 z = wright.reservoir_z();
+	f32 ux = wright.reservoir_tower_x();
+	f32 uz = wright.reservoir_tower_z();
+	reservoir_bank(x,z,wright.reservoir_width(),wright.reservoir_length(),0);
+	ground_patch(ux-10.0,z+42.0,x-ux+56.0,5.0,0.082,0.60,0.53,0.40);
+	ground_patch(ux-2.5,uz-15.0,5.0,z+42.0-uz+15.0,0.087,0.57,0.49,0.37);
+	ground_patch(ux-11.0,uz-11.0,22.0,22.0,0.094,0.65,0.60,0.46);
+	box(ux-5.8,0.0,uz-5.8,1.2,21.0,1.2,0.37,0.30,0.24);
+	box(ux+4.6,0.0,uz-5.8,1.2,21.0,1.2,0.37,0.30,0.24);
+	box(ux-5.8,0.0,uz+4.6,1.2,21.0,1.2,0.37,0.30,0.24);
+	box(ux+4.6,0.0,uz+4.6,1.2,21.0,1.2,0.37,0.30,0.24);
+	quad(ux-5.2,2.0,uz-5.84,ux+5.2,15.6,uz-5.84,ux+5.2,16.4,uz-5.84,ux-5.2,2.8,uz-5.84,0.45,0.36,0.29);
+	quad(ux+5.2,2.0,uz-5.84,ux-5.2,15.6,uz-5.84,ux-5.2,16.4,uz-5.84,ux+5.2,2.8,uz-5.84,0.45,0.36,0.29);
+	county_tank(ux,uz,0);
+};
+
 unit() render_land = fn {
 	vertex_count = 0;
 	drawing_world = true;
@@ -740,6 +793,7 @@ unit() render_land = fn {
 		hay_roll(-223.0,29.0,0);
 		hay_roll(-217.0,33.0,0);
 		hay_roll(190.0,119.0,0);
+		county_reservoir();
 	} else {
 		quad(-450.0,0.0,-320.0,450.0,0.0,-320.0,450.0,0.0,570.0,-450.0,0.0,570.0,0.54,0.62,0.47);
 		seine_reach(-450.0,-117.0,-14.0,330.0,265.2,368.2);

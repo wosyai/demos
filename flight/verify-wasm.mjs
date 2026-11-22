@@ -398,6 +398,16 @@ function sortie(course, mode = "normal") {
             input = mode === "no cargo" ? 20 : 128;
         }
         if (phase === 11) {
+            if (mode === "county") {
+                if (p.y >= 26 && p.z >= 160) surveyCruise = true;
+                if (surveyCruise && p.x < -302 && p.x > -410 && Math.abs(p.z-287) < 44 && p.y > 19) {
+                    return {result: "reservoir reach", position: p};
+                }
+                const target = surveyCruise ? [-352, 287] : [-15, p.z + 90];
+                input = pilot(p, Math.atan2(target[0]-p.x, target[1]-p.z), 31, 0, 16);
+                step(input);
+                continue;
+            }
             input = pilot(p,0,7,0,0);
             if (!wrongWindow) {
                 assert.notEqual(status,9);
@@ -457,7 +467,7 @@ function sortie(course, mode = "normal") {
     }
     assert.equal(confirmed, frame[32], "for each scored gate, the mesh confirms the score");
     observer?.finish();
-    if (mode === "riverside") return {result: frame[22], phase:frame[20], position: aircraftPose(), surveyCruise, surveyEast};
+    if (mode === "riverside" || mode === "county") return {result: frame[22], phase:frame[20], position: aircraftPose(), surveyCruise, surveyEast};
     return {result:frame[22], course, visited, time:frame[17], data:packet, actions:frame[31], gates:frame[32], route:frame[25]};
 }
 const goodFarm = sortie(0), goodParis = sortie(1), cyanParis = sortie(1,"cyan");
@@ -465,6 +475,8 @@ assert.equal(goodFarm.gates,3,"Crop Patrol confirms all three rings on a real fl
 assert.equal(goodParis.gates,3,"Paris Air Mail confirms all three rings on a real flight");
 assert.equal(goodParis.route,2,"the higher, wider Paris route earns the amber route outcome");
 if (!comparisonBaseline) {
+    const west = sortie(0, "county");
+    assert.equal(west.result, "reservoir reach", `ordinary Wright controls can reach the county reservoir: ${JSON.stringify(west)}`);
     const east = sortie(1, "riverside");
     assert.equal(east.result, "northeast reach", `ordinary flight controls can reach the new Paris northeast district: ${JSON.stringify(east)}`);
 }
