@@ -576,8 +576,26 @@ bool(i32, i32, i32) soft_plug = fn(x, y, z) {
 	x >= 7 && x <= 9 && z == 23 && (y == 3 || y == 4)
 };
 
-bool(i32, i32, i32) bridge_slot = fn(x, y, z) {
-	x >= 22 && x <= 26 && y == 4 && z >= 18 && z <= 29
+bool(i32, i32, i32) harbor_hut = fn(x, y, z) {
+	x >= 27 && x <= 32 && y >= 5 && y <= 10 && z >= 38 && z <= 42
+};
+
+bool(i32, i32) watchfire_post = fn(x, z) {
+	(x == 22 && z == 15) || (x == 7 && z == 8)
+};
+
+bool(i32, i32) lighthouse_lantern_bay = fn(x, z) {
+	x >= 22 && x <= 26 && z >= 4 && z <= 5
+};
+
+bool(i32, i32) lighthouse_lantern_core = fn(x, z) {
+	x >= 23 && x <= 25 && z >= 4 && z <= 5
+};
+
+bool(i32, i32, i32) mission_fixed_wood = fn(x, y, z) {
+	(y == 5 && watchfire_post(x, z))
+		|| (y == 13 && lighthouse_lantern_bay(x, z))
+		|| (y == 14 && lighthouse_lantern_bay(x, z) && !lighthouse_lantern_core(x, z))
 };
 
 bool(i32, i32) mission_tree = fn(x, z) {
@@ -604,15 +622,13 @@ u8(i32, i32, i32) harbor_structure = fn(x, y, z) {
 
 u8(i32, i32, i32, i32) beacon_tile = fn(x, y, z, ground) {
 	bool tower = x >= 21 && x <= 27 && z >= 3 && z <= 6;
-	bool post = (x == 22 && z == 15) || (x == 7 && z == 8);
-	bool harbor_hut = x >= 27 && x <= 32 && z >= 38 && z <= 42;
 	bool on_coast_trail = z == 9 && x >= 8 && x <= 24;
 	bool harbor_steps = (x == 24 && z >= 32 && z <= 45) || (z == 33 && x >= 8 && x <= 38);
-	if (harbor_hut && y >= 5 && y <= 10) { harbor_structure(x, y, z) } else {
+	if (harbor_hut(x, y, z)) { harbor_structure(x, y, z) } else {
 		if (tower && y >= 6 && y <= 14) {
-			if (y == 14 && x >= 23 && x <= 25 && z >= 4 && z <= 5) { 7 } else {
+			if (y == 14 && lighthouse_lantern_core(x, z)) { 7 } else {
 				if (y >= 12) {
-					if (x >= 22 && x <= 26 && z >= 4 && z <= 5) { if (y == 12) { 3 } else { 5 } } else { 0 }
+					if (lighthouse_lantern_bay(x, z)) { if (y == 12) { 3 } else { 5 } } else { 0 }
 				} else {
 					bool door = x >= 23 && x <= 25 && z == 6 && y <= 8;
 					bool window = (x == 21 || x == 27) && z == 5 && y == 10;
@@ -621,7 +637,7 @@ u8(i32, i32, i32, i32) beacon_tile = fn(x, y, z, ground) {
 				}
 			}
 		} else {
-			if (post && (y == 5 || y == 6)) { if (y == 5) { 5 } else { 7 } } else {
+			if ((y == 5 || y == 6) && watchfire_post(x, z)) { if (y == 5) { 5 } else { 7 } } else {
 				if (soft_plug(x, y, z)) { 4 } else {
 					bool cut_wall = (x == 6 || x == 10) && z >= 22 && z <= 24 && (y == 3 || y == 4);
 					bool cut_top = x >= 6 && x <= 10 && z >= 22 && z <= 24 && y == 5;
@@ -1634,27 +1650,19 @@ unit(f32, f32, i32) tick = fn(dt, aspect, playing) {
 };
 
 i32(i32, i32, i32, i32) edit_beacon = fn(x, y, z, material) {
-	if (beacon_phase != BeaconPhase::active) { -4 } else {
-		bool slot = bridge_slot(x, y, z);
+	if (beacon_phase != BeaconPhase::active || harbor_hut(x, y, z)) { -4 } else {
 		u8 present = cell(x, y, z);
-		if (material == 0 && slot && present == 5) {
-			write_cell(x, y, z, 0);
-			bridge_blocks = bridge_blocks + 1;
-			rebuild_near(x, z);
-			1
-		} else {
-			if (material == 0 && soft_plug(x, y, z) && present == 4) {
-				write_cell(x, y, z, 0);
+		i32 stock_change = if (material == 0 && present == 5 && !mission_fixed_wood(x, y, z)) { 1 } else {
+			if (material == 5 && present == 0 && bridge_blocks > 0) { -1 } else { 0 }
+		};
+		bool open_tunnel = material == 0 && present == 4 && soft_plug(x, y, z);
+		if (stock_change == 0 && !open_tunnel) { -4 } else {
+			i32 changed = write_cell(x, y, z, material);
+			if (changed == 1) {
+				bridge_blocks = bridge_blocks + stock_change;
 				rebuild_near(x, z);
-				1
-			} else {
-				if (material == 5 && slot && present == 0 && bridge_blocks > 0) {
-					write_cell(x, y, z, 5);
-					bridge_blocks = bridge_blocks - 1;
-					rebuild_near(x, z);
-					1
-				} else { -4 }
-			}
+			};
+			changed
 		}
 	}
 };
