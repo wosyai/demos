@@ -5,7 +5,7 @@ const binary = new WebAssembly.Module(readFileSync(process.argv[2] ?? new URL("f
 assert.deepEqual(WebAssembly.Module.imports(binary).map(({ module, name }) => module+"."+name).sort(),
   ["ferry.frame", "ferry.moving", "ferry.world"]);
 assert.deepEqual(WebAssembly.Module.exports(binary).map(({ name }) => name).sort(),
-  ["_start", "cancel_action", "map_value", "memory", "reset", "tick"]);
+  ["_start", "cancel_action", "map_value", "memory", "reset", "route_selection", "route_value", "tick"]);
 
 let engine, frame, world, moving, worldSends = 0;
 let walkingBearingSamples=0, drivingBearingSamples=0;
@@ -44,6 +44,18 @@ const run = (n,x=0,z=0,flags=0,dt=step) => { for(let i=0;i<n;i++) tick(x,z,flags
 const spot = () => [frame[26],frame[27]];
 const rawMoving = () => view(...moving,MOVING_FLOATS,18);
 const clamp = (x,lo,hi) => Math.max(lo,Math.min(hi,x));
+
+function guidePoints() {
+  const key=engine.route_selection();
+  if(!key) return [];
+  const length=engine.route_value(key,-1,0);
+  assert(length>=2&&length<=10);
+  return Array.from({length},(_,i)=>[engine.route_value(key,i,0),engine.route_value(key,i,1)]);
+}
+function closePoint(actual,expected) {
+  assert(actual, "expected a real route point");
+  assert(Math.hypot(actual[0]-expected[0],actual[1]-expected[1])<.02);
+}
 
 function walkTo(x,z) {
   for(let i=0;i<1450;i++) {
@@ -239,11 +251,14 @@ function selectWaterfront() {
   assert.deepEqual(spot(),origin,"marking the waterfront never moves the player");
   assert(frame[18]<time&&frame[18]>time-.04,"the same ferry countdown keeps running");
   assert(Math.abs(frame[24]+64.8)<.01&&Math.abs(frame[25]-38.4)<.01);
+  assert.equal(guidePoints().length,3);
+  guidePoints().forEach((point,i)=>closePoint(point,[[-64.8,38.4],[-64.8,73.45],[8.10,73.55]][i]));
 }
 engine.reset(0); pickup(); selectWaterfront();
 walkTo(-82,33.7);
 assert.equal(frame[24],11,"leaving the marked route restores ordinary objective guidance");
 assert.equal(frame[25],83);
+assert.deepEqual(guidePoints(),[],"abandoning the signed route leaves only the objective marker");
 assert(frame[18]<90,"turning away does not reset the attempt");
 
 engine.reset(0); pickup(); selectWaterfront();
@@ -372,6 +387,9 @@ for(let k=prepared?6:0;k<avenue.length;k++) {
   const [x,z,speed]=avenue[k];
   const thisLeg=()=>Math.hypot(frame[24]-x,frame[25]-z)<.02;
   assert(thisLeg(),"avenue guide draws each legal turn in order");
+  const points=guidePoints();
+  assert.equal(points.length,avenue.length-Math.max(0,k-1));
+  closePoint(points[k===0?0:1],[x,z]);
   if(k===7) {
     const before=frame[18];
     run(30,0,0,1);
