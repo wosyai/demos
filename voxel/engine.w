@@ -149,6 +149,8 @@ i32[48] loose_wood = [
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 ];
 i32 loose_count = 0;
+i32 terrain_chunk_x = -1;
+i32 terrain_chunk_z = -1;
 i32 relay_stage = 0;
 i32 sandbox_material = 2;
 f32 beacon_elapsed = 0.0;
@@ -508,7 +510,11 @@ i32(i32) loot_x = fn(key) { key % 64 };
 i32(i32) loot_y = fn(key) { (key / 64) % 16 };
 i32(i32) loot_z = fn(key) { key / 1024 };
 
-i32(i32, i32) chunk_at = fn(x, z) { x / 12 + (z / 12) * 4 };
+i32() terrain_columns = fn { 4 };
+
+i32(i32, i32) chunk_id = fn(x, z) { x + z * terrain_columns() };
+
+i32(i32, i32) chunk_at = fn(x, z) { chunk_id(x / 12, z / 12) };
 
 unit(f32, f32, f32, i32) draw_loose_cube = fn(x, y, z, side) {
 	if (side < 6) { box_face(x, y, z, 0.24, side, 5); draw_loose_cube(x, y, z, side + 1); };
@@ -558,7 +564,7 @@ unit(i32, i32, i32) mesh_cells = fn(y, start_x, start_z) {
 
 i32(i32) rebuild_chunk = fn(chunk) {
 	write_position = 0;
-	mesh_cells(0, (chunk % 4) * 12, (chunk / 4) * 12);
+	mesh_cells(0, (chunk % terrain_columns()) * 12, (chunk / terrain_columns()) * 12);
 	if (loose_count > 0) { mesh_loose(0, chunk); };
 	i32 count = write_position;
 	unsafe { host.mesh(core.pointer_cast<*?u8>(&?vertices[0][0][0][0][0]), count, chunk); };
@@ -566,21 +572,94 @@ i32(i32) rebuild_chunk = fn(chunk) {
 };
 
 i32(i32) rebuild_chunks = fn(chunk) {
-	if (chunk < 16) {
+	if (chunk < terrain_columns() * terrain_columns()) {
 		i32 count = rebuild_chunk(chunk);
 		count + rebuild_chunks(chunk + 1)
 	} else { 0 }
 };
 
-i32() rebuild = fn { rebuild_chunks(0) };
+i32(i32) stream_min = fn(center) { if (center < 2) { 0 } else { center - 2 } };
+
+i32(i32) stream_max = fn(center) {
+	if (center < 0) { terrain_columns() - 1 } else { min_i(terrain_columns() - 1, center + 2) }
+};
+
+bool(i32, i32, i32, i32) terrain_resident = fn(x, z, center_x, center_z) {
+	x >= stream_min(center_x) && x <= stream_max(center_x)
+		&& z >= stream_min(center_z) && z <= stream_max(center_z)
+};
+
+unit(i32, i32, i32, i32, i32) retire_terrain_row = fn(x, z, east, next_x, next_z) {
+	if (x <= east) {
+		if (!terrain_resident(x, z, next_x, next_z)) {
+			unsafe { host.mesh(core.pointer_cast<*?u8>(&?vertices[0][0][0][0][0]), 0, chunk_id(x, z)); };
+		};
+		retire_terrain_row(x + 1, z, east, next_x, next_z);
+	};
+};
+
+unit(i32, i32, i32, i32, i32, i32) retire_terrain = fn(z, west, east, south, next_x, next_z) {
+	if (z <= south) {
+		retire_terrain_row(west, z, east, next_x, next_z);
+		retire_terrain(z + 1, west, east, south, next_x, next_z);
+	};
+};
+
+i32(i32, i32, i32, bool, i32, i32) enter_terrain_row = fn(x, z, east, force, old_x, old_z) {
+	if (x <= east) {
+		i32 count = if (force || !terrain_resident(x, z, old_x, old_z)) { rebuild_chunk(chunk_id(x, z)) } else { 0 };
+		count + enter_terrain_row(x + 1, z, east, force, old_x, old_z)
+	} else { 0 }
+};
+
+i32(i32, i32, i32, i32, bool, i32, i32) enter_terrain = fn(z, west, east, south, force, old_x, old_z) {
+	if (z <= south) {
+		i32 count = enter_terrain_row(west, z, east, force, old_x, old_z);
+		count + enter_terrain(z + 1, west, east, south, force, old_x, old_z)
+	} else { 0 }
+};
+
+i32(f32) terrain_axis = fn(value) {
+	i32 axis = floor_i(value / 12.0);
+	if (axis < 0) { 0 } else { min_i(terrain_columns() - 1, axis) }
+};
+
+i32(bool) sync_terrain = fn(force) {
+	i32 x = terrain_axis(camera_pose.x);
+	i32 z = terrain_axis(camera_pose.z);
+	i32 old_x = terrain_chunk_x;
+	i32 old_z = terrain_chunk_z;
+	if (!force && x == old_x && z == old_z) { 0 } else {
+		retire_terrain(stream_min(old_z), stream_min(old_x), stream_max(old_x), stream_max(old_z), x, z);
+		terrain_chunk_x = x;
+		terrain_chunk_z = z;
+		enter_terrain(stream_min(z), stream_min(x), stream_max(x), stream_max(z), force, old_x, old_z)
+	}
+};
+
+i32() rebuild = fn {
+	if (beacon_phase == BeaconPhase::sandbox) {
+		terrain_chunk_x = -1;
+		terrain_chunk_z = -1;
+		rebuild_chunks(0)
+	} else {
+		sync_terrain(true)
+	}
+};
+
+unit(i32) refresh_visible_terrain = fn(chunk) {
+	if (terrain_resident(chunk % terrain_columns(), chunk / terrain_columns(), terrain_chunk_x, terrain_chunk_z)) {
+		rebuild_chunk(chunk);
+	};
+};
 
 unit(i32, i32) rebuild_near = fn(x, z) {
 	i32 chunk = chunk_at(x, z);
-	rebuild_chunk(chunk);
-	if (x > 0 && x % 12 == 0) { rebuild_chunk(chunk - 1); };
-	if (x < 47 && x % 12 == 11) { rebuild_chunk(chunk + 1); };
-	if (z > 0 && z % 12 == 0) { rebuild_chunk(chunk - 4); };
-	if (z < 47 && z % 12 == 11) { rebuild_chunk(chunk + 4); };
+	refresh_visible_terrain(chunk);
+	if (x > 0 && x % 12 == 0) { refresh_visible_terrain(chunk - 1); };
+	if (x < 47 && x % 12 == 11) { refresh_visible_terrain(chunk + 1); };
+	if (z > 0 && z % 12 == 0) { refresh_visible_terrain(chunk - terrain_columns()); };
+	if (z < 47 && z % 12 == 11) { refresh_visible_terrain(chunk + terrain_columns()); };
 };
 
 bool(i32, i32) coast_cave = fn(x, z) {
@@ -1652,12 +1731,12 @@ unit(f32) update_beacon = fn(dt) {
 	if (relay_stage == 0 && at_first) {
 		relay_stage = 1;
 		world[6][15][22] = 8;
-		rebuild_chunk(chunk_at(22, 15));
+		refresh_visible_terrain(chunk_at(22, 15));
 	} else {
 		if (relay_stage == 1 && at_second) {
 			relay_stage = 2;
 			world[6][8][7] = 8;
-			rebuild_chunk(chunk_at(7, 8));
+			refresh_visible_terrain(chunk_at(7, 8));
 		};
 	};
 	bool at_lamp = relay_stage == 2 && camera_pose.x >= 23.0 && camera_pose.x < 26.0 && camera_pose.z >= 4.0 && camera_pose.z < 6.0
@@ -1667,8 +1746,8 @@ unit(f32) update_beacon = fn(dt) {
 		world[14][4][23] = 8; world[14][4][24] = 8; world[14][4][25] = 8;
 		world[14][5][23] = 8; world[14][5][24] = 8; world[14][5][25] = 8;
 		clear_controls();
-		rebuild_chunk(chunk_at(23, 4));
-		rebuild_chunk(chunk_at(24, 4));
+		refresh_visible_terrain(chunk_at(23, 4));
+		refresh_visible_terrain(chunk_at(24, 4));
 	} else {
 		f32 lantern_y = camera_pose.y - lamp_offset;
 		if (lantern_y < sea_level + swell + chop) {
@@ -1725,7 +1804,7 @@ unit() collect_wood = fn {
 		loose_count = loose_count - 1;
 		loose_wood[index] = loose_wood[index_of(loose_count)];
 		bridge_blocks = bridge_blocks + 1;
-		rebuild_chunk(chunk_at(loot_x(key), loot_z(key)));
+		refresh_visible_terrain(chunk_at(loot_x(key), loot_z(key)));
 	};
 };
 
@@ -1744,7 +1823,10 @@ unit(f32, f32, i32) tick = fn(dt, aspect, playing) {
 				publish_water();
 			};
 			move_camera(step, sin_yaw, cos_yaw);
-			if (beacon_phase == BeaconPhase::active && step > 0.0 && loose_count > 0) { collect_wood(); };
+			if (beacon_phase == BeaconPhase::active && step > 0.0) {
+				sync_terrain(false);
+				if (loose_count > 0) { collect_wood(); };
+			};
 			advance_edits(step);
 			if (beacon_phase == BeaconPhase::active && step > 0.0) { update_beacon(step); };
 		};
