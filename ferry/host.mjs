@@ -1,11 +1,12 @@
-export const ENGINE_PATH = "./ferry.wasm?v=ferry-2";
+export const ENGINE_PATH = "./ferry.wasm?v=ferry-6";
 const INPUTS = new Map([
   ["KeyA","left"],["ArrowLeft","left"],["KeyD","right"],["ArrowRight","right"],
   ["KeyW","up"],["ArrowUp","up"],["KeyS","down"],["ArrowDown","down"],["Space","brake"],
 ]);
-const ACTIONS = ["","Enter","Exit","Collect","Board"];
+const ACTIONS = ["","Enter car","Exit car","Collect tape","Board ferry","Leave ferry","Answer phone","Park & walk","Mark waterfront","Mark avenue"];
+const ACTION_ICONS = ["","enter","exit","tape","board","exit","phone","exit","waterfront","avenue"];
 const HIT = ["","Mailbox hit","Tree hit","Pedestrian hit","Vehicle hit","Wall hit"];
-const OBJECTIVES = ["Pick up the tape at Sunset Video","Bring the tape to Pier 8","Caught the last ferry","Missed the last ferry","Explore the waterfront"];
+const OBJECTIVES = ["Collect the tape","Reach Pier 8","Tape delivered","Missed the ferry","Free roam","Crossing the canal","Leave the ferry","Walk ashore","Answer the phone"];
 
 export function axes(x,y,radius) {
   const length = Math.hypot(x,y);
@@ -189,6 +190,7 @@ export async function boot(env=globalThis,createGraphics=graphics) {
   const canvas=get("view"), wheel=get("wheel"), thumb=get("thumb"), pause=get("pause");
   const panel=get("panel"), start=get("start"), roam=get("roam"), power=get("power"), brake=get("brake"), action=get("action");
   const objective=get("objective"), stats=get("status"), clock=get("clock"), hint=get("hint"), summary=get("summary"), announce=get("announce");
+  const touch=get("touch"), trip=get("trip"), departure=get("departure"), brakeIcon=get("brake-icon"), actionIcon=get("action-icon");
   const input=inputState(), meshes=new Map();
   let engine, renderer, frame, aspect=0, menuText="Loading the waterfront…", failed=false, noticeUntil=0, notice="", last=0, playing=false, lost=false, ready=false, paused=false, mode=0, event=0, previousCue=-1, previousState=-1;
   const heldButtons=[power,brake,action];
@@ -218,7 +220,7 @@ export async function boot(env=globalThis,createGraphics=graphics) {
     updateAvailability();
     if(ready&&!lost) start.focus({preventScroll:true});
   }
-  const missionText="Pick up the tape at Sunset Video, then cross the district to Pier 8 before the ferry leaves.";
+  const missionText="Answer the marked phone. Pick up the tape at Sunset Video, then reach Pier 8 within 90 seconds.";
   function updateAvailability() {
     const available=ready&&!lost;
     start.disabled=!available; roam.disabled=!available;
@@ -233,30 +235,41 @@ export async function boot(env=globalThis,createGraphics=graphics) {
   function show() {
     if(!frame || !renderer) return;
     renderer.draw(frame);
-    const foot=frame[16]===0,state=frame[17],cue=frame[20],hit=frame[21];
+    const foot=frame[16]===0,state=frame[17],cue=frame[20],hit=frame[21],target=state===0||state===1||state===8;
     label(objective,OBJECTIVES[state]||"Find the ferry");
-    const distance=Number.isFinite(frame[23]) ? `${Math.round(frame[23])} m to go` : "";
-    label(stats,[foot?"On foot":`${Math.round(frame[19])} km/h`,state<2?distance:""].filter(Boolean).join(" · "));
-    label(clock,state===4?"FREE":countdown(frame[18]));
-    label(brake,foot?"Sprint":"Brake");
+    label(stats,target ? `${Math.round(frame[23])} m` : "");
+    trip.dataset.route=String(target);
+    trip.style.setProperty("--bearing",`${Math.round(frame[29]*90)}deg`);
+    departure.hidden=state!==1;
+    if(state===1) label(clock,countdown(frame[18]));
+    touch.dataset.crossing=String(state===5||state===7);
+    touch.dataset.docked=String(state===6);
     brake.parentElement.dataset.foot=String(foot);
-    label(action,ACTIONS[cue]||"Action");
-    const arrow=frame[29]<-.18?"←":frame[29]>.18?"→":"↑";
-    const route=state<2 ? `${arrow} ${OBJECTIVES[state]}` : "";
+    if(previousState!==state||previousCue!==cue) {
+      action.hidden=!ACTIONS[cue];
+      action.setAttribute("aria-label",ACTIONS[cue]||"Interact");
+      if(ACTION_ICONS[cue]) actionIcon.setAttribute("href",`#icon-${ACTION_ICONS[cue]}`);
+    }
+    const brakeMode=foot?"Sprint":"Brake";
+    if(brake.dataset.mode!==brakeMode) {
+      brake.dataset.mode=brakeMode;
+      brake.setAttribute("aria-label",brakeMode);
+      brakeIcon.setAttribute("href",foot?"#icon-sprint":"#icon-brake");
+    }
     if(frame[22]!==event) {
       notice=HIT[hit]||""; noticeUntil=performance.now()+1800;
     }
-    action.setAttribute("aria-disabled",String(!ACTIONS[cue]));
-    const prompt=ACTIONS[cue] ? `E / ${ACTIONS[cue]}` : performance.now()<noticeUntil ? notice : route;
-    label(hint,prompt);
-    hint.hidden=!playing||!prompt;
+    const message=performance.now()<noticeUntil ? notice : "";
+    label(hint,message|| (ACTIONS[cue] ? `E · ${ACTIONS[cue]}` : ""));
+    hint.dataset.notice=String(Boolean(message));
+    hint.hidden=!playing||!hint.textContent;
     if(frame[22]!==event) {
       event=frame[22]; if(HIT[hit]) label(announce,HIT[hit]);
     } else if(previousState!==state||previousCue!==cue) {
       label(announce,ACTIONS[cue]||OBJECTIVES[state]||"");
     }
     previousCue=cue; previousState=state;
-    if(playing && (state===2||state===3)) overlay(state===2?"Tape aboard. You caught the last ferry.":"The ferry left without the tape. Try a quicker route.","Play again");
+    if(playing && (state===2||state===3)) overlay(state===2?"Tape delivered. You made it ashore.":"The ferry left without the tape. Try a quicker route.","Play again");
   }
   function engage(nextMode) {
     if(!ready||lost) return;
