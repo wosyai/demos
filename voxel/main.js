@@ -6,6 +6,12 @@ const missionStart = get("mission-start"), missionRetry = get("mission-retry");
 const missionHud = get("mission-hud"), missionResult = get("mission-result");
 const missionReadouts = get("mission-readouts"), flameMeter = get("flame");
 const tideLevel = get("tide-level"), bridgeStock = get("bridge-stock"), relayGoal = get("relay-goal");
+const guideHint = get("guide-hint"), guideText = get("guide-hint-text"), guideHintIcon = get("guide-hint-icon");
+const guideMarker = get("guide-marker"), guideMarkerIcon = get("guide-marker-icon");
+const breakTouch = get("remove"), placeTouch = get("place");
+const guideLabels = ["", "Break marked timber for wood", "Walk to the dropped wood", "Place wood to bridge the channel"];
+const guideGlyphs = ["", "#glyph-break", "#glyph-collect", "#glyph-build"];
+let shownGuide = 0, shownGuideReady = false;
 const seedInput = get("seed");
 const applySeed = get("apply-seed");
 const randomSeed = get("random-seed");
@@ -388,7 +394,7 @@ async function boot() {
   }
   try {
     prepareGraphics();
-    const response = await fetch(new URL("./engine.wasm?v=beacon-mode-sea-v1", import.meta.url));
+    const response = await fetch(new URL("./engine.wasm?v=beacon-wood-guide-v1", import.meta.url));
     if (!response.ok) throw new Error(`Engine not found (HTTP ${response.status}).`);
     const bytes = await response.arrayBuffer();
     const api = {
@@ -488,10 +494,45 @@ function renderMission(state, flame, tide, stock, relay) {
   }
 }
 
+function renderBeaconGuide(frame) {
+  const stage = playing ? frame[30] : 0;
+  const ready = stage !== 0 && frame[34] === 1;
+  const stageChanged = stage !== shownGuide;
+  if (stageChanged) {
+    shownGuide = stage;
+    guideHint.hidden = stage === 0;
+    guideText.textContent = guideLabels[stage];
+    if (stage !== 0) {
+      guideHintIcon.setAttribute("href", guideGlyphs[stage]);
+      guideMarkerIcon.setAttribute("href", guideGlyphs[stage]);
+    }
+  }
+  if (stageChanged || ready !== shownGuideReady) {
+    shownGuideReady = ready;
+    guideMarker.classList.toggle("ready", ready);
+    breakTouch.classList.toggle("guide-ready", ready && stage === 1);
+    placeTouch.classList.toggle("guide-ready", ready && stage === 3);
+  }
+  if (stage === 0) {
+    guideMarker.hidden = true;
+    return;
+  }
+  const x = frame[31], y = frame[32], z = frame[33];
+  const w = frame[3] * x + frame[7] * y + frame[11] * z + frame[15];
+  const screenX = (frame[0] * x + frame[4] * y + frame[8] * z + frame[12]) / w;
+  const screenY = (frame[1] * x + frame[5] * y + frame[9] * z + frame[13]) / w;
+  guideMarker.hidden = !(w > .15 && Math.abs(screenX) <= 1 && Math.abs(screenY) <= 1);
+  if (!guideMarker.hidden) {
+    guideMarker.style.left = `${(1 + screenX) * 50}%`;
+    guideMarker.style.top = `${(1 - screenY) * 50}%`;
+  }
+}
+
 function present(pointer, hit) {
   if (!gpu || contextLost || document.hidden) return;
-  const data = memoryFloats(pointer, 30);
+  const data = memoryFloats(pointer, 35);
   renderMission(data[25], data[26], data[27], data[28], data[29]);
+  renderBeaconGuide(data);
   if (playing) renderControls(data[22] === 1, data[23] === 1, data[24]);
   reticle.classList.toggle("target", hit >= 0);
 
