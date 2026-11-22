@@ -56,7 +56,8 @@ function shell({defer=false,missing="",cue=1}={}) {
     textContent="";
     addEventListener(name,handler) { this.handlers.set(name,handler); }
     emit(name,props={}) { this.handlers.get(name)?.({button:0,preventDefault(){},...props}); }
-    setAttribute() {}
+    attributes=new Map();
+    setAttribute(name,value) { this.attributes.set(name,value); }
     focus() {}
     setPointerCapture(id) { this.captures.add(id); }
     releasePointerCapture(id) { this.captures.delete(id); }
@@ -72,6 +73,7 @@ function shell({defer=false,missing="",cue=1}={}) {
   const memory=new WebAssembly.Memory({initial:1});
   const frames=[],ticks=[],draws=[],uploads=[],resets=[];
   let finishFetch,cancellations=0,wasmStarts=0,time=0;
+  let state=0,seconds=90,turn=0;
   const fetchGate=new Promise(resolve=>{finishFetch=resolve;});
   const env={
     window,document,devicePixelRatio:1,performance:{now:()=>time},
@@ -85,7 +87,7 @@ function shell({defer=false,missing="",cue=1}={}) {
       async instantiate(_,imports){
         const bus=imports.ferry;
         const view=new Float32Array(memory.buffer,0,30);
-        const publish=()=>{view[20]=cue;bus.frame(0,30);};
+        const publish=()=>{view[17]=state;view[18]=seconds;view[20]=cue;view[29]=turn;bus.frame(0,30);};
         const exports={
           memory,_start(){wasmStarts++;},
           reset(mode){resets.push(mode);bus.world(240,18);bus.moving(360,18);publish();},
@@ -101,6 +103,7 @@ function shell({defer=false,missing="",cue=1}={}) {
   return {
     get,window,document,ticks,draws,uploads,resets,started,finishFetch,
     advance(){ const frame=frames.shift(); assert(frame,"animation callback was scheduled");frame(time+=16); },
+    mission(next){({state,seconds,turn,cue}={state,seconds,turn,cue,...next});},
     get wasmStarts(){return wasmStarts;},
     get cancellations(){return cancellations;},
   };
@@ -185,4 +188,71 @@ test("cancelled touch does not clear keyboard interact; action only fires on rel
   app.advance(); assert.deepEqual(app.ticks.at(-1).slice(1,4),[0,0,0]);
   assert(!wheel.hasPointerCapture(3)&&!power.hasPointerCapture(4));
   assert(app.cancellations>=2);
+});
+
+
+test("the clock follows tape pickup and a single contextual icon follows the engine",async()=>{
+  const app=shell({cue:0});
+  await app.started;
+  app.get("start").emit("click");
+  app.advance(); app.advance();
+  assert.equal(app.get("departure").hidden,true);
+  assert.equal(app.get("action").hidden,true);
+  assert.equal(app.get("hint").hidden,true);
+  app.mission({state:1,seconds:89,cue:8});
+  app.advance();
+  assert.equal(app.get("action").attributes.get("aria-label"),"Mark waterfront");
+  assert.equal(app.get("action-icon").attributes.get("href"),"#icon-waterfront");
+  assert.equal(app.get("departure").hidden,false);
+  app.mission({state:1,seconds:89,cue:9});
+  app.advance();
+  assert.equal(app.get("action").attributes.get("aria-label"),"Mark avenue");
+  assert.equal(app.get("action-icon").attributes.get("href"),"#icon-avenue");
+  assert.equal(app.get("departure").hidden,false);
+  app.mission({state:1,seconds:89,turn:.6,cue:4});
+  app.advance();
+  assert.equal(app.get("departure").hidden,false);
+  assert.equal(app.get("objective").textContent,"Reach Pier 8");
+  assert.equal(app.get("action").attributes.get("aria-label"),"Board ferry");
+  assert.equal(app.get("action-icon").attributes.get("href"),"#icon-board");
+  assert.equal(app.get("action").hidden,false);
+  app.mission({state:1,cue:7});
+  app.advance();
+  assert.equal(app.get("action").attributes.get("aria-label"),"Park & walk");
+  assert.equal(app.get("action-icon").attributes.get("href"),"#icon-exit");
+  assert.equal(app.get("departure").hidden,false);
+  app.mission({state:5,cue:0});
+  app.advance();
+  assert.equal(app.get("objective").textContent,"Crossing the canal");
+  assert.equal(app.get("departure").hidden,true);
+  assert.equal(app.get("touch").dataset.crossing,"true");
+  assert.equal(app.get("action").hidden,true);
+  app.mission({state:6,cue:5});
+  app.advance();
+  assert.equal(app.get("objective").textContent,"Leave the ferry");
+  assert.equal(app.get("action").hidden,false);
+  assert.equal(app.get("action").attributes.get("aria-label"),"Leave ferry");
+  assert.equal(app.get("touch").dataset.crossing,"false");
+  assert.equal(app.get("touch").dataset.docked,"true");
+  app.mission({state:7,cue:0});
+  app.advance();
+  assert.equal(app.get("objective").textContent,"Walk ashore");
+  assert.equal(app.get("touch").dataset.crossing,"true");
+});
+
+
+test("the phone prologue has one contextual action and no countdown",async()=>{
+  const app=shell({cue:0});
+  await app.started;
+  app.get("start").emit("click");
+  app.mission({state:8});
+  app.advance(); app.advance();
+  assert.equal(app.get("objective").textContent,"Answer the phone");
+  assert.equal(app.get("departure").hidden,true);
+  assert.equal(app.get("action").hidden,true);
+  app.mission({cue:6});
+  app.advance();
+  assert.equal(app.get("action").attributes.get("aria-label"),"Answer phone");
+  assert.equal(app.get("action-icon").attributes.get("href"),"#icon-phone");
+  assert.equal(app.get("action").hidden,false);
 });

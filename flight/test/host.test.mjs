@@ -403,10 +403,10 @@ test("the cockpit shell is cache-busted without changing the engine revision", a
   const sim = mock();
   await sim.ready;
   const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
-  assert.match(html, /href="\.\/style\.css\?v=cockpit-v1"/);
-  assert.match(html, /src="\.\/host\.mjs\?v=cockpit-v1"/);
+  assert.match(html, /href="\.\/style\.css\?v=cockpit-v2"/);
+  assert.match(html, /src="\.\/host\.mjs\?v=cockpit-v2"/);
   assert.deepEqual(sim.called.requests.map((url) => [url.pathname.split("/").at(-1), url.search]),
-    [["flight.wasm", "?v=wayfind-v1"]]);
+    [["flight.wasm", "?v=marker-v1"]]);
 });
 
 test("the live cockpit keeps the objective visible and puts longer help behind pause", async () => {

@@ -823,3 +823,78 @@ assert.deepEqual(torsoGroundPoint(), blocked, 'the blocking wall prevents travel
 assert.equal(avatarUploads, blockedUploads, 'held input at a wall does not keep submitting gait frames');
 control(0, 0);
 console.log('Verified Wosy sprint and normalized diagonal strides, and no false gait at contact.');
+
+assert.equal(cycle_camera(), 0);
+generate(42);
+reset_camera();
+look(0.72664234 / 0.0034, 0);
+assert.equal(cycle_camera(), 1);
+control(7, 1);
+control(7, 0);
+control(4, 1);
+steps(54);
+control(4, 0);
+assert.equal(frame.values[22], 1);
+assert(frame.values[17] > 10, 'flight animation fixture clears the ground and surrounding obstacles');
+function bodyCentre(box) {
+  assert.equal(avatar.count, 396, 'flight uses the original articulated mesh budget');
+  const vertices = view(avatar.pointer, avatar.count * 6);
+  return [0, 1, 2].map(axis => {
+    const values = Array.from({length:36}, (_,i) => vertices[(box*36+i)*6+axis]);
+    return (Math.min(...values)+Math.max(...values))/2;
+  });
+}
+function bodyAxis() {
+  const torso = bodyCentre(1);
+  return bodyCentre(0).map((value,i) => value-torso[i]);
+}
+function flyStep(direction) {
+  control(direction, 1);
+  for (let i=0; i<6; i++) tick(.04,.66,1);
+  control(direction, 0);
+  return bodyAxis();
+}
+const hoverAxis = bodyAxis(), flightStartZ = frame.values[18];
+assert(Math.abs(hoverAxis[0])+Math.abs(hoverAxis[2]) < .002, 'vertical ascent keeps neutral lean');
+control(0, 1);
+tick(.04,.66,1);
+const firstLean = bodyAxis()[2];
+for (let i=0; i<5; i++) tick(.04,.66,1);
+control(0, 0);
+const forwardLean = bodyAxis()[2];
+assert(frame.values[18] < flightStartZ-.65 && forwardLean < -.13);
+assert(firstLean < -.035 && firstLean > forwardLean+.035, 'actual forward motion eases into nose-down lean');
+const movedAxis = bodyAxis();
+tick(0,.66,1);
+assert.deepEqual(bodyAxis(), movedAxis, 'zero-time reprojection preserves active lean');
+tick(.04,.66,1);
+assert(bodyAxis()[2] > forwardLean+.035 && bodyAxis()[2] < -.035, 'letting go blends toward hover');
+const reverseAxis = flyStep(1);
+assert(reverseAxis[2] > .13, 'real backward motion leans in the opposite direction');
+const xBeforeBank = frame.values[16];
+const rightAxis = flyStep(3);
+assert(frame.values[16] > xBeforeBank+.65 && rightAxis[0] > .13);
+const leftAxis = flyStep(2);
+assert(leftAxis[0] < -.13, 'left and right movement bank in opposite directions');
+for (let i=0; i<8; i++) tick(.04,.66,1);
+assert(bodyAxis().every((component,i) => Math.abs(component-hoverAxis[i]) < .0001), 'released flight controls return to neutral pose');
+const settled = avatarUploads, settledPose = bodyAxis();
+tick(.04,.66,1);
+assert.equal(avatarUploads, settled, 'neutral hover does not resubmit unchanged mesh');
+assert.equal(cycle_camera(), 0);
+tick(0,.66,1);
+assert.equal(avatar.count,0);
+assert.equal(cycle_camera(), 1);
+tick(0,.66,1);
+assert.deepEqual(bodyAxis(), settledPose, 'camera toggles do not perturb the flight pose');
+control(2, 1);
+for (let i=0; i<190; i++) tick(.04,.66,1);
+assert(frame.values[16] < -19, 'fixture reaches the real flight boundary');
+const pinnedHover = bodyAxis(), pinnedOrigin = frame.values.slice(16,19), pinnedUploads = avatarUploads;
+for (let i=0; i<6; i++) tick(.04,.66,1);
+assert.deepEqual(frame.values.slice(16,19), pinnedOrigin, 'the world boundary prevents further movement');
+assert(Math.abs(pinnedHover[0])+Math.abs(pinnedHover[2]) < .002, 'blocked flight input settles rather than leaning in place');
+assert.deepEqual(bodyAxis(), pinnedHover);
+assert.equal(avatarUploads,pinnedUploads,'blocked flight does not keep submitting avatar meshes');
+control(2, 0);
+console.log('Verified actual-motion flight lean, signed banking, eased hover and avatar publication.');

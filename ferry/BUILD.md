@@ -18,7 +18,7 @@ Serve the repository as static files and open `/ferry/` in a WebGL 2 browser.
 
 Wosy produces the two XYZRGB batches and perspective projection, and owns the
 fixed-step simulation, foot and car movement, traffic, collision responses,
-objective state, and the one-shot action consumed by the next step. Browser
+objective state, ramp boarding, the canal crossing, and disembarking, and the one-shot action consumed by the next step. Browser
 code forwards analog and digital input, displays status, and submits batches
 to WebGL. The lobby illustration is not a gameplay capture or a world asset.
 All world objects with volume are modeled in 3D, not stacked sprites. The
@@ -33,7 +33,25 @@ the western district. The player and traffic share two vehicle substeps per
 fixed simulation tick. Each move sweeps the oriented body along its relative
 translation, keeps the motion up to first contact, and does not step through
 another vehicle. A normal response with a clamped nudge for a car hit by
-traffic leaves available tangential motion rather than reversing the car.
+traffic leaves available tangential motion rather than reversing the car. Northbound traffic
+turns south of the separately marked harbor crosswalk. Physical bollards keep
+the end of the road open for people walking from the vehicle approach to Pier 8.
+The objective marker and compass guide toward that crossing on the west side.
+From the phone, the car faces the southern bypass: the painted edge and
+street lamps lead via the separated western service spur and setback building frontage to parking south of Sunset
+Video. The return uses a marked west-side Park & Walk bay before the traffic
+queue. Its normal curbside action hands off to a highlighted path along
+the west pavement and across the harbor zebra crossing. The original
+boulevard remains an open alternative; the bypass does not change
+traffic, collision or timer rules. After pickup, the footprint action at
+the tape apron can instead mark the foot-only waterfront path. Follow the
+teal pavement stripe around the video shop to the seawall and across the
+same harbor crosswalk. Leaving the stripe area or entering a car resumes
+ordinary guidance without restarting the countdown. Mark Avenue at the
+taxi-side turnaround sign to take the west loop before merging into ordinary
+eastbound traffic. The amber off-lane bay hands off to the existing central
+zebra crossing and on-foot pier approach; the service return remains the
+default. No route changes the clock or grants collision immunity.
 
 ## Browser ABI
 
@@ -48,7 +66,12 @@ traffic leaves available tangential motion rather than reversing the car.
 - Frame length 30: view-projection [0–15], walking/driving [16], mission
   state [17], seconds [18], speed [19], action cue [20], latest contact and
   sequence [21–22], target range and position [23–25], player position
-  [26–27], heading [28], signed turn cue [29].
+  [26–27], heading [28], signed target bearing in radians [29]. Mission states: 0 pickup,
+  1 timed drive/walk to Pier 8, 2 delivered ashore, 3 missed departure,
+  4 free roam, 5 boarding/crossing, 6 docked awaiting disembark,
+  7 walking the far gangway, 8 phone prologue. The phone unlocks the drive-in
+  pickup but does not start the clock. Boarding stops the countdown, and the
+  passenger must leave the ferry to complete the mission.
 
 ## Lobby art
 

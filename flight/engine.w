@@ -498,8 +498,9 @@ unit(i32) crop_markers = fn(n) {
 
 unit(f32,f32,f32,i32,bool) gate_arch = fn(x,y,z,n,cleared) {
 	if (n < 14) {
-		f32 low = float_i(n)*0.44879895-3.14159265;
-		f32 high = wrap(low+0.44879895);
+		f32 start = float_i(n)*0.44879895-3.14159265;
+		f32 low = if (cleared) { start } else { start+0.044 };
+		f32 high = if (cleared) { wrap(start+0.44879895) } else { wrap(start+0.44879895-0.044) };
 		f32 ss = sin_small(low);
 		f32 cs = cos_small(low);
 		f32 es = sin_small(high);
@@ -1414,16 +1415,30 @@ f32(i32,f32,f32) objective_z = fn(stage,x,z) {
 	}
 };
 
+unit(f32,f32,f32,f32,f32,f32,f32) arrow_wing = fn(x,y,z,tx,tz,rx,rz) {
+	f32 tip_x = x+tx*3.1;
+	f32 tip_z = z+tz*3.1;
+	f32 wing_x = x+rx*2.8-tx*2.1;
+	f32 wing_z = z+rz*2.8-tz*2.1;
+	f32 notch_x = x+tx*0.3;
+	f32 notch_z = z+tz*0.3;
+	f32 inner_tip_x = x+tx*2.54;
+	f32 inner_tip_z = z+tz*2.54;
+	f32 inner_wing_x = x+rx*2.17-tx*1.73;
+	f32 inner_wing_z = z+rz*2.17-tz*1.73;
+	f32 inner_notch_x = x+tx*0.75;
+	f32 inner_notch_z = z+tz*0.75;
+	quad(tip_x,y+0.70,tip_z,wing_x,y,wing_z,inner_wing_x,y+0.12,inner_wing_z,inner_tip_x,y+0.61,inner_tip_z,0.035,0.095,0.10);
+	quad(wing_x,y,wing_z,notch_x,y+0.35,notch_z,inner_notch_x,y+0.38,inner_notch_z,inner_wing_x,y+0.12,inner_wing_z,0.035,0.095,0.10);
+	tri(inner_tip_x,y+0.61,inner_tip_z,inner_wing_x,y+0.12,inner_wing_z,inner_notch_x,y+0.38,inner_notch_z,0.28,1.0,0.89);
+};
+
 unit(f32,f32,f32,f32,f32) direction_arrow = fn(x,y,z,dx,dz) {
 	f32 extent = clamp(abs_f(dx)+abs_f(dz),0.01,1500.0);
 	f32 tx = dx/extent;
 	f32 tz = dz/extent;
-	f32 rx = tz;
-	f32 rz = -tx;
-	f32 tip_x = x+tx*3.1;
-	f32 tip_z = z+tz*3.1;
-	quad(tip_x,y+0.44,tip_z,x-rx*2.55-tx*1.95,y,z-rz*2.55-tz*1.95,x,y+0.2,z,x+rx*2.55-tx*1.95,y,z+rz*2.55-tz*1.95,0.05,0.30,0.28);
-	quad(tip_x,y+0.52,tip_z,x-rx*2.12-tx*1.61,y+0.1,z-rz*2.12-tz*1.61,x,y+0.28,z,x+rx*2.12-tx*1.61,y+0.1,z+rz*2.12-tz*1.61,0.28,1.0,0.89);
+	arrow_wing(x,y,z,tx,tz,tz,-tx);
+	arrow_wing(x,y,z,tx,tz,-tz,tx);
 };
 
 unit() flight_guides = fn {
