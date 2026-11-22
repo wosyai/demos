@@ -310,9 +310,8 @@ function bindWater(pointer, count) {
   }
 }
 
-function setStatus(text, kind = "") {
-  status.className = `status ${kind}`;
-  status.replaceChildren(document.createElement("i"), document.createTextNode(` ${text}`));
+function setStatus(text) {
+  if (status.textContent !== text) status.textContent = text;
 }
 
 function refreshAvailability() {
@@ -322,7 +321,7 @@ function refreshAvailability() {
   if (contextLost) setStatus("Restoring graphics");
   else if (!ready) setStatus("Loading engine");
   else {
-    setStatus("Wosy · engine ready", "ready");
+    setStatus("Wosy · engine ready");
     startLoop();
   }
 }
@@ -359,7 +358,7 @@ function fail(message, detail) {
   stopPlaying();
   if (document.pointerLockElement === canvas) document.exitPointerLock();
   enter.disabled = missionStart.disabled = missionRetry.disabled = applySeed.disabled = randomSeed.disabled = true;
-  setStatus("Engine unavailable", "failed");
+  setStatus("Engine unavailable");
   error.textContent = message;
   error.hidden = false;
 }
@@ -765,13 +764,28 @@ get("seed-form").addEventListener("submit", (e) => {
   catch (e) { fail("The engine could not read the seed.", e); }
 });
 randomSeed.addEventListener("click", () => changeSeed(crypto.getRandomValues(new Int32Array(1))[0]));
-get("fullscreen").addEventListener("click", async () => {
+const menuFullscreen = get("menu-fullscreen");
+async function toggleFullscreen(event) {
+  const menu = event.currentTarget === menuFullscreen;
+  function unavailable() {
+    const message = "Full screen is not available in this browser.";
+    if (menu) get("menu-fullscreen-status").textContent = message;
+    else toast(message);
+  }
   try {
+    if (menu) get("menu-fullscreen-status").textContent = "";
     if (document.fullscreenElement) await document.exitFullscreen();
     else if (shell.requestFullscreen) await shell.requestFullscreen();
-    else toast("Full screen is not available in this browser.");
-  } catch { toast("Full screen is not available in this browser."); }
-});
+    else unavailable();
+  } catch {
+    unavailable();
+  }
+}
+get("fullscreen").addEventListener("click", toggleFullscreen);
+if (menuFullscreen) {
+  menuFullscreen.hidden = !document.fullscreenEnabled || !shell.requestFullscreen;
+  menuFullscreen.addEventListener("click", toggleFullscreen);
+}
 
 document.addEventListener("keydown", (e) => {
   if (!playing || e.target instanceof HTMLInputElement) return;

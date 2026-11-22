@@ -7,9 +7,9 @@
 <meta name="description" content="Last Ferry, a playable third-person seaside game made in Wosy.">
 <title>Last Ferry | Wosy Arcade</title>
 <link rel="stylesheet" href="./style.css?v=annex-ferry-v4">
-  <link rel="stylesheet" href="../arcade/shell.css?v=1">
+  <link rel="stylesheet" href="../arcade/shell.css?v=4">
 </head>
-<body>
+<body class="arcade-city">
 <main class="stage" aria-label="Last Ferry">
   <canvas id="view" aria-label="Third-person game view"></canvas>
   <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -49,22 +49,23 @@
       <button id="action" type="button" aria-label="Interact" hidden><svg class="icon" aria-hidden="true"><use id="action-icon" href="#icon-enter"/></svg></button>
     </div>
   </div>
-  <section id="panel" class="lobby" data-intro="true" aria-labelledby="title">
-    <div class="panel-inner">
-      <p class="eyebrow"><i aria-hidden="true"></i> AFTER HOURS · COASTAL TERMINAL</p>
-      <h1 id="title">LAST<br>FERRY<span>.</span></h1>
-      <p id="summary">The last sailing is about to leave. Make it to the ferry before the clock runs out.</p>
+  <section id="panel" class="lobby arcade-stage" data-intro="true" aria-labelledby="title">
+    <nav class="arcade-menu-tools arcade-rail" aria-label="Arcade menu">
+      <a class="arcade-back" href="../" aria-label="Back to Wosy Arcade"><svg class="arcade-tool-icon" aria-hidden="true" focusable="false"><use href="../arcade/icons.svg?v=2#back"></use></svg> Arcade</a>
+      <details class="arcade-settings">
+        <summary><svg class="arcade-tool-icon" aria-hidden="true" focusable="false"><use href="../arcade/icons.svg?v=2#settings"></use></svg> Controls</summary>
+        <div class="arcade-settings-body">
+          <strong>Driving controls</strong><div class="keys"><p id="guide">WASD or arrows to move, Space to brake or sprint, E to interact, C to switch camera, Esc to pause.</p></div>
+        </div>
+      </details>
+    </nav>
+    <div class="panel-inner arcade-copy">
+      <p class="arcade-genre">Night drive</p>
+      <h1 id="title">Last Ferry</h1>
+      <p id="summary" class="arcade-deck">Pick up the tape and make the last sailing.</p>
       <div class="launch"><button id="start" type="button" disabled>Loading…</button><button id="roam" type="button" disabled>Free roam</button></div>
-      <nav class="arcade-menu-tools" aria-label="Arcade menu">
-        <details class="arcade-settings">
-          <summary><svg class="arcade-tool-icon" aria-hidden="true" focusable="false"><use href="../arcade/icons.svg?v=1#settings"></use></svg> Settings</summary>
-          <div class="arcade-settings-body">
-            <div class="keys"><p id="guide">WASD or arrows to move, Space to brake or sprint, E to interact, C to switch camera, Esc to pause.</p></div>
-          </div>
-        </details>
-        <a class="arcade-back" href="../"><svg class="arcade-tool-icon" aria-hidden="true" focusable="false"><use href="../arcade/icons.svg?v=1#back"></use></svg> Back to Wosy Arcade</a>
-      </nav>
     </div>
+    <div class="arcade-cover" aria-hidden="true"><svg><use href="../arcade/covers.svg?v=1#city"></use></svg></div>
   </section>
   <span id="announce" class="sr-only" aria-live="polite"></span>
 </main>

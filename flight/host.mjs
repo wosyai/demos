@@ -362,6 +362,11 @@ export function bootFlight(win, doc) {
     if (!active) { callout.hidden = true; setText(flightCue, ""); }
     hud.inert = Boolean(modal);
   }
+  function setEngineStatus(message) {
+    setText(status, message);
+    const launchStatus = get("launch-engine");
+    if (launchStatus) setText(launchStatus, message);
+  }
   function failure(message) {
     error = true;
     clearInput();
@@ -370,7 +375,7 @@ export function bootFlight(win, doc) {
     summary.hidden = true;
     setText(problem, message);
     problem.hidden = false;
-    setText(status, "Engine unavailable");
+    setEngineStatus("Engine unavailable");
     capability();
   }
   function provide(buffer) {
@@ -713,7 +718,7 @@ export function bootFlight(win, doc) {
     clearInput();
     if (raf) win.cancelAnimationFrame(raf);
     raf = 0;
-    setText(status, "Restoring graphics");
+    setEngineStatus("Restoring graphics");
     capability();
   });
   canvas.addEventListener("webglcontextrestored", () => {
@@ -724,7 +729,7 @@ export function bootFlight(win, doc) {
       dirty = true;
       if (engine && !loading && framePointer === null) reset(current, mode === "playing");
       if (error) return;
-      setText(status, loading ? "Loading flight engine" : "Wosy engine ready");
+      setEngineStatus(loading ? "Loading flight engine" : "Wosy engine ready");
       capability();
       resumeLoop();
     } catch { failure("Your browser could not restore WebGL. Reload to try again."); }
@@ -746,7 +751,7 @@ export function bootFlight(win, doc) {
       loading = false;
       if (!lost) reset(0, false);
       if (error) return;
-      setText(status, lost ? "Restoring graphics" : "Wosy engine ready");
+      setEngineStatus(lost ? "Restoring graphics" : "Wosy engine ready");
       capability();
       resumeLoop();
     } catch {
