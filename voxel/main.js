@@ -372,7 +372,7 @@ async function boot() {
   }
   try {
     prepareGraphics();
-    const response = await fetch(new URL("./engine.wasm?v=beacon-3", import.meta.url));
+    const response = await fetch(new URL("./engine.wasm?v=beacon-4", import.meta.url));
     if (!response.ok) throw new Error(`Engine not found (HTTP ${response.status}).`);
     const bytes = await response.arrayBuffer();
     const api = {
@@ -425,9 +425,14 @@ function renderControls(flight, grounded, material) {
   displayedFlight = flight;
   displayedGrounded = grounded;
   movementState.textContent = flight ? "Flying" : grounded ? "On foot" : "In the air";
-  jumpTouch.textContent = flight ? "Rise" : "Jump";
+  const jumpLabel = flight ? "Rise" : "Jump";
+  jumpTouch.setAttribute("aria-label", jumpLabel);
+  jumpTouch.setAttribute("title", jumpLabel);
+  shell.classList.toggle("flying", flight);
   descendTouch.hidden = !flight;
-  flightTouch.textContent = flight ? "Stop flight" : "Fly";
+  const flightLabel = flight ? "Stop flight" : "Fly";
+  flightTouch.setAttribute("aria-label", flightLabel);
+  flightTouch.setAttribute("title", flightLabel);
   flightTouch.setAttribute("aria-pressed", String(flight));
 }
 
@@ -463,7 +468,7 @@ function renderMission(state, flame, tide, stock, relay) {
   }
   if (shownWood !== stock) {
     shownWood = stock;
-    bridgeStock.textContent = `Wood: ${stock}`;
+    bridgeStock.textContent = String(stock);
   }
 }
 
@@ -663,7 +668,6 @@ function cycleCamera() {
   try {
     const third = engine.cycle_camera() === 1;
     for (const button of viewButtons) {
-      button.textContent = third ? "View: 3rd" : "View: 1st";
       button.setAttribute("aria-pressed", String(third));
     }
   } catch (e) { fail("The engine could not change the view.", e); }
