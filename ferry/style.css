@@ -45,5 +45,27 @@ h1 span{color:var(--rust)}
 #start{width:auto}
 .touch .pedals[data-foot=true]{grid-template-columns:minmax(90px,140px)}
 .touch .pedals[data-foot=true] #power{display:none}
-.lobby[data-intro=true]{background-image:linear-gradient(100deg,#101d20f7 5%,#152c2dc9 30%,#142b2b08 80%),url("./art/lobby.webp?v=ferry-2");background-size:cover;background-position:center 62%}
+.lobby[data-intro=true]{background-image:linear-gradient(100deg,#101d20f7 5%,#152c2dc9 30%,#142b2b08 80%),url("./art/lobby.webp?v=ferry-6");background-size:cover;background-position:center 62%}
 #action[aria-disabled=true]{opacity:.63}
+
+.symbols{position:absolute;width:0;height:0;overflow:hidden}
+.icon{display:block;width:23px;height:23px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.deck{left:auto;margin-left:max(12px,env(safe-area-inset-left));width:min-content;max-width:calc(100% - max(12px,env(safe-area-inset-left)) - max(12px,env(safe-area-inset-right)));grid-template-columns:minmax(0,1fr) auto auto;gap:9px;padding:5px;background:#102525df}
+.trip,.departure{display:flex;align-items:center;gap:6px;padding-inline:5px}
+.trip strong,.trip span,.departure strong{white-space:nowrap}
+.trip strong{font-size:.88rem}.trip span{font-size:.74rem}
+.trip .icon{width:19px;height:19px;color:var(--amber);transform:rotate(var(--bearing,0deg))}
+.trip:not([data-route=true]) .icon{display:none}
+.departure{min-width:0;letter-spacing:0;color:var(--amber)}
+.departure .icon{width:17px;height:17px}
+.departure strong{font-size:1rem}
+.quiet{display:grid;place-items:center;width:44px;padding:0}
+.pedals{grid-template-columns:repeat(2,minmax(50px,62px))}
+.pedals button{display:grid;place-items:center}
+.touch[data-crossing=true]{display:none}
+.keys summary{cursor:pointer}
+.keys p{margin:.35rem 0}
+@media (pointer:coarse),(any-pointer:coarse){.hint:not([data-notice=true]){display:none}.hint{top:max(68px,calc(env(safe-area-inset-top) + 64px))}}
+@media (max-width:390px){.deck{gap:5px}.trip,.departure{gap:4px;padding-inline:3px}.trip strong{font-size:.78rem}.trip span{font-size:.68rem}}
+
+.touch[data-docked=true] .wheel,.touch[data-docked=true] #power,.touch[data-docked=true] #brake{display:none}

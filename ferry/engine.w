@@ -134,7 +134,7 @@ f32[5][30] buildings = [
     [19.8, 71.0, 8.3, 4.4, 3.4],
     [-103.0,-11.0,19.0,21.0,13.8],[-77.0,-12.0,10.0,15.5,8.9],
     [-54.0,-12.0,15.0,16.3,12.5],[-43.3,8.5,8.9,14.7,17.5],
-    [-96.0,8.1,16.5,14.2,11.6],[-76.7,8.2,10.3,14.0,7.4],
+    [-96.0,8.1,16.5,11.25,11.6],[-76.7,8.2,10.3,11.15,7.4],
     [-54.5,8.8,8.3,13.1,11.9],[-106.0,34.0,17.0,16.5,9.1],
     [-75.0,42.5,7.0,9.0,8.3],[-53.6,34.2,14.1,17.0,12.4],
     [-99.5,63.0,20.0,8.1,6.0],[-75.5,63.1,8.2,8.0,10.9],
@@ -198,11 +198,47 @@ i32 collision_seq = 0;
 i32 stage = 0;
 bool in_car = false;
 bool pending_action = false;
+f32 phone_x = 3.80;
+f32 phone_z = -1.60;
 f32 tape_x = -82.0;
-f32 tape_z = 40.0;
+f32 backstreet_z = -14.25;
+f32 backstreet_x = -60.3;
+f32 shop_service_z = 22.65;
+f32[3][4] pickup_route = [[0.0,-14.25,1.8],[-60.3,-14.25,2.3],[-60.3,22.65,1.6],[-82.0,22.65,2.0]];
+f32[3][7] return_route = [[-102.0,22.65,2.3],[-107.85,32.5,1.8],[-108.4,52.0,1.5],[-106.0,57.15,1.5],
+    [-100.0,58.5,2.0],[-9.0,58.6,2.2],[-5.80,58.6,1.3]];
+f32 park_x = -5.80;
+f32 park_z = 58.60;
+i32 pickup_leg = 0;
+i32 return_leg = 0;
+bool bypass = true;
+bool park_walk = false;
+f32[2][3] waterfront_route = [[-64.8,38.4],[-64.8,73.45],[8.10,73.55]];
+i32 waterfront_leg = -1;
+f32 avenue_prep_x = -79.0;
+f32[3][10] avenue_route = [[-102.0,22.65,2.2],[-107.7,20.8,1.8],[-108.0,17.1,1.8],[-104.5,14.85,1.8],
+    [-100.6,17.65,1.7],[-98.5,22.0,1.7],[-62.8,22.65,2.0],[-59.0,26.9,1.9],[-36.5,27.05,2.0],[-9.5,26.0,1.3]];
+f32[2][4] avenue_foot = [[-9.5,30.2],[3.9,30.2],[3.9,70.7],[8.10,73.55]];
+i32 avenue_leg = -1;
+i32 avenue_walk_leg = -1;
+f32 tape_z = 36.6;
 f32 dock_x = 11.0;
 f32 dock_z = 83.0;
+f32 harbor_traffic_end = 69.9;
+f32 harbor_bollard_z = 72.2;
+f32 harbor_crosswalk_z = 73.55;
 f32 ferry_z = 88.0;
+f32 old_ferry_z = 88.0;
+f32 deck_y = 1.22;
+f32 board_time = 0.0;
+f32 board_x = 0.0;
+f32 board_z = 0.0;
+f32 board_height = 0.01;
+f32 old_board_height = 0.01;
+f32 arrival_z = 116.4;
+f32 far_gangway_x = 14.03;
+f32 far_gangway_start = 124.25;
+f32 far_landing_z = 127.1;
 f32 dt_step = 0.016666667;
 f32 dt_vehicle = 0.008333333;
 
@@ -309,6 +345,12 @@ unit(i32) crosswalk = fn(i) {
         f32 x=-3.85+0.89*float_i(i);
         ground(x,29.1,0.47,2.15,0.024,0.91,0.83,0.70);
         ground(x,57.5,0.47,2.15,0.024,0.91,0.83,0.70);
+        ground(x,harbor_crosswalk_z-0.44,0.47,0.88,0.035,0.83,0.91,0.70);
+        if (i<5) {
+            f32 post_x=-3.8+1.9*float_i(i);
+            box(post_x-0.12,0.02,harbor_bollard_z-0.12,0.24,0.80,0.24,0.38,0.60,0.57);
+            box(post_x-0.13,0.69,harbor_bollard_z-0.13,0.26,0.12,0.26,0.98,0.84,0.48);
+        };
         crosswalk(i+1);
     };
 };
@@ -490,6 +532,19 @@ unit() render_world = fn {
     ground(10.3,6.4,4.3,68.3,0.016,0.78,0.65,0.53);
     ground(-111.0,71.3,146.0,3.65,0.022,0.54,0.47,0.50);
     ground(7.0,74.92,8.0,11.4,0.023,0.52,0.37,0.39);
+    ground(-14.0,125.0,50.0,20.0,0.025,0.38,0.34,0.43);
+    ground(6.85,124.55,8.38,6.10,0.12,0.57,0.42,0.41);
+    box(3.56,0.0,-0.99,0.48,1.54,0.44,0.40,0.42,0.49);
+    box(3.47,1.08,-1.09,0.66,0.60,0.40,0.27,0.46,0.54);
+    box(3.53,1.25,-1.13,0.37,0.22,0.05,0.78,0.88,0.67);
+    box(7.30,0.0,125.1,0.28,3.8,0.30,0.43,0.39,0.46);
+    box(14.42,0.0,125.1,0.28,3.8,0.30,0.43,0.39,0.46);
+    box(7.30,3.72,125.1,7.40,0.23,0.30,0.92,0.69,0.39);
+    box(7.90,2.37,125.05,0.35,0.48,0.32,1.0,0.75,0.36);
+    box(13.75,2.37,125.05,0.35,0.48,0.32,1.0,0.75,0.36);
+    ground(-85.0,34.6,6.1,5.2,0.036,0.32,0.27,0.38);
+    ground(-85.0,34.6,0.12,5.2,0.041,0.95,0.67,0.40);
+    ground(-79.02,34.6,0.12,5.2,0.041,0.95,0.67,0.40);
     ground(-3.0,76.0,9.6,1.15,-0.02,0.31,0.58,0.72);
     ground(15.6,79.0,21.0,1.1,-0.02,0.31,0.58,0.72);
     ground(-34.0,83.2,24.0,0.8,-0.02,0.30,0.59,0.73);
@@ -498,6 +553,63 @@ unit() render_world = fn {
     draw_palms(0);
     paint_road(0);
     crosswalk(0);
+    ground(-110.52,12.25,13.55,12.90,0.021,0.30,0.31,0.39);
+    ground(-110.29,13.00,0.17,9.35,0.032,0.96,0.68,0.41);
+    ground(-107.3,13.35,6.1,0.16,0.032,0.96,0.68,0.41);
+    ground(-103.75,15.1,1.30,0.25,0.036,0.99,0.76,0.48);
+    ground(avenue_prep_x-2.65,shop_service_z-1.18,5.3,0.13,0.036,0.99,0.76,0.48);
+    ground(avenue_prep_x-2.65,shop_service_z+1.05,5.3,0.13,0.036,0.99,0.76,0.48);
+    ground(avenue_prep_x-0.98,shop_service_z-0.10,1.76,0.20,0.046,0.99,0.76,0.48);
+    ground(avenue_prep_x+0.47,shop_service_z-0.33,0.40,0.66,0.046,0.99,0.76,0.48);
+    ground(avenue_prep_x+0.87,shop_service_z-0.18,0.33,0.36,0.046,0.99,0.76,0.48);
+    ground(-82.85,24.63,0.60,0.18,0.046,0.99,0.76,0.48);
+    ground(-83.35,24.36,0.56,0.16,0.046,0.99,0.76,0.48);
+    box(-84.05,0.02,24.72,0.15,1.84,0.15,0.41,0.48,0.49);
+    box(-84.24,1.55,24.68,0.57,0.43,0.21,0.92,0.61,0.39);
+    box(-84.15,1.67,24.66,0.29,0.06,0.25,0.30,0.28,0.42);
+    box(-84.15,1.67,24.66,0.06,0.19,0.25,0.30,0.28,0.42);
+    box(-84.15,1.80,24.66,0.31,0.06,0.25,0.30,0.28,0.42);
+    ground(-12.25,24.78,5.5,2.48,0.043,0.41,0.41,0.44);
+    ground(-12.25,25.00,5.5,0.13,0.048,0.96,0.68,0.41);
+    ground(-12.25,27.08,5.5,0.13,0.048,0.96,0.68,0.41);
+    ground(-10.05,27.30,0.80,3.00,0.047,0.67,0.75,0.59);
+    ground(3.88,30.27,0.13,40.48,0.044,0.70,0.75,0.58);
+    box(-12.12,0.02,28.03,0.14,1.69,0.14,0.37,0.44,0.49);
+    box(-12.32,1.38,27.99,0.56,0.52,0.20,0.94,0.63,0.38);
+    ground(-81.5,36.94,16.36,0.19,0.044,0.47,0.83,0.75);
+    ground(-64.90,38.4,0.20,34.92,0.043,0.47,0.83,0.75);
+    ground(-64.95,73.35,69.18,0.19,0.042,0.47,0.83,0.75);
+    ground(-77.80,37.17,0.20,0.42,0.049,0.58,0.95,0.84);
+    ground(-77.46,37.25,0.20,0.42,0.049,0.58,0.95,0.84);
+    ground(-64.98,39.67,0.20,0.42,0.049,0.58,0.95,0.84);
+    ground(-64.64,39.76,0.20,0.42,0.049,0.58,0.95,0.84);
+    ground(-63.75,73.18,0.42,0.20,0.049,0.58,0.95,0.84);
+    ground(-63.66,72.84,0.42,0.20,0.049,0.58,0.95,0.84);
+    ground(-63.20,backstreet_z-1.77,68.0,3.54,0.019,0.27,0.30,0.37);
+    ground(-63.10,backstreet_z+1.48,68.0,0.12,0.028,0.67,0.85,0.71);
+    ground(-103.85,shop_service_z-2.45,47.79,4.90,0.021,0.27,0.30,0.37);
+    ground(-103.85,shop_service_z-2.22,47.79,0.12,0.029,0.67,0.85,0.71);
+    ground(-84.40,shop_service_z+2.15,5.6,0.38,0.026,0.46,0.69,0.62);
+    box(backstreet_x-0.14,0.0,backstreet_z-1.69,0.25,1.88,0.25,0.37,0.62,0.59);
+    box(backstreet_x-0.25,1.58,backstreet_z-1.74,0.54,0.25,0.33,0.88,0.95,0.68);
+    box(-84.12,0.0,shop_service_z+1.38,0.23,1.65,0.21,0.37,0.61,0.57);
+    box(-84.28,1.44,shop_service_z+1.37,0.52,0.22,0.30,0.9,0.91,0.61);
+    ground(-108.48,27.1,0.16,28.0,0.034,0.55,0.85,0.72);
+    ground(-105.8,58.2,98.3,0.16,0.038,0.62,0.86,0.70);
+    ground(park_x-2.35,park_z-1.06,4.7,2.12,0.042,0.30,0.45,0.44);
+    ground(park_x-2.35,park_z+0.95,4.7,0.12,0.048,0.91,0.87,0.61);
+    ground(park_x-2.35,park_z-1.06,4.7,0.12,0.048,0.91,0.87,0.61);
+    ground(-5.0,60.05,0.90,13.80,0.042,0.45,0.64,0.55);
+    box(park_x-1.35,0.03,park_z+1.48,0.14,1.95,0.14,0.33,0.50,0.47);
+    box(park_x-1.58,1.62,park_z+1.44,0.62,0.64,0.19,0.30,0.61,0.61);
+    box(park_x-1.45,1.72,park_z+1.42,0.076,0.40,0.025,1.0,0.91,0.67);
+    box(park_x-1.45,2.04,park_z+1.42,0.34,0.076,0.025,1.0,0.91,0.67);
+    box(park_x-1.45,1.86,park_z+1.42,0.34,0.077,0.025,1.0,0.91,0.67);
+    box(park_x-1.19,1.86,park_z+1.42,0.079,0.26,0.025,1.0,0.91,0.67);
+    ground(-4.72,harbor_crosswalk_z-0.52,0.81,1.04,0.039,0.48,0.87,0.72);
+    ground(4.02,harbor_crosswalk_z-0.52,4.60,1.04,0.039,0.48,0.87,0.72);
+    box(8.50,0.0,harbor_crosswalk_z-0.56,0.21,1.40,0.21,0.36,0.63,0.62);
+    box(8.47,1.18,harbor_crosswalk_z-0.59,0.27,0.22,0.27,0.83,0.98,0.66);
     box(7.01,0.1,61.3,0.34,0.95,0.34,0.97,0.65,0.34);
     box(9.0,0.1,61.3,0.34,0.95,0.34,0.97,0.65,0.34);
     box(11.0,0.1,61.3,0.34,0.95,0.34,0.97,0.65,0.34);
@@ -546,7 +658,14 @@ bool(f32,f32,f32) bollard_hit = fn(x,z,r) {
         sq(z-61.47)+sq(x-9.17)<sq(r+0.22) ||
         sq(z-61.47)+sq(x-11.17)<sq(r+0.22) ||
         sq(z-61.47)+sq(x-13.17)<sq(r+0.22)
-    } else { false }
+    } else {
+        if (abs_f(z-harbor_bollard_z)<r+0.17 && abs_f(x)<4.0+r) {
+            f32 z2=sq(z-harbor_bollard_z);
+            f32 reach=sq(r+0.17);
+            z2+sq(x+3.8)<reach || z2+sq(x+1.9)<reach || z2+sq(x)<reach ||
+            z2+sq(x-1.9)<reach || z2+sq(x-3.8)<reach
+        } else { false }
+    }
 };
 
 i32(f32,f32,f32,bool) static_hit = fn(x,z,r,vehicle) {
@@ -792,7 +911,7 @@ unit(i32) move_traffic = fn(i) {
         f32 displacement=sign*traffic[n][3]*dt_vehicle;
         f32 next=along+displacement;
         f32 lo=if (west) { -108.0 } else { -13.0 };
-        f32 hi=if (west) { -35.0 } else { 72.0 };
+        f32 hi=if (west) { -35.0 } else { harbor_traffic_end };
         if (next>hi || next<lo) {
             f32 lane=if (west) { if (sign>0.0) { 31.02 } else { 27.05 } } else { if (sign>0.0) { -2.0 } else { 2.0 } };
             if ((abs_f(pd)>7.0 || abs_f(pcross)>4.0) &&
@@ -944,15 +1063,114 @@ unit(f32,f32,i32) walk = fn(strafe,drive,fast) {
 
 f32() player_x = fn { if (in_car) { car_x } else { foot_x } };
 f32() player_z = fn { if (in_car) { car_z } else { foot_z } };
-i32() cue = fn {
-    if (stage==2 || stage==3) { 0 } else {
-        if (!in_car && stage==0 && sq(foot_x-tape_x)+sq(foot_z-tape_z)<5.29) { 3 }
-        else {
-            if (!in_car && stage==1 && sq(foot_x-dock_x)+sq(foot_z-dock_z)<5.29) { 4 }
+bool() follows_backstreet = fn { in_car && bypass };
+bool() follows_return = fn { in_car && bypass && pickup_leg==3 };
+unit() advance_car_route = fn {
+    if (in_car && bypass) {
+        if (stage==0) {
+            if (pickup_leg==0 && car_z>3.0) { bypass=false; }
             else {
-                if (in_car) { if (length(vx,vz)<2.9) { 2 } else { 0 } }
+                u64 leg=ix(pickup_leg);
+                if (pickup_leg<3 && sq(car_x-pickup_route[leg][0])+sq(car_z-pickup_route[leg][1])<sq(pickup_route[leg][2])) {
+                    pickup_leg=pickup_leg+1;
+                };
+            };
+        };
+        if (stage==1 && pickup_leg==3 && return_leg<6) {
+            u64 leg=ix(return_leg);
+            if (sq(car_x-return_route[leg][0])+sq(car_z-return_route[leg][1])<sq(return_route[leg][2])) {
+                return_leg=return_leg+1;
+            };
+        };
+    };
+};
+f32() tape_guide_x = fn { if (follows_backstreet()) { pickup_route[ix(pickup_leg)][0] } else { tape_x } };
+f32() tape_guide_z = fn { if (follows_backstreet()) { pickup_route[ix(pickup_leg)][1] } else { tape_z } };
+bool() at_park_handoff = fn {
+    stage==1 && return_leg==6 && follows_return() && car_x>park_x-1.6 && car_x< -5.35 && abs_f(car_z-park_z)<1.0
+};
+bool() uses_park_exit = fn { !in_car && park_walk && foot_z<61.9 && foot_x< -4.3 };
+bool() uses_harbor_walk = fn { !in_car && foot_z>61.4 && foot_x<7.85 };
+unit() advance_waterfront = fn {
+    if (stage==1 && !in_car && waterfront_leg>=0) {
+        bool left_path=if (waterfront_leg==0) { foot_x< -84.6 || foot_z<34.4 || foot_z>40.5 }
+        else {
+            if (waterfront_leg==1) { foot_x< -67.0 || foot_x> -62.6 || foot_z<36.6 }
+            else { foot_z<72.1 }
+        };
+        if (left_path) { waterfront_leg=-1; }
+        else {
+            u64 leg=ix(waterfront_leg);
+            if (sq(foot_x-waterfront_route[leg][0])+sq(foot_z-waterfront_route[leg][1])<0.36) {
+                waterfront_leg=if (waterfront_leg==2) { -1 } else { waterfront_leg+1 };
+            };
+        };
+    };
+};
+bool() at_avenue_handoff = fn {
+    stage==1 && in_car && avenue_leg==9 && abs_f(car_x+9.5)<1.55 && abs_f(car_z-26.0)<0.95
+};
+unit() advance_avenue = fn {
+    if (stage==1 && avenue_leg>=0) {
+        if (in_car) {
+            if (avenue_leg<6 && car_x> -73.0) { avenue_leg=-1; }
+            else {
+                if (avenue_leg<9) {
+                    u64 leg=ix(avenue_leg);
+                    bool in_slot=sq(car_x-avenue_route[leg][0])+sq(car_z-avenue_route[leg][1])<sq(avenue_route[leg][2]);
+                    if (in_slot && (avenue_leg!=5 || car_z>21.6)) { avenue_leg=avenue_leg+1; };
+                };
+            };
+        } else {
+            if (foot_x< -87.0 || foot_x> -77.0 || foot_z<19.8 || foot_z>28.9) { avenue_leg=-1; };
+        };
+    };
+    if (stage==1 && !in_car && avenue_walk_leg>=0) {
+        u64 leg=ix(avenue_walk_leg);
+        if (sq(foot_x-avenue_foot[leg][0])+sq(foot_z-avenue_foot[leg][1])<0.36) {
+            avenue_walk_leg=if (avenue_walk_leg==3) { -1 } else { avenue_walk_leg+1 };
+        };
+    };
+};
+f32() pier_guide_x = fn {
+    if (avenue_leg>=0) { if (in_car) { avenue_route[ix(avenue_leg)][0] } else { car_x } }
+    else { if (avenue_walk_leg>=0) { avenue_foot[ix(avenue_walk_leg)][0] }
+    else { if (waterfront_leg>=0) { waterfront_route[ix(waterfront_leg)][0] }
+    else { if (uses_park_exit()) { -4.55 } else {
+        if (uses_harbor_walk()) {
+            if (foot_x<3.45 && foot_z<harbor_crosswalk_z-0.40) { -4.55 } else { 8.10 }
+        } else { if (follows_return()) { return_route[ix(return_leg)][0] } else { dock_x } }
+    } } } }
+};
+f32() pier_guide_z = fn {
+    if (avenue_leg>=0) { if (in_car) { avenue_route[ix(avenue_leg)][1] } else { car_z } }
+    else { if (avenue_walk_leg>=0) { avenue_foot[ix(avenue_walk_leg)][1] }
+    else { if (waterfront_leg>=0) { waterfront_route[ix(waterfront_leg)][1] }
+    else { if (uses_park_exit()) { 62.10 } else {
+        if (uses_harbor_walk()) { harbor_crosswalk_z }
+        else { if (follows_return()) { return_route[ix(return_leg)][1] } else { dock_z } }
+    } } } }
+};
+bool() avenue_prepared = fn {
+    abs_f(car_x-avenue_prep_x)<0.85 && abs_f(car_z-shop_service_z)<0.40 &&
+        sin_small(car_yaw)>0.994 && abs_f(cos_small(car_yaw))<0.10 && sq(vx)+sq(vz)<0.04
+};
+i32() cue = fn {
+    if (stage==6) { 5 } else {
+        if (stage==2 || stage==3 || stage==5 || stage==7) { 0 } else {
+            if (!in_car && stage==8 && sq(foot_x-phone_x)+sq(foot_z-phone_z)<3.24) { 6 }
+            else {
+                if (!in_car && stage==0 && sq(foot_x-tape_x)+sq(foot_z-tape_z)<5.29) { 3 }
                 else {
-                    if (sq(foot_x-car_x)+sq(foot_z-car_z)<10.24) { 1 } else { 0 }
+                    if (!in_car && stage==1 && sq(foot_x-dock_x)+sq(foot_z-dock_z)<5.29) { 4 }
+                    else {
+                        if (!in_car && stage==1 && waterfront_leg<0 && sq(foot_x-tape_x)+sq(foot_z-tape_z)<4.0) { 8 }
+                        else {
+                            if (!in_car && stage==1 && avenue_leg<0 && sq(foot_x+83.2)+sq(foot_z-24.75)<1.44 &&
+                                ((abs_f(car_x+82.0)<2.8 && abs_f(car_z-shop_service_z)<1.9 && sin_small(car_yaw)< -0.77) || avenue_prepared())) { 9 }
+                            else { if (in_car) { if (length(vx,vz)<2.9) { if (at_park_handoff() || at_avenue_handoff()) { 7 } else { 2 } } else { 0 } }
+                        else { if (sq(foot_x-car_x)+sq(foot_z-car_z)<10.24) { 1 } else { 0 } } } }
+                    }
                 }
             }
         }
@@ -960,22 +1178,40 @@ i32() cue = fn {
 };
 unit() interact = fn {
     i32 what=cue();
-    if (what==1) { in_car=true; }
+    if (what==9) { avenue_leg=if (avenue_prepared()) { 6 } else { 0 }; waterfront_leg=-1; }
+    else { if (what==8) { waterfront_leg=0; avenue_leg=-1; }
+    else { if (what==1) { in_car=true; park_walk=false; waterfront_leg=-1; avenue_walk_leg=-1; }
     else {
-        if (what==2) {
+        if (what==2 || what==7) {
+            bool avenue_exit=what==7 && at_avenue_handoff();
             f32 c=cos_small(car_yaw); f32 s=sin_small(car_yaw);
-            f32 ax=car_x+c*1.6; f32 az=car_z-s*1.6;
-            f32 bx=car_x-c*1.6; f32 bz=car_z+s*1.6;
+            f32 door=if (what==7 && s>0.0) { -1.6 } else { 1.6 };
+            f32 ax=car_x+c*door; f32 az=car_z-s*door;
+            f32 bx=car_x-c*door; f32 bz=car_z+s*door;
             if (on_foot_clear(ax,az)) { foot_x=ax; foot_z=az; in_car=false; }
             else {
                 if (on_foot_clear(bx,bz)) { foot_x=bx; foot_z=bz; in_car=false; };
             };
-            if (!in_car) { vx=0.0; vz=0.0; foot_speed=0.0; foot_yaw=car_yaw; };
+            if (!in_car) {
+                vx=0.0; vz=0.0; foot_speed=0.0; foot_yaw=car_yaw;
+                park_walk=what==7 && !avenue_exit;
+                avenue_walk_leg=if (avenue_exit) { 0 } else { -1 };
+                avenue_leg=-1;
+            };
         } else {
             if (what==3) { stage=1; }
-            else { if (what==4) { stage=2; }; };
+            else {
+                if (what==4) {
+                    stage=5;
+                    board_time=0.0; board_x=foot_x; board_z=foot_z;
+                    foot_speed=0.0; foot_yaw=0.0;
+                } else {
+                    if (what==5) { stage=7; board_time=0.0; board_x=foot_x; board_z=foot_z; }
+                    else { if (what==6) { stage=0; }; };
+                };
+            };
         };
-    };
+    }; }; };
 };
 
 f32(f32,f32,f32,f32,f32,i32) clear_boom = fn(x,z,dx,dz,limit,i) {
@@ -1009,7 +1245,9 @@ unit() camera_step = fn {
     f32 dist=clear_boom(sx,sz,-hx,-hz,goal,0);
     camera_x=sx-dist*hx;
     camera_z=sz-dist*hz;
-    camera_y=blend(camera_y,if (dist<3.8) { 2.35 } else { if (in_car) { 4.2 } else { 3.9 } },0.38);
+    f32 camera_deck=if (stage==5 || stage==6 || stage==7 || stage==2) { board_height } else { 0.0 };
+    f32 camera_base=if (dist<3.8) { 2.35 } else { if (in_car) { 4.2 } else { 3.9 } };
+    camera_y=blend(camera_y,camera_deck+camera_base,0.38);
     camera_pitch=blend(camera_pitch,if (dist<3.8) { -0.48 } else { if (in_car) { -0.29 } else { -0.25 } },0.22);
 };
 
@@ -1023,6 +1261,7 @@ unit(i32) snapshot_traffic = fn(i) {
 
 unit() snapshot = fn {
     snapshot_traffic(0);
+    old_ferry_z=ferry_z; old_board_height=board_height;
     old_x=car_x; old_z=car_z; old_yaw=car_yaw;
     old_foot_x=foot_x; old_foot_z=foot_z; old_foot_yaw=foot_yaw;
     old_camera_x=camera_x; old_camera_y=camera_y; old_camera_z=camera_z; old_camera_yaw=camera_yaw;
@@ -1033,7 +1272,7 @@ unit(f32,f32,i32) step = fn(steer,drive,flags) {
     i32 begin=stage;
     collision_wait=max_f(0.0,collision_wait-dt_step);
     if (pending_action) { pending_action=false; interact(); };
-    if (stage!=2) {
+    if (stage!=2 && stage!=5 && stage!=6 && stage!=7) {
         if (!in_car) { walk(steer,drive,flags & 1); };
         move_traffic(0);
         if (in_car) { move_vehicle(steer,drive,sin_small(car_yaw),cos_small(car_yaw),flags & 1); };
@@ -1041,12 +1280,38 @@ unit(f32,f32,i32) step = fn(steer,drive,flags) {
         if (in_car) { move_vehicle(steer,drive,sin_small(car_yaw),cos_small(car_yaw),flags & 1); };
         move_peds(0);
         animate_mail(0);
+        advance_car_route();
+        advance_waterfront();
+        advance_avenue();
     };
     if (stage==1 && begin==1) {
         seconds_left=max_f(0.0,seconds_left-dt_step);
         if (seconds_left<=0.0) { stage=3; };
     };
-    if (stage==3) { ferry_z=min_f(114.0,ferry_z+dt_step*3.8); };
+    if (stage==3) { ferry_z=min_f(arrival_z,ferry_z+dt_step*4.0); };
+    if (stage==5) {
+        if (board_time<1.12) {
+            board_time=min_f(1.12,board_time+dt_step);
+            f32 pace=board_time/1.12;
+            foot_x=blend(board_x,dock_x-0.9,pace);
+            foot_z=blend(board_z,ferry_z-1.20,pace);
+            f32 rise=clamp((foot_z-84.10)/2.64,0.0,1.0);
+            board_height=blend(0.01,deck_y,rise);
+        } else {
+            ferry_z=min_f(arrival_z,ferry_z+dt_step*4.35);
+            foot_z=ferry_z-1.20;
+            if (ferry_z>=arrival_z) { stage=6; };
+        };
+    };
+    if (stage==7) {
+        board_time=min_f(3.25,board_time+dt_step);
+        foot_x=blend(board_x,far_gangway_x,clamp(board_time/0.85,0.0,1.0));
+        foot_z=blend(board_z,far_landing_z,clamp((board_time-0.85)/2.40,0.0,1.0));
+        foot_yaw=if (board_time<0.85) { 1.57079633 } else { 0.0 };
+        f32 ramp=clamp((foot_z-far_gangway_start)/1.65,0.0,1.0);
+        board_height=blend(deck_y,0.13,ramp);
+        if (board_time>=3.25) { stage=2; };
+    };
     camera_step();
 };
 
@@ -1150,8 +1415,8 @@ unit(i32) draw_mail = fn(i) {
     };
 };
 
-unit() boat = fn {
-    set_model(11.0,0.0,ferry_z,0.0,0.0);
+unit(f32) boat = fn(alpha) {
+    set_model(11.0,0.0,blend(old_ferry_z,ferry_z,alpha),0.0,0.0);
     box(-3.8,0.00,-2.47,7.6,0.84,10.88,0.28,0.47,0.58);
     box(-3.75,0.79,-2.4,7.5,0.42,10.7,0.95,0.76,0.51);
     box(-3.8,1.21,-2.4,0.14,0.61,10.7,0.93,0.83,0.64);
@@ -1163,7 +1428,12 @@ unit() boat = fn {
     box(2.53,2.23,2.04,0.13,0.75,3.80,0.32,0.57,0.64);
     box(-0.085,3.55,4.12,0.17,1.94,0.17,0.65,0.54,0.48);
     box(-1.13,4.19,4.12,1.12,0.64,0.11,0.94,0.45,0.43);
-    box(-1.45,0.11,-3.70,2.9,0.19,1.31,0.72,0.53,0.42);
+    quad(-1.44,0.04,-3.90,1.44,0.04,-3.90,1.44,1.21,-1.26,-1.44,1.21,-1.26,0.82,0.64,0.45);
+    if (stage==6 || stage==7 || stage==2) {
+        f32 right=far_gangway_x-11.0;
+        f32 start=far_gangway_start-arrival_z;
+        quad(right-0.53,deck_y,start,right+0.53,deck_y,start,right+0.53,0.13,start+1.65,right-0.53,0.13,start+1.65,0.88,0.68,0.48);
+    };
 };
 
 unit(f32,f32,f32,f32,f32) objective = fn(x,z,r,g,b) {
@@ -1210,17 +1480,24 @@ unit(f32) render_moving = fn(alpha) {
     body(0.86,0.26,0.45,brake_mark>0.0);
     if (!in_car) {
         f32 view_foot=wrap(old_foot_yaw+alpha*wrap(foot_yaw-old_foot_yaw));
-        set_model(blend(old_foot_x,foot_x,alpha),0.01,blend(old_foot_z,foot_z,alpha),view_foot,0.0);
-        f32 gait=(foot_x+foot_z)*2.7;
+        bool aboard=stage==5 || stage==6 || stage==7 || stage==2;
+        f32 height=if (aboard) { blend(old_board_height,board_height,alpha) } else { 0.01 };
+        set_model(blend(old_foot_x,foot_x,alpha),height,blend(old_foot_z,foot_z,alpha),view_foot,0.0);
+        f32 gait=if (stage==2 || stage==6 || (stage==5 && board_time>=1.12)) { 0.0 } else { (foot_x+foot_z)*2.7 };
         person(0.36,0.83,0.76,wrap(gait-6.2831853*float_i(core.float_to_sint_trunc<i32>(gait/6.2831853))));
     };
     draw_traffic(0,alpha);
     draw_mail(0);
     draw_peds(0);
-    boat();
+    boat(alpha);
     model_local=false;
-    if (stage==0) { objective(tape_x,tape_z,1.0,0.63,0.35); };
-    if (stage==1) { objective(dock_x,dock_z,0.47,0.99,0.78); };
+    if (stage==8) { objective(phone_x,phone_z,1.0,0.77,0.40); };
+    if (stage==0) {
+        if (follows_backstreet()) { objective(tape_guide_x(),tape_guide_z(),0.85,0.95,0.60); }
+        else { objective(tape_x,tape_z,1.0,0.63,0.35); };
+    };
+    if (stage==1) { objective(pier_guide_x(),pier_guide_z(),0.47,0.99,0.78); };
+    if (stage==5 || stage==6) { objective(far_gangway_x,far_landing_z,0.88,0.93,0.61); };
     shadow_pass=true;
     set_model(blend(old_x,car_x,alpha),0.031,blend(old_z,car_z,alpha),vis_yaw,0.0);
     shadow_arc(0);
@@ -1251,8 +1528,8 @@ unit(f32) render_frame = fn(alpha) {
     display[14]=offset*nf-0.30012;
     display[15]=offset;
     f32 px=player_x(); f32 pz=player_z();
-    f32 tx=if (stage==0) { tape_x } else { if (stage==1) { dock_x } else { px } };
-    f32 tz=if (stage==0) { tape_z } else { if (stage==1) { dock_z } else { pz } };
+    f32 tx=if (stage==8) { phone_x } else { if (stage==0) { tape_guide_x() } else { if (stage==1) { pier_guide_x() } else { px } } };
+    f32 tz=if (stage==8) { phone_z } else { if (stage==0) { tape_guide_z() } else { if (stage==1) { pier_guide_z() } else { pz } } };
     f32 dx=tx-px; f32 dz=tz-pz;
     f32 heading=if (in_car) { car_yaw } else { 0.0 };
     f32 hs=sin_small(heading); f32 hc=cos_small(heading);
@@ -1268,7 +1545,7 @@ unit(f32) render_frame = fn(alpha) {
     display[23]=length(dx,dz);
     display[24]=tx; display[25]=tz; display[26]=px; display[27]=pz;
     display[28]=heading;
-    display[29]=if (stage>1 || length(dx,dz)<0.25) { 0.0 } else {
+    display[29]=if ((stage>1 && stage!=8) || length(dx,dz)<0.25) { 0.0 } else {
         if (ahead<=0.0) { if (side<0.0) { -1.0 } else { 1.0 } }
         else { clamp(side*1.3/ahead,-1.0,1.0) }
     };
@@ -1297,20 +1574,23 @@ unit() cancel_action = fn { pending_action=false; };
 
 unit(i32) reset = fn(mode) {
     if (!world_ready) { render_world(); };
-    stage=if (mode==1) { 4 } else { 0 };
+    stage=if (mode==1) { 4 } else { 8 };
     in_car=false; pending_action=false; seconds_left=90.0; accumulator=0.0;
+    bypass=true; park_walk=false; waterfront_leg=-1; avenue_leg=-1; avenue_walk_leg=-1; pickup_leg=0; return_leg=0;
     collision_wait=0.0; collision_kind=0; collision_seq=0;
-    car_x=0.0; car_z=-5.0; car_yaw=0.0; vx=0.0; vz=0.0; brake_mark=0.0; car_roll=0.0;
+    car_x=0.0; car_z=if (mode==1) { -5.0 } else { -7.0 };
+    car_yaw=if (mode==1) { 0.0 } else { 3.14159265 };
+    vx=0.0; vz=0.0; brake_mark=0.0; car_roll=0.0;
     foot_x=2.1; foot_z=-4.6; foot_speed=0.0; foot_yaw=0.0;
     camera_x=2.1; camera_z=-11.6; camera_y=3.9; camera_yaw=0.0; camera_pitch=-0.25;
-    ferry_z=88.0;
+    ferry_z=88.0; board_time=0.0; board_height=0.01;
     reset_props(0); snapshot();
     render_moving(1.0); render_frame(1.0);
 };
 
 unit(f32,f32,f32,i32,f32) tick = fn(dt,steer,drive,controls,aspect) {
     if (aspect>=0.25 && aspect<=4.0) { viewport=aspect; };
-    if ((controls & 2)!=0 && stage!=2 && stage!=3) {
+    if ((controls & 2)!=0 && stage!=2 && stage!=3 && stage!=5 && stage!=7) {
         pending_action=true;
     };
     f32 safe_dt=if (dt>=0.0 && dt<=1.0) { min_f(dt,0.10) } else { 0.0 };
