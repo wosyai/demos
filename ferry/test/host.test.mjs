@@ -30,7 +30,7 @@ test("pedals and one-shot action coexist with analog steering; keyboard axis pre
 test("loader agrees with shell version, WebAssembly triangle shape, and 30-float engine frame",async()=>{
   const html=await readFile(new URL("../index.html",import.meta.url),"utf8");
   const version=html.match(/host\.mjs\?v=([^"]+)/)?.[1];
-  assert.equal(version,"ferry-annex-middle-v1");
+  assert.equal(version,"ferry-dusk-materials-v1");
   assert(html.includes("style.css?v=ferry-mobile-hud-v5"));
   assert.equal(ENGINE_PATH,`./ferry.wasm?v=${version}`);
   assert.match(html,/<div id="play-hud" class="play-hud" hidden>[\s\S]*?<header[^>]*>[\s\S]*?id="camera-view"[\s\S]*?id="hint"[\s\S]*?<\/header>[\s\S]*?id="city-map"/);
@@ -43,6 +43,11 @@ test("loader agrees with shell version, WebAssembly triangle shape, and 30-float
   assert.throws(()=>frameData(memory,1,30,"frame"));
   assert.throws(()=>frameData(memory,65532,18,"world"));
   assert.throws(()=>frameData(memory,0,17,"moving"));
+  const larger=new WebAssembly.Memory({initial:16});
+  assert.equal(frameData(larger,0,9*4096*6,"world").length,9*4096*6);
+  assert.throws(()=>frameData(larger,0,9*4096*6+18,"world"));
+  assert.equal(frameData(larger,0,24*256*6,"moving").length,24*256*6);
+  assert.throws(()=>frameData(larger,0,24*256*6+18,"moving"));
 });
 
 function shell({defer=false,missing="",cue=1}={}) {

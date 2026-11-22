@@ -23,7 +23,7 @@ function verifyBearing(s) {
   if (s[16]===0) walkingBearingSamples++;
   else drivingBearingSamples++;
 }
-const WORLD_FLOATS=8*4096*6;
+const WORLD_FLOATS=9*4096*6;
 const MOVING_FLOATS=24*256*6;
 function view(pointer, count, max, stride) {
   assert(Number.isInteger(pointer) && pointer >= 0 && pointer % 4 === 0);
@@ -35,7 +35,11 @@ function view(pointer, count, max, stride) {
 engine = new WebAssembly.Instance(binary, { ferry: {
   frame(p,n) { assert.equal(n,30); frame=view(p,n,30,1).slice(); assert(frame.every(Number.isFinite)); verifyBearing(frame); },
   world(p,n) { worldSends++; assert(n>120000); assert(view(p,n,WORLD_FLOATS,18).every(Number.isFinite)); world=[p,n]; },
-  moving(p,n) { view(p,n,MOVING_FLOATS,18); moving=[p,n]; },
+  moving(p,n) {
+    view(p,n,MOVING_FLOATS,18);
+    assert(world&&(world[0]+world[1]*4<=p||p+n*4<=world[0]),"reported world and moving callback byte ranges never overlap");
+    moving=[p,n];
+  },
 }}).exports;
 
 const step = 1 / 60;
@@ -156,8 +160,43 @@ if (process.argv[3]) {
   }}).exports;
   base._start(); base.reset(0);
   assert(previous && scenery.length>previous.length,"annex adds drawable geometry");
-  assert.deepEqual(scenery.subarray(0,previous.length),previous,"previous city mesh is byte-for-byte unchanged");
+  for(let i=0;i<previous.length;i+=6) {
+    for(const lane of [0,1,2,4,5]) assert.equal(scenery[i+lane],previous[i+lane],"previous city geometry and color lanes are preserved");
+    const raw=scenery[i+3], decoded=raw-2*Math.floor(raw/2);
+    assert(Math.abs(decoded-previous[i+3])<.000001,"only the explicit material band changes the previous red lane");
+  }
 }
+const materialCount=Array(6).fill(0), bulbs=[], pools=[];
+for(let i=0;i<scenery.length;i+=18) {
+  const tag=Math.floor(scenery[i+3]/2);
+  assert(tag>=0&&tag<materialCount.length);
+  for(const j of [0,6,12]) {
+    assert.equal(Math.floor(scenery[i+j+3]/2),tag,"one explicit band per triangle");
+    assert(scenery[i+j+5]>=0,"static paint does not use the contact-shadow channel");
+    if(tag===5) bulbs.push([scenery[i+j],scenery[i+j+1],scenery[i+j+2]]);
+  }
+  materialCount[tag]++;
+  if(tag===4&&scenery[i+4]>.2) pools.push([scenery[i],scenery[i+2]]);
+}
+assert(materialCount[1]>=48&&materialCount[2]>=60&&materialCount[3]===2);
+assert.equal(materialCount[4],48); assert.equal(materialCount[5],60);
+assert.equal(pools.length,48,"each light-pool triangle has an illuminated center");
+const poolLocations=new Map();
+for(const [x,z] of pools) {
+  const key=[x,z].join(",");
+  poolLocations.set(key,(poolLocations.get(key)??0)+1);
+}
+assert.equal(poolLocations.size,6,"six different lantern positions cast ground light");
+const pairedBulbs=new Set();
+for(const [key,triangles] of poolLocations) {
+  assert.equal(triangles,8,"each lit position has a full falloff fan");
+  const [x,z]=key.split(",").map(Number);
+  const matching=bulbs.filter(([bx,y,bz])=>Math.hypot(bx-x,bz-z)<.21&&y>3.2);
+  assert.equal(matching.length,30,"each pool is directly under one emissive box (5 faces, 10 triangles, 30 vertex records)");
+  assert(matching.every(bulb=>!pairedBulbs.has(bulb)),"separate pools point to separate lamps");
+  for(const bulb of matching) pairedBulbs.add(bulb);
+}
+assert.equal(pairedBulbs.size,180,"every emitted lamp vertex belongs to one of the six distinct matched lamps");
 tick(0,0,0,0,.53);
 assert.notEqual(frame[0],projection); assert.deepEqual(rawMoving(),prior);
 function cameraRoute(wide) {
@@ -513,6 +552,22 @@ function lane(lane,throttle=1,flags=0) {
   tick(steer,throttle,flags);
   assert(bodiesSeparated(),"neither car may step through the other car body");
 }
+function firstRim() {
+  const movingView=rawMoving(), a=30*6,b=31*6;
+  return [movingView[b+1]-movingView[a+1],movingView[b+2]-movingView[a+2]];
+}
+engine.reset(1); mount();
+const idleRim=firstRim();
+run(24,0,0,1);
+assert.deepEqual(firstRim(),idleRim,"parked rim does not spin with elapsed time");
+run(42,0,.42);
+assert(Math.hypot(...firstRim().map((x,i)=>x-idleRim[i]))>.035,"running wheels rotate with real movement");
+run(240,0,0,1);
+const parkedRim=firstRim();
+run(30,0,0,1);
+assert.deepEqual(firstRim(),parkedRim,"stopped rim holds its last physical phase");
+engine.reset(1);
+assert.deepEqual(firstRim(),idleRim,"restart resets rim phase");
 engine.reset(1); mount();
 for(let i=0;i<320;i++)lane(0);
 assert.equal(frame[22],0,"narrow center-line near misses are not false collisions");
