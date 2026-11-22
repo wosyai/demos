@@ -18,7 +18,8 @@ for (const item of imports) {
 let engine;
 let frame, missionFlameFloor = 1;
 let mesh;
-const meshChunks = Array.from({ length: 64 }, () => ({count: 0, hash: "", lantern: []}));
+const absentMeshChunk = Object.freeze({ count: 0, hash: "", lantern: Object.freeze([]) });
+const meshChunks = Array(64).fill(absentMeshChunk);
 const meshPublications = [];
 let water;
 let outline;
@@ -74,8 +75,8 @@ engine = new WebAssembly.Instance(binary, {
           'baked light outside ordinary light or beacon signal bounds');
         if (light > 1) lantern.add(light);
       }
-      meshChunks[chunk] = { ...current, lantern: Array.from(lantern) };
-      meshPublications.push({ chunk, count });
+      meshChunks[chunk] = count === 0 ? absentMeshChunk : { ...current, lantern: Array.from(lantern) };
+      meshPublications.push({ chunk, count, hash: current.hash });
       mesh = { pointer, count: meshChunks.reduce((sum, part) => sum + part.count, 0),
         hash: meshChunks.map((part) => part.hash).join(':') };
     },
@@ -127,7 +128,7 @@ for (const [text, expect] of [
 ]) assert.equal(seed(text, 1), expect, JSON.stringify(text));
 generate(42);
 assert(mesh.count > 0);
-assert.equal(water.count, 7776, 'one continuous sea surface surrounds the island');
+assert.equal(water.count, 3456, 'Creative updates its original continuous sea area only');
 const initialSea = water;
 assert.equal((pick(12.5, 15, 0.5, 0, -1, 0) >>> 6) & 15, 0, 'shore bed should emerge from the sea');
 assert.equal((pick(12.5, 15, 1.5, 0, -1, 0) >>> 6) & 15, 1, 'shore should have a shallow intermediate step');
@@ -354,10 +355,12 @@ assert.equal(frame.values[17], 10);
 assert.equal(frame.values[22], 1, 'an empty world must use a stable flight spawn');
 assert.equal(frame.values[23], 0);
 function renderedSeaAt(x, z) {
-  const data = view(water.pointer, 7776 * 6);
-  const col = Math.min(33, Math.floor((x + 20) / 4));
-  const row = Math.min(33, Math.floor((z + 20) / 4));
-  const cell = ((row + 1) * 36 + col + 1) * 36;
+  const data = view(water.pointer, water.count * 6);
+  const width = Math.sqrt(water.count / 6);
+  assert(width === 24 || width === 36);
+  const col = Math.min(width - 3, Math.floor((x + 20) / 4));
+  const row = Math.min(width - 3, Math.floor((z + 20) / 4));
+  const cell = ((row + 1) * width + col + 1) * 36;
   const u = (x - data[cell]) / 4, v = (z - data[cell + 2]) / 4;
   const a = data[cell + 1], c = data[cell + 7], b = data[cell + 13], d = data[cell + 19];
   return u + v <= 1 ? a * (1 - u - v) + b * u + c * v : d * (u + v - 1) + b * (1 - v) + c * (1 - u);
@@ -586,6 +589,8 @@ const editedSandbox = mesh;
 assert(start_beacon() > 0);
 tick(0, 1, 1);
 const freshMission = mesh, freshWater = water, spawn = coords();
+assert.equal(freshWater.count, 7776, 'Beacon updates the extended sea without truncating far waters');
+assert.equal(freshWater.pointer, initialSea.pointer, 'both modes reuse the same packed vertex buffer');
 assert.deepEqual(missionHUD(), [1, 1, 0, 12, 0]);
 assert.deepEqual([spawn[0], spawn[2]], [24.5, 42.5]);
 assert.equal(edit(24, 4, 42, 0), -4, 'raw edit cannot bypass the mission rules');
@@ -732,10 +737,21 @@ lightWatchfires();
 assert(lanternColor().length > 0 && lanternColor().every(c => Math.abs(c - 1.85) < .001),
   'the finished lighthouse and both watchfires emit the brighter signal');
 assert(Math.abs(coords()[1] - 7.62) < .02 && frame.values[23] === 1);
+const beaconOnly = meshChunks.flatMap((chunk, id) =>
+  chunk.count > 0 && (id % 8 >= 4 || Math.floor(id / 8) >= 4) ? [id] : []);
+assert(beaconOnly.length > 0, 'the completed Beacon view still has genuinely resident outer slots');
+const beforeCreative = meshPublications.length;
 assert(leave_beacon() > 0);
 tick(0, 1, 1);
 assert.equal(phase(), 0);
+assert.deepEqual(meshPublications.slice(beforeCreative).filter(({ count }) => count === 0)
+  .map(({ chunk }) => chunk), beaconOnly, 'the generator explicitly retires the actual outer slots exactly once');
+for (const id of beaconOnly) assert.equal(meshChunks[id], absentMeshChunk);
 assert.deepEqual(mesh, editedSandbox, 'return to sandbox restores the expanded terrain and exact far-side edits');
+assert.deepEqual(water, initialSea, 'return to Creative restores exact original water geometry in the short buffer');
+tick(.05, 1, 1);
+assert.equal(water.count, 3456, 'positive Creative ticks do not submit unused archipelago vertices');
+assert.notEqual(water.hash, initialSea.hash, 'waves still advance on the restored Creative grid');
 assert.equal(frame.values[24], 4);
 pulse_control(7);
 tick(0, 1, 1);

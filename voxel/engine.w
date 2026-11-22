@@ -169,7 +169,7 @@ f32 tide_progress = 0.0;
 u8[96][96][16] sandbox_cells = world;
 f32 swell = 0.18;
 f32 chop = 0.10;
-bool sea_mesh_ready = false;
+i32 sea_mesh_width = 0;
 f32[37] blank_sea_samples = [
 	0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
 	0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
@@ -1402,9 +1402,11 @@ unit(i32) publish_outline = fn(hit) {
 	};
 };
 
-f32(i32) sea_coordinate = fn(index) {
+i32() sea_width = fn { terrain_span() / 4 + 12 };
+
+f32(i32, i32) sea_coordinate = fn(index, width) {
 	if (index == 0) { -192.0 } else {
-		if (index == 36) { 192.0 } else { core.sint_to_float<f32>(index - 1) * 4.0 - 20.0 }
+		if (index == width) { 192.0 } else { core.sint_to_float<f32>(index - 1) * 4.0 - 20.0 }
 	}
 };
 
@@ -1413,25 +1415,27 @@ f32(f32, f32) sea_wave = fn(x, z) {
 		+ chop * sine(-0.35 * x + 0.24 * z - 2.0 * sea_phase)
 };
 
-unit(i32, i32, f32) sample_sea_row = fn(x, z, pz) {
-	if (x < 37) {
-		sea_samples[index_of(z)][index_of(x)] = sea_wave(sea_coordinate(x), pz);
-		sample_sea_row(x + 1, z, pz);
+unit(i32, u64, f32, i32) sample_sea_row = fn(x, z, pz, width) {
+	if (x <= width) {
+		sea_samples[z][index_of(x)] = sea_wave(sea_coordinate(x, width), pz);
+		sample_sea_row(x + 1, z, pz, width);
 	};
 };
 
-unit(i32) sample_sea = fn(z) {
-	if (z < 37) {
-		sample_sea_row(0, z, sea_coordinate(z));
-		sample_sea(z + 1);
+unit(i32, i32) sample_sea = fn(z, width) {
+	if (z <= width) {
+		sample_sea_row(0, index_of(z), sea_coordinate(z, width), width);
+		sample_sea(z + 1, width);
 	};
 };
 
 f32(f32, f32) sea_surface = fn(x, z) {
-	f32 gx = (clamp_f(x, -20.0, 116.0) + 20.0) * 0.25;
-	f32 gz = (clamp_f(z, -20.0, 116.0) + 20.0) * 0.25;
-	i32 ix = min_i(floor_i(gx), 33);
-	i32 iz = min_i(floor_i(gz), 33);
+	f32 limit = terrain_span_f() + 20.0;
+	f32 gx = (clamp_f(x, -20.0, limit) + 20.0) * 0.25;
+	f32 gz = (clamp_f(z, -20.0, limit) + 20.0) * 0.25;
+	i32 last_cell = sea_width() - 3;
+	i32 ix = min_i(floor_i(gx), last_cell);
+	i32 iz = min_i(floor_i(gz), last_cell);
 	f32 u = gx - core.sint_to_float<f32>(ix);
 	f32 v = gz - core.sint_to_float<f32>(iz);
 	u64 left = index_of(ix + 1);
@@ -1449,40 +1453,42 @@ f32(f32, f32) sea_surface = fn(x, z) {
 	}
 };
 
-unit(i32, i32, u64, i32, i32) write_sea_vertex = fn(x, z, corner, sx, sz) {
-	u64 ix = index_of(x);
-	u64 iz = index_of(z);
-	if (!sea_mesh_ready) {
-		sea_vertices[iz][ix][corner][0] = sea_coordinate(sx);
-		sea_vertices[iz][ix][corner][2] = sea_coordinate(sz);
+unit(u64, u64, u64, i32, i32, i32, bool) write_sea_vertex = fn(row, column, corner, sx, sz, width, relayout) {
+	if (relayout) {
+		sea_vertices[row][column][corner][0] = sea_coordinate(sx, width);
+		sea_vertices[row][column][corner][2] = sea_coordinate(sz, width);
 	};
-	sea_vertices[iz][ix][corner][1] = sea_samples[index_of(sz)][index_of(sx)];
+	sea_vertices[row][column][corner][1] = sea_samples[index_of(sz)][index_of(sx)];
 };
 
-unit(i32, i32) sea_mesh_row = fn(x, z) {
-	if (x < 36) {
-		write_sea_vertex(x, z, 0, x, z);
-		write_sea_vertex(x, z, 1, x, z + 1);
-		write_sea_vertex(x, z, 2, x + 1, z);
-		write_sea_vertex(x, z, 3, x + 1, z + 1);
-		write_sea_vertex(x, z, 4, x + 1, z);
-		write_sea_vertex(x, z, 5, x, z + 1);
-		sea_mesh_row(x + 1, z);
+unit(i32, i32, i32, i32, bool) sea_mesh_row = fn(x, z, offset, width, relayout) {
+	if (x < width) {
+		i32 at = offset + x;
+		u64 row = index_of(at / 36);
+		u64 column = index_of(at % 36);
+		write_sea_vertex(row, column, 0, x, z, width, relayout);
+		write_sea_vertex(row, column, 1, x, z + 1, width, relayout);
+		write_sea_vertex(row, column, 2, x + 1, z, width, relayout);
+		write_sea_vertex(row, column, 3, x + 1, z + 1, width, relayout);
+		write_sea_vertex(row, column, 4, x + 1, z, width, relayout);
+		write_sea_vertex(row, column, 5, x, z + 1, width, relayout);
+		sea_mesh_row(x + 1, z, offset, width, relayout);
 	};
 };
 
-unit(i32) sea_mesh = fn(z) {
-	if (z < 36) {
-		sea_mesh_row(0, z);
-		sea_mesh(z + 1);
+unit(i32, i32, bool) sea_mesh = fn(z, width, relayout) {
+	if (z < width) {
+		sea_mesh_row(0, z, z * width, width, relayout);
+		sea_mesh(z + 1, width, relayout);
 	};
 };
 
 unit() publish_water = fn {
-	sample_sea(0);
-	sea_mesh(0);
-	sea_mesh_ready = true;
-	unsafe { host.water(core.pointer_cast<*?u8>(&?sea_vertices[0][0][0][0]), 7776); };
+	i32 width = sea_width();
+	sample_sea(0, width);
+	sea_mesh(0, width, sea_mesh_width != width);
+	sea_mesh_width = width;
+	unsafe { host.water(core.pointer_cast<*?u8>(&?sea_vertices[0][0][0][0]), width * width * 6); };
 };
 
 f32(BeaconPhase) beacon_phase_code = fn(phase) {
