@@ -7,7 +7,7 @@ const KEYS = new Map([
   ["KeyE", STEER.power], ["KeyQ", STEER.brake],
 ]);
 const COURSES = ["Crop Patrol", "Paris Air Mail"];
-const STORAGE_KEY = "wosy-flying-low/missions-v4/";
+const STORAGE_KEY = "wosy-flying-low/missions-v6/";
 const MISSION_FRAME_FLOATS = 35;
 const LANDING_CUES = [
   "Land in the marked strip", "Level wings and align with the strip", "Brake to slow down",
@@ -435,7 +435,7 @@ export function bootFlight(win, doc) {
       label = "Land at the supply strip";
       cue = `${LANDING_CUES[frame[29]] ?? LANDING_CUES[0]} · ${meters}`;
     } else if (phase === 8) {
-      label = "Stop at the supply strip";
+      label = frame[26] === 13 ? "Rough touchdown · stay on the strip" : "Stop at the supply strip";
       cue = `Brake to load cargo · ${meters} left to stop`;
     } else if (phase === 9) {
       label = current === 1 ? "Pick up the mail pouch" : "Pick up the spray";
@@ -455,7 +455,7 @@ export function bootFlight(win, doc) {
       label = "Mail in flight";
       cue = "Pouch away · landing strip marked";
     } else if (phase === 3) {
-      label = "Rollout";
+      label = frame[26] === 13 ? "Rough touchdown · stay on the strip" : "Rollout";
       cue = `Steer gently and brake · ${meters} left`;
     } else {
       label = current === 1 ? "Mail delivered · land" : "Land in the pasture";
@@ -727,7 +727,7 @@ export function bootFlight(win, doc) {
     if (!gl) { failure("This game needs WebGL 2. Try a current browser with hardware acceleration enabled."); return; }
     try {
       gpu = graphics(gl);
-      const wasm = await win.fetch(new URL("./flight.wasm?v=typed-flight-v1", import.meta.url));
+      const wasm = await win.fetch(new URL("./flight.wasm?v=supply-guide-flight-v6", import.meta.url));
       if (!wasm.ok) throw new Error("The flight engine could not be downloaded.");
       const { instance } = await win.WebAssembly.instantiate(await wasm.arrayBuffer(), imports);
       engine = instance.exports;
