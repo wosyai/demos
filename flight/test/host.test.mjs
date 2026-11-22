@@ -34,12 +34,12 @@ function graphicsFixture() {
   return { gl, draws, uploads, matrices };
 }
 
-function mock({ noGraphics = false, badMesh = false, initialLost = false, exitAtStart = false, inputVersion = null, orientationAPI = false, frameLength = 35 } = {}) {
+function mock({ noGraphics = false, badMesh = false, initialLost = false, exitAtStart = false, inputVersion = null, coarsePointer = false, orientationAPI = false, frameLength = 35 } = {}) {
   const doc = new Hub(), win = new Hub(), nodes = new Map(), raf = new Map(), data = new Map();
   const g = graphicsFixture(), called = { reset: [], tick: [], replay: [], requests: [], begin: 0, cancel: 0 };
   const wasmExports = new WebAssembly.Memory({initial: 1});
   let index = 0, shouldComplete = false, current = 0, imported, distance = 122, phase = 2, dropStatus = 0, route = 0, eventCode = 0;
-  let guidance = [0, 4, 0, 0];
+  let guidance = [0, 4, 0, 0], gateCount = 0, missionTime = 12.125;
   function element(name, dataset = {}) {
     const node = new Hub();
     const captures = new Set(), classes = new Set(), properties = new Map();
@@ -56,6 +56,14 @@ function mock({ noGraphics = false, badMesh = false, initialLost = false, exitAt
       hasPointerCapture(id) { return captures.has(id); },
       releasePointerCapture(id) { captures.delete(id); this.events("lostpointercapture", {pointerId: id}); },
     });
+    if (name === "flight-cue") {
+      let status = "";
+      node.textWrites = 0;
+      Object.defineProperty(node, "textContent", {
+        get: () => status,
+        set(value) { status = value; node.textWrites++; },
+      });
+    }
     nodes.set(name, node);
     return node;
   }
@@ -68,6 +76,7 @@ function mock({ noGraphics = false, badMesh = false, initialLost = false, exitAt
     querySelectorAll: (selector) => selector === "[data-course]" ? courses : controls });
   Object.assign(win, {
     devicePixelRatio: 3,
+    matchMedia: (query) => ({matches: query === "(any-pointer: coarse)" && coarsePointer}),
     ...(orientationAPI ? {screen: {orientation: new Hub()}} : {}),
     localStorage: { setItem: (key, value) => data.set(key, value), getItem: (key) => data.get(key) },
     fetch: async (url) => {
@@ -82,7 +91,7 @@ function mock({ noGraphics = false, badMesh = false, initialLost = false, exitAt
         ...(inputVersion === null ? {} : {input_version: () => inputVersion}),
         reset(course) {
           current = course;
-          phase = course === 1 ? 0 : 2; dropStatus = 0; route = 0; eventCode = 0;
+          phase = course === 1 ? 0 : 2; dropStatus = 0; route = 0; eventCode = 0; gateCount = 0; missionTime = 12.125;
           called.reset.push(course);
           imported.world(0, badMesh ? 16 : 18);
         },
@@ -94,8 +103,8 @@ function mock({ noGraphics = false, badMesh = false, initialLost = false, exitAt
           called.tick.push([dt, mask, aspect]);
           imported.aircraft(128, 18);
           const frame = new Float32Array(wasmExports.buffer, 256, frameLength);
-          frame.set([aspect,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1, current,12.125,31,22,phase,dropStatus,shouldComplete ? 1 : 0,12.125,250,route,eventCode,distance]);
-          if (frameLength === 35) frame.set(guidance, 28);
+          frame.set([aspect,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1, current,missionTime,31,22,phase,dropStatus,shouldComplete ? 1 : 0,12.125,250,route,eventCode,distance]);
+          if (frameLength === 35) { frame.set(guidance, 28); frame[32] = gateCount; }
           imported.frame(256, frameLength);
           if (shouldComplete) {
             new Uint8Array(wasmExports.buffer, 512, 3).set([3,4,255]);
@@ -110,6 +119,7 @@ function mock({ noGraphics = false, badMesh = false, initialLost = false, exitAt
   const host = bootFlight(win, doc);
   return { ...host, ...g, doc, win, nodes, data, courses, canvas, called, raf,
     complete(value = true) { shouldComplete = value; },
+    gate(count, time) { gateCount = count; missionTime = time; },
     cue(next) {
       ({distance = 122, phase = 2, dropStatus = 0, route = 0, eventCode = 0} = next);
     },
@@ -271,6 +281,52 @@ test("distance stays visual, while the live status announces meaningful mission 
   assert.equal(live.textContent, "Rollout. Steer gently and hold Brake to stop.");
 });
 
+test("distance changes do not rewrite the live status during cargo, crop or Seine approaches", async () => {
+  const sim = mock();
+  await sim.ready;
+  const live = sim.nodes.get("flight-cue"), visual = sim.nodes.get("callout");
+  let timestamp = 0;
+  function advance(next) {
+    sim.cue(next);
+    sim.frame(timestamp += 100);
+  }
+  function announce(next, status) {
+    const writes = live.textWrites;
+    advance(next);
+    assert.equal(live.textWrites, writes + 1);
+    assert.match(live.textContent, status);
+  }
+  function distanceOnly(next) {
+    const writes = live.textWrites;
+    advance({...next, distance: 45});
+    assert.match(visual.textContent, /45 m/);
+    assert.equal(live.textWrites, writes);
+  }
+
+  sim.courses[0].events("click");
+  announce({phase: 7}, /Land at the supply strip\. Aligned/);
+  distanceOnly({phase: 7});
+  announce({phase: 8}, /Stop at the supply strip\. Brake to load cargo\./);
+  distanceOnly({phase: 8});
+  announce({phase: 9}, /Pick up the spray\. Press Space or tap Load/);
+  announce({phase: 10}, /Spray loaded/);
+  announce({phase: 11, dropStatus: 8}, /Approach the next marked row\./);
+  distanceOnly({phase: 11, dropStatus: 8});
+  announce({phase: 11, dropStatus: 9}, /Spray now\./);
+  distanceOnly({phase: 11, dropStatus: 9});
+
+  sim.courses[1].events("click");
+  advance({phase: 0, route: 1});
+  assert.equal(live.textContent, "Cross the Seine. Follow the turquoise guide. Low route.");
+  distanceOnly({phase: 0, route: 1});
+  sim.gate(1, 12.125);
+  announce({phase: 0, route: 1}, /^Gate cleared, 80 bonus points\./);
+  distanceOnly({phase: 0, route: 1});
+  sim.guidance(0, 4, true);
+  announce({phase: 0, route: 1}, /Climb now to clear the bridge\./);
+  assert.equal(visual.textContent, "Climb now to clear the bridge");
+});
+
 test("radial stick keeps a deadzone, scales proportionally, and clamps diagonals without a square bias", () => {
   assert.deepEqual(stickAxes(3, 3, 45), {bank: 0, pitch: 0});
   assert.deepEqual(stickAxes(-90, 0, 45), {bank: -127, pitch: 0});
@@ -343,14 +399,65 @@ test("the sky uses the live world camera projection before and after resize", as
   assert.notEqual(secondSky[2][0], firstSky[2][0]);
 });
 
-test("the light shell and its flight engine share the same release token", async () => {
+test("the cockpit shell is cache-busted without changing the engine revision", async () => {
   const sim = mock();
   await sim.ready;
   const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
-  assert.match(html, /href="\.\/style\.css\?v=marker-v1"/);
-  assert.match(html, /src="\.\/host\.mjs\?v=marker-v1"/);
+  assert.match(html, /href="\.\/style\.css\?v=cockpit-v2"/);
+  assert.match(html, /src="\.\/host\.mjs\?v=cockpit-v2"/);
   assert.deepEqual(sim.called.requests.map((url) => [url.pathname.split("/").at(-1), url.search]),
     [["flight.wasm", "?v=marker-v1"]]);
+});
+
+test("the live cockpit keeps the objective visible and puts longer help behind pause", async () => {
+  const sim = mock();
+  await sim.ready;
+  assert.equal(sim.nodes.get("engine").hidden, true);
+  sim.courses[0].events("click");
+  assert.equal(sim.nodes.get("keys").hidden, true);
+  sim.cue({phase: 9});
+  sim.frame(100);
+  assert.equal(sim.nodes.get("mission-phase").textContent, "Pick up the spray");
+  assert.equal(sim.nodes.get("drop").getAttribute("aria-label"), "Load spray");
+  sim.nodes.get("pause").events("click");
+  assert.equal(sim.nodes.get("keys").hidden, false);
+  assert.equal(sim.nodes.get("drop-key").hidden, false);
+  assert.equal(sim.nodes.get("touch").hidden, true);
+  sim.win.events("keydown", {code: "Escape"});
+  assert.equal(sim.nodes.get("keys").hidden, true);
+  assert.equal(sim.doc.activeElement, sim.nodes.get("game"));
+});
+
+test("takeoff gives the documented power and climb inputs for each control layout", async () => {
+  for (const [coarsePointer, cue] of [
+    [false, "Hold E for power · S or ↓ to climb"],
+    [true, "Hold ↑↑ power · pull stick down to climb"],
+  ]) {
+    const sim = mock({coarsePointer});
+    await sim.ready;
+    sim.courses[0].events("click");
+    sim.cue({phase: 6});
+    sim.frame(100);
+    assert.equal(sim.nodes.get("mission-phase").textContent, "Take off");
+    assert.equal(sim.nodes.get("callout").textContent, cue);
+  }
+});
+
+test("a passed ring highlights its count without replacing the current guidance", async () => {
+  const sim = mock();
+  await sim.ready;
+  sim.courses[0].events("click");
+  sim.cue({phase: 8});
+  sim.gate(1, 13);
+  sim.frame(100);
+  assert.match(sim.nodes.get("callout").textContent, /^Brake to load cargo/);
+  assert.equal(sim.nodes.get("gates").textContent, "1/3 · +80");
+  assert.equal(sim.nodes.get("gates").classes.has("gate-cleared"), true);
+  assert.match(sim.nodes.get("flight-cue").textContent, /Gate cleared, 80 bonus points/);
+  sim.gate(1, 15);
+  sim.frame(200);
+  assert.equal(sim.nodes.get("gates").textContent, "1/3");
+  assert.equal(sim.nodes.get("gates").classes.has("gate-cleared"), false);
 });
 
 test("phone rotation releases the old touch and accepts a fresh steer in the new aspect", async () => {
@@ -376,6 +483,58 @@ test("phone rotation releases the old touch and accepts a fresh steer in the new
     sim.frame(140);
     assert.equal((sim.called.tick.at(-1)[1] >> 8) & 255, 129);
     assert.equal(sim.doc.activeElement, sim.nodes.get("game"));
+  }
+});
+
+test("a bottom-edge thumb can climb while holding power without making tiny drags active", async () => {
+  for (const dimensions of [
+    {width: 700, height: 320, bottom: 320},
+    {width: 360, height: 670, bottom: 639, visualViewport: {height: 631, offsetTop: 8}},
+  ]) {
+    const sim = mock({inputVersion: 1, coarsePointer: true, orientationAPI: true});
+    await sim.ready;
+    const {width, height, bottom, visualViewport} = dimensions;
+    sim.win.innerHeight = height;
+    if (visualViewport) sim.win.visualViewport = visualViewport;
+    sim.canvas.clientWidth = width;
+    sim.canvas.clientHeight = height;
+    sim.courses[0].events("click");
+    const stick = sim.nodes.get("flight-stick"), power = sim.nodes.get("power");
+    stick.getBoundingClientRect = () => ({left: 12, top: bottom - 125, width: 174, height: 114});
+    const start = bottom - 26;
+    let clock = 100;
+    const input = () => {
+      sim.frame(clock += 16);
+      return sim.called.tick.at(-1)[1];
+    };
+    const move = (type, pointerId, clientY, pointerType = "touch", clientX = 90) =>
+      stick.events(type, {pointerId, clientX, clientY, pointerType});
+    power.events("pointerdown", {pointerId: 20});
+    move("pointerdown", 10, start);
+    assert.equal(input(), 16 | 64, "a new touch has zero analog input");
+    move("pointermove", 10, start + 1);
+    assert.equal(input(), 16 | 64, "one pixel of jitter does not steer");
+    move("pointermove", 10, start, "touch", 115);
+    assert.equal(input(), 16 | 64 | (stickAxes(25, 0, 114 * .32).bank << 8), "pure roll is unchanged");
+    move("pointermove", 10, start - 25);
+    assert.equal((input() << 8) >> 24, stickAxes(0, -25, 114 * .32).pitch, "upward drag is unchanged");
+    move("pointermove", 10, bottom - 1, "touch", 115);
+    const diagonal = input();
+    const bank = (diagonal << 16) >> 24, pitch = (diagonal << 8) >> 24;
+    assert.ok(bank > 0 && pitch > 0 && Math.hypot(bank, pitch) <= 128, "mixed steering stays inside the radial limit with rounding");
+    move("pointermove", 10, bottom - 1);
+    assert.equal(input(), 16 | 64 | (127 << 16), "the reachable downward drag gives full climb");
+    sim.win.events("pointerup", {pointerId: 10});
+    assert.equal(input(), 16, "releasing the stick does not release power");
+    move("pointerdown", 11, start);
+    sim.win.screen.orientation.events("change");
+    move("pointermove", 11, bottom - 1);
+    assert.equal(input(), 0, "rotation releases both old touches");
+
+    move("pointerdown", 12, start, "mouse");
+    assert.equal(input(), 64, "mouse also starts neutral");
+    move("pointermove", 12, bottom - 1, "mouse");
+    assert.equal(input(), 64 | (stickAxes(0, 25, 114 * .32).pitch << 16), "mouse retains nominal pitch near the same edge");
   }
 });
 

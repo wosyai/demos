@@ -304,8 +304,9 @@ export function bootFlight(win, doc) {
   const callout = get("callout"), flightCue = get("flight-cue"), buttons = Array.from(doc.querySelectorAll("[data-course]"));
   const actionButtons = Array.from(doc.querySelectorAll("[data-action]"));
   const stick = get("flight-stick");
-  const instruments = ["time", "mission-phase", "speed", "altitude", "best", "gates"].map(get);
+  const [time, objective, speed, altitude, gates] = ["time", "mission-phase", "speed", "altitude", "gates"].map(get);
   const controls = makeControls(), replays = replayStore(() => win.localStorage);
+  const touchLayout = win.matchMedia?.("(any-pointer: coarse)");
   const field = { pointer: 0, length: 0, version: 0 }, moving = { pointer: 0, length: 0, version: 0 };
   const gl = canvas.getContext("webgl2", { alpha: false, antialias: true });
   let gpu, engine, memory, framePointer = null, frameLength = 0;
@@ -352,12 +353,14 @@ export function bootFlight(win, doc) {
     shell.classList.toggle("is-playing", mode !== "menu");
     menu.hidden = mode !== "menu";
     hud.hidden = mode === "menu";
-    keys.hidden = touch.hidden = !active;
+    touch.hidden = !active;
+    keys.hidden = modal !== "pause";
+    status.hidden = !loading && !lost && !error;
     if (dropButton) {
       dropButton.hidden = !active || !dropAvailable;
       dropButton.disabled = !active || !dropAvailable;
     }
-    if (dropKey) dropKey.hidden = !active || !dropAvailable;
+    if (dropKey) dropKey.hidden = !dropAvailable;
     if (!active) { callout.hidden = true; setText(flightCue, ""); }
     hud.inert = Boolean(modal);
   }
@@ -406,15 +409,15 @@ export function bootFlight(win, doc) {
     return framePointer === null ? null : memoryRange(memory, framePointer, frameLength, Float32Array);
   }
   function updateHud(frame) {
-    setText(instruments[0], clockText(frame[17]));
-    setText(instruments[2], roundText(frame[18], "m/s"));
-    setText(instruments[3], roundText(frame[19], "m"));
+    setText(time, clockText(frame[17]));
+    setText(speed, roundText(frame[18], "m/s"));
+    setText(altitude, roundText(frame[19], "m"));
     if (frame[32] > gateCount) gateFeedbackUntil = frame[17] + 1.4;
     gateCount = frame[32];
     const gateFeedback = frame[17] < gateFeedbackUntil;
-    setText(instruments[5], gateFeedback ? `${gateCount}/3 · +80`
+    setText(gates, gateFeedback ? `${gateCount}/3 · +80`
       : frame[33] < 3 && frame[34] > 0 ? `${gateCount}/3 · ${Math.ceil(frame[34])}s` : `${gateCount}/3`);
-    setText(instruments[4], frame[23] > 0 ? clockText(frame[23]) : "—");
+    gates.classList.toggle("gate-cleared", gateFeedback);
     const phase = frame[20], dropStatus = frame[21], route = frame[25];
     dropAvailable = phase === 1 || phase === 9 || phase === 11;
     if (dropButton) {
@@ -427,45 +430,52 @@ export function bootFlight(win, doc) {
     }
     if (dropKey) dropKey.hidden = !dropAvailable;
     const meters = roundText(frame[27], "m");
-    let label, cue;
+    let label, cue, distanceSuffix = "";
     if (phase === 6 || phase === 10) {
       label = phase === 6 ? "Take off" : current === 1 ? "Mail loaded" : "Spray loaded";
-      cue = "Hold throttle · pull down to lift off";
+      cue = touchLayout?.matches ? "Hold ↑↑ power · pull stick down to climb" : "Hold E for power · S or ↓ to climb";
     } else if (phase === 7) {
       label = "Land at the supply strip";
-      cue = `${LANDING_CUES[frame[29]] ?? LANDING_CUES[0]} · ${meters}`;
+      cue = LANDING_CUES[frame[29]] ?? LANDING_CUES[0];
+      distanceSuffix = ` · ${meters}`;
     } else if (phase === 8) {
       label = "Stop at the supply strip";
-      cue = `Brake to load cargo · ${meters} left to stop`;
+      cue = "Brake to load cargo";
+      distanceSuffix = ` · ${meters} left to stop`;
     } else if (phase === 9) {
       label = current === 1 ? "Pick up the mail pouch" : "Pick up the spray";
       cue = "Press Space or tap Load to collect cargo";
     } else if (phase === 11) {
       label = `Spray the marked rows · ${frame[31]}/3`;
       const sprayCues = {5:"Descend toward the row", 6:"Climb above the row", 7:"Level the wings and center on the row", 8:"Approach the next marked row", 9:"Spray now"};
-      cue = `${sprayCues[dropStatus] ?? sprayCues[8]} · ${meters}`;
+      cue = sprayCues[dropStatus] ?? sprayCues[8];
+      distanceSuffix = ` · ${meters}`;
     } else if (phase === 0) {
       label = "Cross the Seine";
-      cue = frame[30] ? "Climb now to clear the bridge" : `Follow the turquoise guide · ${meters}`;
+      cue = frame[30] ? "Climb now to clear the bridge" : "Follow the turquoise guide";
+      if (!frame[30]) distanceSuffix = ` · ${meters}`;
     } else if (phase === 1) {
       label = "Deliver mail";
       cue = RELEASE_CUES[dropStatus] ?? RELEASE_CUES[8];
       if (frame[26] && frame[26] === dropStatus) cue = `Not released · ${cue}`;
+      if (dropStatus !== 9) distanceSuffix = ` · ${meters}`;
     } else if (phase === 5) {
       label = "Mail in flight";
       cue = "Pouch away · landing strip marked";
     } else if (phase === 3) {
       label = "Rollout";
-      cue = `Steer gently and brake · ${meters} left`;
+      cue = "Steer gently and brake";
+      distanceSuffix = ` · ${meters} left`;
     } else {
       label = current === 1 ? "Mail delivered · land" : "Land in the pasture";
-      cue = `${LANDING_CUES[frame[29]] ?? LANDING_CUES[0]} · ${meters}`;
+      cue = LANDING_CUES[frame[29]] ?? LANDING_CUES[0];
+      distanceSuffix = ` · ${meters}`;
     }
-    setText(instruments[1], label);
+    setText(objective, label);
     const routeLabel = route === 1 ? "Low route." : route === 2 ? "Wide route." : "";
-    setText(callout, gateFeedback ? `Gate cleared · +80 · ${cue}` : phase === 1 && dropStatus !== 9 ? `${cue} · ${meters}` : cue);
+    setText(callout, cue + distanceSuffix);
     callout.hidden = false;
-    setText(flightCue, `${gateFeedback ? "Gate cleared. " : ""}${label}. ${phase === 3 ? "Steer gently and hold Brake to stop" : phase === 2 ? LANDING_CUES[frame[29]] ?? LANDING_CUES[0] : cue}. ${routeLabel}`.trim());
+    setText(flightCue, `${gateFeedback ? "Gate cleared, 80 bonus points. " : ""}${label}. ${phase === 3 ? "Steer gently and hold Brake to stop" : cue}. ${routeLabel}`.trim());
   }
   function showSummary(type, frame) {
     modal = type;
@@ -659,7 +669,11 @@ export function bootFlight(win, doc) {
     const area = stick.getBoundingClientRect();
     const radius = Math.max(33, Math.min(46, area.height * .32));
     const midpoint = (value, extent) => Math.max(radius, Math.min(extent - radius, value));
-    activeStick = { id: event.pointerId, x: event.clientX, y: event.clientY, radius };
+    const viewport = win.visualViewport;
+    const bottom = viewport ? viewport.offsetTop + viewport.height : win.innerHeight;
+    const climbTravel = event.pointerType === "touch" && Number.isFinite(bottom)
+      ? Math.max(radius / 2, Math.min(radius, bottom - 1 - event.clientY)) : radius;
+    activeStick = { id: event.pointerId, x: event.clientX, y: event.clientY, radius, climbTravel };
     controls.stick = {bank: 0, pitch: 0};
     stick.style.setProperty("--stick-x", `${midpoint(event.clientX - area.left, area.width)}px`);
     stick.style.setProperty("--stick-y", `${midpoint(event.clientY - area.top, area.height)}px`);
@@ -669,8 +683,13 @@ export function bootFlight(win, doc) {
   stick.addEventListener("pointermove", (event) => {
     if (!activeStick || event.pointerId !== activeStick.id) return;
     event.preventDefault();
-    const {x, y, radius} = activeStick;
-    const axes = stickAxes(event.clientX - x, event.clientY - y, radius);
+    const {x, y, radius, climbTravel} = activeStick;
+    const pitchDrag = event.clientY - y;
+    const deadzone = radius * JOYSTICK_DEADZONE;
+    const adjustedPitch = climbTravel < radius && pitchDrag > deadzone
+      ? deadzone + (pitchDrag - deadzone) * (radius - deadzone) / (climbTravel - deadzone)
+      : pitchDrag;
+    const axes = stickAxes(event.clientX - x, adjustedPitch, radius);
     controls.stick = axes;
     stick.style.setProperty("--stick-dx", `${axes.bank * radius * .55 / 127}px`);
     stick.style.setProperty("--stick-dy", `${axes.pitch * radius * .55 / 127}px`);
