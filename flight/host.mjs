@@ -311,6 +311,7 @@ export function bootFlight(win, doc) {
   let gpu, engine, memory, framePointer = null, frameLength = 0;
   let raf = 0, previous = null, current = 0, mode = "menu", modal = null;
   let loading = true, error = false, lost = false, hudTick = 0, dirty = true;
+  let gateCount = 0, gateFeedbackUntil = 0;
   const dropButton = actionButtons.find((button) => button.dataset.action === "drop");
   const dropKey = get("drop-key");
   let activeStick = null, analogInput = false, dropPending = false, dropAvailable = false;
@@ -408,7 +409,11 @@ export function bootFlight(win, doc) {
     setText(instruments[0], clockText(frame[17]));
     setText(instruments[2], roundText(frame[18], "m/s"));
     setText(instruments[3], roundText(frame[19], "m"));
-    setText(instruments[5], frame[33] < 3 && frame[34] > 0 ? `${frame[32]}/3 · ${Math.ceil(frame[34])}s` : `${frame[32]}/3`);
+    if (frame[32] > gateCount) gateFeedbackUntil = frame[17] + 1.4;
+    gateCount = frame[32];
+    const gateFeedback = frame[17] < gateFeedbackUntil;
+    setText(instruments[5], gateFeedback ? `${gateCount}/3 · +80`
+      : frame[33] < 3 && frame[34] > 0 ? `${gateCount}/3 · ${Math.ceil(frame[34])}s` : `${gateCount}/3`);
     setText(instruments[4], frame[23] > 0 ? clockText(frame[23]) : "—");
     const phase = frame[20], dropStatus = frame[21], route = frame[25];
     dropAvailable = phase === 1 || phase === 9 || phase === 11;
@@ -421,16 +426,14 @@ export function bootFlight(win, doc) {
       dropButton.classList.toggle("drop-ready", phase === 9 || dropStatus === 9);
     }
     if (dropKey) dropKey.hidden = !dropAvailable;
-    const turn = frame[28];
-    const bearing = turn < -.14 ? "←" : turn > .14 ? "→" : "↑";
     const meters = roundText(frame[27], "m");
     let label, cue;
     if (phase === 6 || phase === 10) {
-      label = phase === 6 ? "Take off" : "Depart with cargo";
+      label = phase === 6 ? "Take off" : current === 1 ? "Mail loaded" : "Spray loaded";
       cue = "Hold throttle · pull down to lift off";
     } else if (phase === 7) {
       label = "Land at the supply strip";
-      cue = `${bearing} ${LANDING_CUES[frame[29]] ?? LANDING_CUES[0]} · ${meters}`;
+      cue = `${LANDING_CUES[frame[29]] ?? LANDING_CUES[0]} · ${meters}`;
     } else if (phase === 8) {
       label = "Stop at the supply strip";
       cue = `Brake to load cargo · ${meters} left to stop`;
@@ -440,29 +443,29 @@ export function bootFlight(win, doc) {
     } else if (phase === 11) {
       label = `Spray the marked rows · ${frame[31]}/3`;
       const sprayCues = {5:"Descend toward the row", 6:"Climb above the row", 7:"Level the wings and center on the row", 8:"Approach the next marked row", 9:"Spray now"};
-      cue = `${bearing} ${sprayCues[dropStatus] ?? sprayCues[8]} · ${meters}`;
+      cue = `${sprayCues[dropStatus] ?? sprayCues[8]} · ${meters}`;
     } else if (phase === 0) {
       label = "Cross the Seine";
-      cue = frame[30] ? "Climb now to clear the bridge" : `${bearing} Follow the bearing to the Seine · ${meters}`;
+      cue = frame[30] ? "Climb now to clear the bridge" : `Follow the turquoise guide · ${meters}`;
     } else if (phase === 1) {
       label = "Deliver mail";
       cue = RELEASE_CUES[dropStatus] ?? RELEASE_CUES[8];
       if (frame[26] && frame[26] === dropStatus) cue = `Not released · ${cue}`;
     } else if (phase === 5) {
       label = "Mail in flight";
-      cue = "Pouch away · turn toward the landing strip";
+      cue = "Pouch away · landing strip marked";
     } else if (phase === 3) {
       label = "Rollout";
       cue = `Steer gently and brake · ${meters} left`;
     } else {
       label = current === 1 ? "Mail delivered · land" : "Land in the pasture";
-      cue = `${bearing} ${LANDING_CUES[frame[29]] ?? LANDING_CUES[0]} · ${meters}`;
+      cue = `${LANDING_CUES[frame[29]] ?? LANDING_CUES[0]} · ${meters}`;
     }
     setText(instruments[1], label);
     const routeLabel = route === 1 ? "Low route." : route === 2 ? "Wide route." : "";
-    setText(callout, phase === 1 && dropStatus !== 9 ? `${bearing} ${cue} · ${meters}` : cue);
+    setText(callout, gateFeedback ? `Gate cleared · +80 · ${cue}` : phase === 1 && dropStatus !== 9 ? `${cue} · ${meters}` : cue);
     callout.hidden = false;
-    setText(flightCue, `${label}. ${phase === 3 ? "Steer gently and hold Brake to stop" : phase === 2 ? LANDING_CUES[frame[29]] ?? LANDING_CUES[0] : cue}. ${routeLabel}`.trim());
+    setText(flightCue, `${gateFeedback ? "Gate cleared. " : ""}${label}. ${phase === 3 ? "Steer gently and hold Brake to stop" : phase === 2 ? LANDING_CUES[frame[29]] ?? LANDING_CUES[0] : cue}. ${routeLabel}`.trim());
   }
   function showSummary(type, frame) {
     modal = type;
@@ -495,6 +498,8 @@ export function bootFlight(win, doc) {
     if (loading || error || lost || !engine || !Number.isInteger(course) || course < 0 || course >= COURSES.length) return;
     try {
       current = course;
+      gateCount = 0;
+      gateFeedbackUntil = 0;
       clearInput();
       engine.reset(course);
       const replay = replays.load(course);
@@ -722,7 +727,7 @@ export function bootFlight(win, doc) {
     if (!gl) { failure("This game needs WebGL 2. Try a current browser with hardware acceleration enabled."); return; }
     try {
       gpu = graphics(gl);
-      const wasm = await win.fetch(new URL("./flight.wasm?v=sortie-v1", import.meta.url));
+      const wasm = await win.fetch(new URL("./flight.wasm?v=wayfind-v1", import.meta.url));
       if (!wasm.ok) throw new Error("The flight engine could not be downloaded.");
       const { instance } = await win.WebAssembly.instantiate(await wasm.arrayBuffer(), imports);
       engine = instance.exports;
