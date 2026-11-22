@@ -347,10 +347,10 @@ test("the light shell and its flight engine share the same release token", async
   const sim = mock();
   await sim.ready;
   const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
-  assert.match(html, /href="\.\/style\.css\?v=wayfind-v1"/);
-  assert.match(html, /src="\.\/host\.mjs\?v=wayfind-v1"/);
+  assert.match(html, /href="\.\/style\.css\?v=marker-v1"/);
+  assert.match(html, /src="\.\/host\.mjs\?v=marker-v1"/);
   assert.deepEqual(sim.called.requests.map((url) => [url.pathname.split("/").at(-1), url.search]),
-    [["flight.wasm", "?v=wayfind-v1"]]);
+    [["flight.wasm", "?v=marker-v1"]]);
 });
 
 test("phone rotation releases the old touch and accepts a fresh steer in the new aspect", async () => {
