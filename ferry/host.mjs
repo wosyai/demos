@@ -1,4 +1,4 @@
-export const ENGINE_PATH = "./ferry.wasm?v=camera-ferry-v2";
+export const ENGINE_PATH = "./ferry.wasm?v=map-ferry-v3";
 const INPUTS = new Map([
   ["KeyA","left"],["ArrowLeft","left"],["KeyD","right"],["ArrowRight","right"],
   ["KeyW","up"],["ArrowUp","up"],["KeyS","down"],["ArrowDown","down"],["Space","brake"],
@@ -35,6 +35,46 @@ export function inputState() {
       return [steer,drive,flags];
     },
   };
+}
+
+export function readRouteMap(value) {
+  const count=value(-1,0);
+  if(!Number.isInteger(count)||count<0||count>64) throw Error("The route map is unreadable.");
+  return Array.from({length:count},(_,row)=>{
+    const road=Array.from({length:4},(_,column)=>value(row,column));
+    if(!road.every(Number.isFinite)||road[2]<=0||road[3]<=0) throw Error("The route map is unreadable.");
+    return road;
+  });
+}
+
+function routeMapBounds(roads) {
+  let minX=Infinity,maxX=-Infinity,minZ=Infinity,maxZ=-Infinity;
+  for(const [x,z,w,d] of roads) {
+    minX=Math.min(minX,x); maxX=Math.max(maxX,x+w);
+    minZ=Math.min(minZ,z); maxZ=Math.max(maxZ,z+d);
+  }
+  return [minX,maxX,minZ,maxZ];
+}
+function drawRouteMap(ctx,roads,bounds,frame) {
+  if(!bounds||!roads.length) return;
+  const {width,height}=ctx.canvas, active=[0,1,8].includes(frame[17]);
+  let minX=Math.min(bounds[0],frame[26]),maxX=Math.max(bounds[1],frame[26]);
+  let minZ=Math.min(bounds[2],frame[27]),maxZ=Math.max(bounds[3],frame[27]);
+  if(active) {
+    minX=Math.min(minX,frame[24]); maxX=Math.max(maxX,frame[24]);
+    minZ=Math.min(minZ,frame[25]); maxZ=Math.max(maxZ,frame[25]);
+  }
+  const scale=Math.min((width-16)/(maxX-minX),(height-16)/(maxZ-minZ));
+  const x=(v)=>(width-(maxX-minX)*scale)/2+(v-minX)*scale;
+  const z=(v)=>(height-(maxZ-minZ)*scale)/2+(maxZ-v)*scale;
+  ctx.clearRect(0,0,width,height);
+  ctx.fillStyle="#49716d";
+  for(const [rx,rz,w,d] of roads) ctx.fillRect(x(rx),z(rz+d),w*scale,d*scale);
+  const dot=(px,pz,r,color)=>{
+    ctx.fillStyle=color; ctx.beginPath(); ctx.arc(x(px),z(pz),r,0,Math.PI*2); ctx.fill();
+  };
+  if(active) dot(frame[24],frame[25],4,"#ffc276");
+  dot(frame[26],frame[27],3,"#fff5e1");
 }
 
 export function frameData(memory,pointer,length,kind) {
@@ -193,6 +233,8 @@ export async function boot(env=globalThis,createGraphics=graphics) {
   const objective=get("objective"), stats=get("status"), clock=get("clock"), hint=get("hint"), summary=get("summary"), announce=get("announce");
   const touch=get("touch"), trip=get("trip"), departure=get("departure"), brakeIcon=get("brake-icon"), actionIcon=get("action-icon");
   const input=inputState(), meshes=new Map();
+  const map=get("city-map"), chart=get("city-chart").getContext?.("2d");
+  let roads=[], roadBounds;
   let engine, renderer, frame, aspect=0, menuText="Loading the waterfront…", failed=false, noticeUntil=0, notice="", last=0, playing=false, lost=false, ready=false, paused=false, mode=0, event=0, previousCue=-1, previousState=-1;
   const heldButtons=[power,brake,action];
   const renderThumb=(x,y)=>{
@@ -227,8 +269,10 @@ export async function boot(env=globalThis,createGraphics=graphics) {
     start.disabled=!available; roam.disabled=!available;
     pause.disabled=!available||!playing;
     cameraView.disabled=pause.disabled;
+    map.hidden=pause.disabled||!chart;
     label(summary,lost&&!failed ? "Graphics interrupted. Waiting for the browser to restore the scene." : menuText);
   }
+  map.addEventListener("toggle",()=>{ if(chart&&frame&&map.open&&!map.hidden) drawRouteMap(chart,roads,roadBounds,frame); });
   function syncAspect(next) {
     aspect=next;
     engine.tick(0,0,0,0,aspect);
@@ -237,6 +281,7 @@ export async function boot(env=globalThis,createGraphics=graphics) {
   function show() {
     if(!frame || !renderer) return;
     renderer.draw(frame);
+    if(chart&&map.open&&!map.hidden) drawRouteMap(chart,roads,roadBounds,frame);
     const foot=frame[16]===0,state=frame[17],cue=frame[20],hit=frame[21],target=state===0||state===1||state===8;
     label(objective,OBJECTIVES[state]||"Find the ferry");
     label(stats,target ? `${Math.round(frame[23])} m` : "");
@@ -387,12 +432,14 @@ export async function boot(env=globalThis,createGraphics=graphics) {
     if(failed) return;
     const exports=module.instance.exports;
     if(!(exports.memory instanceof WebAssembly.Memory) ||
-      !["_start","reset","tick","cancel_action"].every((name)=>typeof exports[name]==="function")) {
+      !["_start","reset","tick","cancel_action","map_value"].every((name)=>typeof exports[name]==="function")) {
       throw Error("The game engine could not be initialized.");
     }
     engine=exports;
     engine._start();
     engine.reset(0);
+    roads=readRouteMap(engine.map_value);
+    roadBounds=routeMapBounds(roads);
     if(!lost) syncAspect(fit(canvas,env.devicePixelRatio));
     ready=true;
     menuText=missionText; label(start,"Start mission");

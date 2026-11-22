@@ -85,3 +85,13 @@ h1 span{color:var(--rust)}
 .touch[data-docked=true] .wheel,.touch[data-docked=true] #power,.touch[data-docked=true] #brake{display:none}
 
 .deck-actions{display:flex;gap:4px;white-space:nowrap}
+
+.city-map{--route-top:max(72px,calc(env(safe-area-inset-top) + 65px));position:absolute;z-index:2;top:var(--route-top);right:max(12px,env(safe-area-inset-right));max-width:min(242px,46vw);padding:2px 8px;background:#102525ed;border:1px solid var(--edge);border-radius:8px}
+.city-map summary{min-height:44px;min-width:44px;line-height:44px;cursor:pointer;font-size:.8rem}
+.city-map canvas{position:static;display:block;max-width:100%;height:auto}
+.city-map p{font-size:.72rem;margin:4px 0}
+@media(max-width:440px){.city-map{--route-top:max(108px,calc(env(safe-area-inset-top) + 97px))}}
+@media (pointer:coarse),(any-pointer:coarse){
+  .city-map:not([hidden])~.hint[data-notice=true]{left:max(12px,env(safe-area-inset-left));transform:none;max-width:44vw;text-align:left}
+  .city-map[open]{max-height:max(50px,calc(100dvh - var(--route-top) - max(18px,env(safe-area-inset-bottom)) - 108px));overflow:auto}
+}

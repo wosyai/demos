@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#102726">
 <meta name="description" content="Last Ferry, a playable third-person seaside game made in Wosy.">
 <title>Last Ferry | Wosy Arcade</title>
-<link rel="stylesheet" href="./style.css?v=camera-ferry-v2">
+<link rel="stylesheet" href="./style.css?v=map-ferry-v3">
   <link rel="stylesheet" href="../arcade/shell.css?v=1">
 </head>
 <body>
@@ -35,6 +35,11 @@
       <button id="pause" type="button" class="quiet" aria-label="Pause game" disabled><svg class="icon" aria-hidden="true"><use href="#icon-pause"/></svg></button>
     </div>
   </header>
+  <details id="city-map" class="city-map" hidden>
+    <summary>Route map</summary>
+    <canvas id="city-chart" width="224" height="152" aria-hidden="true"></canvas>
+    <p>White: you. Gold: next stop.</p>
+  </details>
   <p id="hint" class="hint" hidden></p>
   <div id="touch" class="touch" hidden>
     <div id="wheel" class="wheel" aria-label="Drag to steer or move"><div class="ring"><span id="thumb"></span></div></div>
@@ -54,7 +59,7 @@
         <details class="arcade-settings">
           <summary><svg class="arcade-tool-icon" aria-hidden="true" focusable="false"><use href="../arcade/icons.svg?v=1#settings"></use></svg> Settings</summary>
           <div class="arcade-settings-body">
-            <div class="keys"><p id="guide">WASD or arrows to move, Space to brake or sprint, E to interact, Esc to pause.</p></div>
+            <div class="keys"><p id="guide">WASD or arrows to move, Space to brake or sprint, E to interact, C to switch camera, Esc to pause.</p></div>
           </div>
         </details>
         <a class="arcade-back" href="../"><svg class="arcade-tool-icon" aria-hidden="true" focusable="false"><use href="../arcade/icons.svg?v=1#back"></use></svg> Back to Wosy Arcade</a>
@@ -63,6 +68,6 @@
   </section>
   <span id="announce" class="sr-only" aria-live="polite"></span>
 </main>
-<script type="module" src="./host.mjs?v=camera-ferry-v2"></script>
+<script type="module" src="./host.mjs?v=map-ferry-v3"></script>
 </body>
 </html>

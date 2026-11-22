@@ -5,7 +5,7 @@ const binary = new WebAssembly.Module(readFileSync(process.argv[2] ?? new URL("f
 assert.deepEqual(WebAssembly.Module.imports(binary).map(({ module, name }) => module+"."+name).sort(),
   ["ferry.frame", "ferry.moving", "ferry.world"]);
 assert.deepEqual(WebAssembly.Module.exports(binary).map(({ name }) => name).sort(),
-  ["_start", "cancel_action", "memory", "reset", "tick"]);
+  ["_start", "cancel_action", "map_value", "memory", "reset", "tick"]);
 
 let engine, frame, world, moving, worldSends = 0;
 let walkingBearingSamples=0, drivingBearingSamples=0;
@@ -102,6 +102,21 @@ function ped(i) {
 
 engine._start();
 engine.reset(0);
+const roads=[
+  [-111,25.35,110,7.65],[-111,54.5,112,7.6],[-65,-17,9,91.5],[-111,29.1,8,33.4],
+  [-4.45,-20,8.9,94.4],[-18.8,-12,5.8,85.4],[-18.8,27.6,26.2,5.9],[-18.8,57,23.3,5.1],
+  [-14,125,50,20],[-63.2,-16.02,68,3.54],[-103.85,20.2,47.79,4.9]
+];
+assert.equal(engine.map_value(-1,0),roads.length);
+for(const [row,road] of roads.entries()) {
+  for(const [column,expected] of road.entries()) {
+    assert.equal(engine.map_value(row,column),row>=9&&column===1 ?
+      Math.fround(Math.fround(row===9 ? -14.25 : 22.65)+Math.fround(row===9 ? -1.77 : -2.45)) :
+      Math.fround(expected),`map road ${row} field ${column}`);
+  }
+}
+assert.equal(engine.map_value(roads.length,0),0);
+assert.equal(engine.map_value(0,4),0);
 assert.equal(frame[16],0); assert.equal(frame[17],8); assert.equal(frame[18],90); assert.equal(frame[20],1);
 assert.equal(worldSends,1);
 assert(world[0]+world[1]*4<=moving[0] || moving[0]+moving[1]*4<=world[0]);
