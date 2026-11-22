@@ -6,13 +6,14 @@
   <meta name="theme-color" content="#162b31">
   <title>Flying Low · Wosy Arcade</title>
   <meta name="description" content="Fly two pioneering aircraft on crop patrol and an aerial mail delivery. An original Wosy browser game.">
-  <link rel="stylesheet" href="./style.css?v=county-reservoir-flight-v7">
-  <script type="module" src="./host.mjs?v=county-reservoir-flight-v7"></script>
+  <link rel="stylesheet" href="./style.css?v=cockpit-flight-v7">
+  <script type="module" src="./host.mjs?v=cockpit-flight-v7"></script>
 </head>
 <body>
   <main id="game" class="game" tabindex="-1">
-    <canvas id="view" class="view" aria-label="Third-person view of the flight course"></canvas>
+    <canvas id="view" class="view" aria-label="Flight course view"></canvas>
     <div class="shade" aria-hidden="true"></div>
+    <div class="cockpit-frame" aria-hidden="true"></div>
     <header class="masthead">
       <a class="brand" href="../" aria-label="Wosy demos">WOSY <span>ARCADE</span></a>
       <p id="engine" class="engine" role="status">Loading flight engine</p>
@@ -47,6 +48,7 @@
         <div class="record"><dt>BEST</dt><dd id="best">—</dd></div>
       </dl>
       <div class="hud-actions">
+        <button id="view-toggle" type="button" aria-pressed="false" title="Change camera (V)">Cockpit</button>
         <button id="restart" type="button">Restart</button>
         <button id="pause" type="button">Pause</button>
       </div>
@@ -81,6 +83,7 @@
       <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> / <kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd> flight stick</span>
       <span><kbd>Q</kbd><kbd>E</kbd> power</span>
       <span id="drop-key" hidden><kbd>Space</kbd> mission action</span>
+      <span><kbd>V</kbd> view</span>
       <span><kbd>R</kbd> restart</span>
     </footer>
     <noscript><p class="problem">Flying Low needs JavaScript to connect your controls to the flight engine.</p></noscript>
