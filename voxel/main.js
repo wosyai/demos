@@ -37,7 +37,7 @@ const downActions = new Set();
 const editMouse = new Set();
 const downEdits = new Set();
 const atlas = { data: null, width: 0, height: 0 };
-const terrainChunks = Array.from({ length: 16 }, () => ({ data: null, count: 0 }));
+const terrainChunks = new Map();
 const layers = {
   water: { pointer: 0, count: 0, version: 0 },
   outline: { data: null, count: 0, version: 0 },
@@ -208,7 +208,7 @@ function newGraphics() {
   const locations = (program, names) => Object.fromEntries(names.map((name) => [name, gl.getUniformLocation(program, name)]));
   gpu = {
     world, sky, terrainAtlas, skyVao: gl.createVertexArray(),
-    terrain: terrainChunks.map((chunk) => geometry(chunk.data, gl.DYNAMIC_DRAW)),
+    terrain: new Map(Array.from(terrainChunks, ([id, chunk]) => [id, geometry(chunk.data, gl.DYNAMIC_DRAW)])),
     water: waterGeometry(),
     outline: geometry(layers.outline.data, gl.DYNAMIC_DRAW),
     player: geometry(layers.player.data, gl.DYNAMIC_DRAW),
@@ -258,16 +258,32 @@ function bindLayer(name, stride) {
 }
 
 function bindMesh(pointer, count, id) {
-  const chunk = terrainChunks[id];
-  if (!chunk || !Number.isInteger(id) || !Number.isInteger(count) || count < 0 || count > 55296 || count % 3 !== 0) {
+  if (!Number.isInteger(id) || id < 0 || id >= 64 || !Number.isInteger(count) || count < 0 || count > 55296 || count % 3 !== 0) {
     throw new Error("The engine returned an invalid terrain chunk.");
   }
   terrainVersion++;
-  chunk.count = count;
-  chunk.data = count ? memoryFloats(pointer, count * 6).slice() : null;
-  if (count > 0 && gpu && !contextLost) {
-    gl.bindBuffer(gl.ARRAY_BUFFER, gpu.terrain[id].buffer);
-    gl.bufferData(gl.ARRAY_BUFFER, chunk.data, gl.DYNAMIC_DRAW);
+  if (count === 0) {
+    terrainChunks.delete(id);
+    if (gpu && !contextLost) {
+      const slot = gpu.terrain.get(id);
+      if (slot) {
+        gl.deleteVertexArray(slot.vao);
+        gl.deleteBuffer(slot.buffer);
+        gpu.terrain.delete(id);
+      }
+    }
+    return;
+  }
+  const data = memoryFloats(pointer, count * 6).slice();
+  terrainChunks.set(id, { count, data });
+  if (gpu && !contextLost) {
+    const slot = gpu.terrain.get(id);
+    if (slot) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, slot.buffer);
+      gl.bufferData(gl.ARRAY_BUFFER, data, gl.DYNAMIC_DRAW);
+    } else {
+      gpu.terrain.set(id, geometry(data, gl.DYNAMIC_DRAW));
+    }
   }
 }
 
@@ -372,7 +388,7 @@ async function boot() {
   }
   try {
     prepareGraphics();
-    const response = await fetch(new URL("./engine.wasm?v=beacon-terrain-streaming-v1", import.meta.url));
+    const response = await fetch(new URL("./engine.wasm?v=beacon-archipelago96-v1", import.meta.url));
     if (!response.ok) throw new Error(`Engine not found (HTTP ${response.status}).`);
     const bytes = await response.arrayBuffer();
     const api = {
@@ -498,12 +514,9 @@ function present(pointer, hit) {
   gl.bindTexture(gl.TEXTURE_2D, gpu.terrainAtlas);
   gl.uniform1i(gpu.main.terrainAtlas, 0);
   gl.uniform1i(gpu.main.pass, 0);
-  for (let id = 0; id < terrainChunks.length; id++) {
-    const { count } = terrainChunks[id];
-    if (count > 0) {
-      gl.bindVertexArray(gpu.terrain[id].vao);
-      gl.drawArrays(gl.TRIANGLES, 0, count);
-    }
+  for (const [id, { count }] of terrainChunks) {
+    gl.bindVertexArray(gpu.terrain.get(id).vao);
+    gl.drawArrays(gl.TRIANGLES, 0, count);
   }
   if (layers.player.count > 0) {
     gl.uniform1i(gpu.main.pass, 2);

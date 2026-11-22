@@ -10,21 +10,31 @@ host = extern wasm "showcase" {
 };
 
 f32[6] blank_vertex = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
-u8[48] blank_cells = [
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+u8[96] blank_cells = [
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 ];
-u8[48][48] blank_layer = [
-	blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells,
-	blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells,
-	blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells,
-	blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells
+u8[96][96] blank_layer = [
+	blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells,
+	blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells,
+	blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells,
+	blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells,
+	blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells,
+	blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells,
+	blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells,
+	blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells,
+	blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells,
+	blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells,
+	blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells,
+	blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells, blank_cells
 ];
-u8[48][48][16] world = [
-	blank_layer, blank_layer, blank_layer, blank_layer, blank_layer, blank_layer, blank_layer, blank_layer, blank_layer, blank_layer, blank_layer, blank_layer,
-	blank_layer, blank_layer, blank_layer, blank_layer
+u8[96][96][16] world = [
+	blank_layer, blank_layer, blank_layer, blank_layer, blank_layer, blank_layer, blank_layer, blank_layer,
+	blank_layer, blank_layer, blank_layer, blank_layer, blank_layer, blank_layer, blank_layer, blank_layer
 ];
 f32[6][24] blank_vertices = [
 	blank_vertex, blank_vertex, blank_vertex, blank_vertex, blank_vertex, blank_vertex, blank_vertex, blank_vertex, blank_vertex, blank_vertex, blank_vertex, blank_vertex,
@@ -156,16 +166,19 @@ i32 sandbox_material = 2;
 f32 beacon_elapsed = 0.0;
 f32 lamp_wet = 0.0;
 f32 tide_progress = 0.0;
-u8[48][48][16] sandbox_cells = world;
+u8[96][96][16] sandbox_cells = world;
 f32 swell = 0.18;
 f32 chop = 0.10;
 bool sea_mesh_ready = false;
-f32[25] blank_sea_samples = [
+f32[37] blank_sea_samples = [
+	0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
 	0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
 	0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
 	0.0
 ];
-f32[25][25] sea_samples = [
+f32[37][37] sea_samples = [
+	blank_sea_samples, blank_sea_samples, blank_sea_samples, blank_sea_samples, blank_sea_samples, blank_sea_samples,
+	blank_sea_samples, blank_sea_samples, blank_sea_samples, blank_sea_samples, blank_sea_samples, blank_sea_samples,
 	blank_sea_samples, blank_sea_samples, blank_sea_samples, blank_sea_samples, blank_sea_samples, blank_sea_samples,
 	blank_sea_samples, blank_sea_samples, blank_sea_samples, blank_sea_samples, blank_sea_samples, blank_sea_samples,
 	blank_sea_samples, blank_sea_samples, blank_sea_samples, blank_sea_samples, blank_sea_samples, blank_sea_samples,
@@ -173,13 +186,17 @@ f32[25][25] sea_samples = [
 	blank_sea_samples
 ];
 f32[6][6] blank_sea_quad = [blank_vertex, blank_vertex, blank_vertex, blank_vertex, blank_vertex, blank_vertex];
-f32[6][6][24] blank_sea_row = [
+f32[6][6][36] blank_sea_row = [
+	blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad,
+	blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad,
 	blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad,
 	blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad,
 	blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad,
 	blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad, blank_sea_quad
 ];
-f32[6][6][24][24] sea_vertices = [
+f32[6][6][36][36] sea_vertices = [
+	blank_sea_row, blank_sea_row, blank_sea_row, blank_sea_row, blank_sea_row, blank_sea_row,
+	blank_sea_row, blank_sea_row, blank_sea_row, blank_sea_row, blank_sea_row, blank_sea_row,
 	blank_sea_row, blank_sea_row, blank_sea_row, blank_sea_row, blank_sea_row, blank_sea_row,
 	blank_sea_row, blank_sea_row, blank_sea_row, blank_sea_row, blank_sea_row, blank_sea_row,
 	blank_sea_row, blank_sea_row, blank_sea_row, blank_sea_row, blank_sea_row, blank_sea_row,
@@ -188,8 +205,19 @@ f32[6][6][24][24] sea_vertices = [
 
 u64(i32) index_of = fn(value) { core.int_extend<u64>(value) };
 
+i32() creative_columns = fn { 4 };
+
+i32() terrain_columns = fn { 8 };
+
+i32() terrain_span = fn {
+	12 * (if (beacon_phase == BeaconPhase::sandbox) { creative_columns() } else { terrain_columns() })
+};
+
+f32() terrain_span_f = fn { core.sint_to_float<f32>(terrain_span()) };
+
 bool(i32, i32, i32) inside = fn(x, y, z) {
-	x >= 0 && x < 48 && y >= 0 && y < 16 && z >= 0 && z < 48
+	i32 span = terrain_span();
+	x >= 0 && x < span && y >= 0 && y < 16 && z >= 0 && z < span
 };
 
 u8(i32, i32, i32) cell = fn(x, y, z) {
@@ -504,30 +532,38 @@ unit(i32, i32, i32, i32, u8) face = fn(ix, iy, iz, side, material) {
 	box_face(core.sint_to_float<f32>(ix), core.sint_to_float<f32>(iy), core.sint_to_float<f32>(iz), 1.0, side, material);
 };
 
-i32(i32, i32, i32) loot_key = fn(x, y, z) { x + y * 64 + z * 1024 };
+i32(i32, i32, i32) packed_cell = fn(x, y, z) {
+	x % 64 + y * 64 + (z % 64) * 1024 + (x / 64) * 524288 + (z / 64) * 1048576
+};
 
-i32(i32) loot_x = fn(key) { key % 64 };
-i32(i32) loot_y = fn(key) { (key / 64) % 16 };
-i32(i32) loot_z = fn(key) { key / 1024 };
+i32(i32) packed_x = fn(key) { key % 64 + ((key / 524288) % 2) * 64 };
+i32(i32) packed_y = fn(key) { (key / 64) % 16 };
+i32(i32) packed_z = fn(key) { (key / 1024) % 64 + ((key / 1048576) % 2) * 64 };
+i32(i32) hit_face = fn(key) { (key / 65536) % 8 };
+i32(i32) hit_cell = fn(key) { key - hit_face(key) * 65536 };
 
-i32() terrain_columns = fn { 4 };
 
 i32(i32, i32) chunk_id = fn(x, z) { x + z * terrain_columns() };
 
 i32(i32, i32) chunk_at = fn(x, z) { chunk_id(x / 12, z / 12) };
 
+f32() loose_cube_size = fn { 0.24 };
+
+f32(i32) loose_cube_side = fn(cell_axis) { core.sint_to_float<f32>(cell_axis) + 0.38 };
+
+f32(i32) loose_cube_base = fn(cell_height) { core.sint_to_float<f32>(cell_height) + 0.02 };
+
 unit(f32, f32, f32, i32) draw_loose_cube = fn(x, y, z, side) {
-	if (side < 6) { box_face(x, y, z, 0.24, side, 5); draw_loose_cube(x, y, z, side + 1); };
+	if (side < 6) { box_face(x, y, z, loose_cube_size(), side, 5); draw_loose_cube(x, y, z, side + 1); };
 };
 
 unit(i32, i32) mesh_loose = fn(at, chunk) {
 	if (at < loose_count) {
 		i32 key = loose_wood[index_of(at)];
-		i32 x = loot_x(key);
-		i32 z = loot_z(key);
+		i32 x = packed_x(key);
+		i32 z = packed_z(key);
 		if (chunk_at(x, z) == chunk) {
-			draw_loose_cube(core.sint_to_float<f32>(x) + 0.38,
-				core.sint_to_float<f32>(loot_y(key)) + 0.02, core.sint_to_float<f32>(z) + 0.38, 0);
+			draw_loose_cube(loose_cube_side(x), loose_cube_base(packed_y(key)), loose_cube_side(z), 0);
 		};
 		mesh_loose(at + 1, chunk);
 	};
@@ -572,8 +608,8 @@ i32(i32) rebuild_chunk = fn(chunk) {
 };
 
 i32(i32) rebuild_chunks = fn(chunk) {
-	if (chunk < terrain_columns() * terrain_columns()) {
-		i32 count = rebuild_chunk(chunk);
+	if (chunk < creative_columns() * creative_columns()) {
+		i32 count = rebuild_chunk(chunk_id(chunk % creative_columns(), chunk / creative_columns()));
 		count + rebuild_chunks(chunk + 1)
 	} else { 0 }
 };
@@ -581,7 +617,7 @@ i32(i32) rebuild_chunks = fn(chunk) {
 i32(i32) stream_min = fn(center) { if (center < 2) { 0 } else { center - 2 } };
 
 i32(i32) stream_max = fn(center) {
-	if (center < 0) { terrain_columns() - 1 } else { min_i(terrain_columns() - 1, center + 2) }
+	if (center < 0) { creative_columns() - 1 } else { min_i(terrain_columns() - 1, center + 2) }
 };
 
 bool(i32, i32, i32, i32) terrain_resident = fn(x, z, center_x, center_z) {
@@ -639,6 +675,9 @@ i32(bool) sync_terrain = fn(force) {
 
 i32() rebuild = fn {
 	if (beacon_phase == BeaconPhase::sandbox) {
+		if (terrain_chunk_x >= 0) {
+			retire_terrain(stream_min(terrain_chunk_z), stream_min(terrain_chunk_x), stream_max(terrain_chunk_x), stream_max(terrain_chunk_z), -1, -1);
+		};
 		terrain_chunk_x = -1;
 		terrain_chunk_z = -1;
 		rebuild_chunks(0)
@@ -657,9 +696,9 @@ unit(i32, i32) rebuild_near = fn(x, z) {
 	i32 chunk = chunk_at(x, z);
 	refresh_visible_terrain(chunk);
 	if (x > 0 && x % 12 == 0) { refresh_visible_terrain(chunk - 1); };
-	if (x < 47 && x % 12 == 11) { refresh_visible_terrain(chunk + 1); };
+	if (x < terrain_span() - 1 && x % 12 == 11) { refresh_visible_terrain(chunk + 1); };
 	if (z > 0 && z % 12 == 0) { refresh_visible_terrain(chunk - terrain_columns()); };
-	if (z < 47 && z % 12 == 11) { refresh_visible_terrain(chunk + terrain_columns()); };
+	if (z < terrain_span() - 1 && z % 12 == 11) { refresh_visible_terrain(chunk + terrain_columns()); };
 };
 
 bool(i32, i32) coast_cave = fn(x, z) {
@@ -679,8 +718,38 @@ i32(i32, i32) cave_ground = fn(x, z) {
 	}
 };
 
+bool(i32, i32) outer_coast = fn(x, z) {
+	x >= 44 || z >= 48
+};
+
+i32(i32, i32, i32, i32, i32, i32) tidal_bank = fn(x, z, west, east, north, south) {
+	if (x < west || x > east || z < north || z > south) { 0 } else {
+		i32 rim = min_i(min_i(x - west, east - x), min_i(z - north, south - z));
+		min_i(7, 2 + rim / 2)
+	}
+};
+
+i32(i32, i32) outer_ground = fn(x, z) {
+	bool stepping_stone = (x >= 44 && x <= 46) || (x >= 48 && x <= 50)
+		|| (x >= 52 && x <= 55) || (x >= 57 && x <= 60) || (x >= 62 && x <= 64);
+	if (z >= 13 && z <= 16 && (stepping_stone || (x >= 65 && x <= 68))) { 4 } else {
+		i32 east_bank = tidal_bank(x, z, 65, 86, 9, 27);
+		if (east_bank > 0) { east_bank } else { tidal_bank(x, z, 63, 89, 61, 84) }
+	}
+};
+
+u8(i32, i32, i32, i32) outer_tile = fn(x, y, z, ground) {
+	if (x == 67 && z == 14 && y >= 5 && y <= 7) { 5 } else {
+		if (y == ground) { if (ground < 5) { 4 } else { 1 } } else {
+			if (y < ground) { 3 } else { 0 }
+		}
+	}
+};
+
 i32(i32, i32) beacon_ground = fn(x, z) {
-	if (x >= 28 && x <= 41 && z >= 9 && z <= 13) { cave_ground(x, z) } else { beacon_shore(x, z) }
+	if (outer_coast(x, z)) { outer_ground(x, z) } else {
+		if (x >= 28 && x <= 41 && z >= 9 && z <= 13) { cave_ground(x, z) } else { beacon_shore(x, z) }
+	}
 };
 
 i32(i32, i32) beacon_shore = fn(x, z) {
@@ -797,13 +866,15 @@ u8(i32, i32, i32, i32) beacon_tile = fn(x, y, z, ground) {
 
 unit(i32, i32, i32, i32) beacon_column = fn(x, y, z, ground) {
 	if (y < 16) {
-		world[index_of(y)][index_of(z)][index_of(x)] = beacon_tile(x, y, z, ground);
+		world[index_of(y)][index_of(z)][index_of(x)] = if (outer_coast(x, z)) {
+			outer_tile(x, y, z, ground)
+		} else { beacon_tile(x, y, z, ground) };
 		beacon_column(x, y + 1, z, ground);
 	};
 };
 
 unit(i32, i32) beacon_row = fn(x, z) {
-	if (x < 48) {
+	if (x < terrain_span()) {
 		beacon_column(x, 0, z, beacon_ground(x, z));
 		beacon_row(x + 1, z);
 	};
@@ -829,7 +900,7 @@ unit(i32, i32) beacon_canopy_row = fn(x, z) {
 };
 
 unit(i32) build_beacon_island = fn(z) {
-	if (z < 48) {
+	if (z < terrain_span()) {
 		beacon_row(0, z);
 		build_beacon_island(z + 1);
 	};
@@ -944,8 +1015,9 @@ f32(f32, f32, i32) first_distance = fn(origin, direction, index) {
 };
 
 i32(i32, i32, i32, i32, i32, i32, i32, f32, f32, f32, f32, f32, f32, f32, i32) pick_step = fn(x, y, z, side, sx, sy, sz, tx, ty, tz, dx, dy, dz, reach, remaining) {
-	if (cell(x, y, z) != 0) { x + y * 64 + z * 1024 + side * 65536 } else {
-		bool leaving = (x < 0 && sx <= 0) || (x >= 48 && sx >= 0) || (y < 0 && sy <= 0) || (y >= 16 && sy >= 0) || (z < 0 && sz <= 0) || (z >= 48 && sz >= 0);
+	if (cell(x, y, z) != 0) { packed_cell(x, y, z) + side * 65536 } else {
+		i32 span = terrain_span();
+		bool leaving = (x < 0 && sx <= 0) || (x >= span && sx >= 0) || (y < 0 && sy <= 0) || (y >= 16 && sy >= 0) || (z < 0 && sz <= 0) || (z >= span && sz >= 0);
 		if (remaining == 0 || leaving) { -1 } else {
 			if (tx <= ty && tx <= tz) {
 				i32 next_side = if (sx > 0) { 0 } else { 1 };
@@ -1168,14 +1240,14 @@ f32(f32, f32, f32, f32) contact_position = fn(prior, next, low_extent, high_exte
 
 unit(f32, f32, f32, i32) move_player_steps = fn(dx, dy, dz, remaining) {
 	if (dx != 0.0) {
-		f32 next_x = clamp_f(camera_pose.x + dx, -20.0, 68.0);
+		f32 next_x = clamp_f(camera_pose.x + dx, -20.0, terrain_span_f() + 20.0);
 		if (next_x != camera_pose.x && player_collides(next_x, camera_pose.y, camera_pose.z)) {
 			next_x = contact_position(camera_pose.x, next_x, player_radius, player_radius);
 		};
 		camera_pose.x = next_x;
 	};
 	if (dz != 0.0) {
-		f32 next_z = clamp_f(camera_pose.z + dz, -20.0, 68.0);
+		f32 next_z = clamp_f(camera_pose.z + dz, -20.0, terrain_span_f() + 20.0);
 		if (next_z != camera_pose.z && player_collides(camera_pose.x, camera_pose.y, next_z)) {
 			next_z = contact_position(camera_pose.z, next_z, player_radius, player_radius);
 		};
@@ -1304,9 +1376,9 @@ unit(i32) publish_outline = fn(hit) {
 		selected_hit = hit;
 		wire_position = 0;
 		if (hit >= 0) {
-			f32 x = core.sint_to_float<f32>(hit % 64);
-			f32 y = core.sint_to_float<f32>((hit / 64) % 16);
-			f32 z = core.sint_to_float<f32>((hit / 1024) % 64);
+			f32 x = core.sint_to_float<f32>(packed_x(hit));
+			f32 y = core.sint_to_float<f32>(packed_y(hit));
+			f32 z = core.sint_to_float<f32>(packed_z(hit));
 			f32 x0 = x - 0.012;
 			f32 y0 = y - 0.012;
 			f32 z0 = z - 0.012;
@@ -1332,7 +1404,7 @@ unit(i32) publish_outline = fn(hit) {
 
 f32(i32) sea_coordinate = fn(index) {
 	if (index == 0) { -192.0 } else {
-		if (index == 24) { 192.0 } else { core.sint_to_float<f32>(index - 1) * 4.0 - 20.0 }
+		if (index == 36) { 192.0 } else { core.sint_to_float<f32>(index - 1) * 4.0 - 20.0 }
 	}
 };
 
@@ -1342,24 +1414,24 @@ f32(f32, f32) sea_wave = fn(x, z) {
 };
 
 unit(i32, i32, f32) sample_sea_row = fn(x, z, pz) {
-	if (x < 25) {
+	if (x < 37) {
 		sea_samples[index_of(z)][index_of(x)] = sea_wave(sea_coordinate(x), pz);
 		sample_sea_row(x + 1, z, pz);
 	};
 };
 
 unit(i32) sample_sea = fn(z) {
-	if (z < 25) {
+	if (z < 37) {
 		sample_sea_row(0, z, sea_coordinate(z));
 		sample_sea(z + 1);
 	};
 };
 
 f32(f32, f32) sea_surface = fn(x, z) {
-	f32 gx = (clamp_f(x, -20.0, 68.0) + 20.0) * 0.25;
-	f32 gz = (clamp_f(z, -20.0, 68.0) + 20.0) * 0.25;
-	i32 ix = min_i(floor_i(gx), 21);
-	i32 iz = min_i(floor_i(gz), 21);
+	f32 gx = (clamp_f(x, -20.0, 116.0) + 20.0) * 0.25;
+	f32 gz = (clamp_f(z, -20.0, 116.0) + 20.0) * 0.25;
+	i32 ix = min_i(floor_i(gx), 33);
+	i32 iz = min_i(floor_i(gz), 33);
 	f32 u = gx - core.sint_to_float<f32>(ix);
 	f32 v = gz - core.sint_to_float<f32>(iz);
 	u64 left = index_of(ix + 1);
@@ -1388,7 +1460,7 @@ unit(i32, i32, u64, i32, i32) write_sea_vertex = fn(x, z, corner, sx, sz) {
 };
 
 unit(i32, i32) sea_mesh_row = fn(x, z) {
-	if (x < 24) {
+	if (x < 36) {
 		write_sea_vertex(x, z, 0, x, z);
 		write_sea_vertex(x, z, 1, x, z + 1);
 		write_sea_vertex(x, z, 2, x + 1, z);
@@ -1400,7 +1472,7 @@ unit(i32, i32) sea_mesh_row = fn(x, z) {
 };
 
 unit(i32) sea_mesh = fn(z) {
-	if (z < 24) {
+	if (z < 36) {
 		sea_mesh_row(0, z);
 		sea_mesh(z + 1);
 	};
@@ -1410,7 +1482,7 @@ unit() publish_water = fn {
 	sample_sea(0);
 	sea_mesh(0);
 	sea_mesh_ready = true;
-	unsafe { host.water(core.pointer_cast<*?u8>(&?sea_vertices[0][0][0][0]), 3456); };
+	unsafe { host.water(core.pointer_cast<*?u8>(&?sea_vertices[0][0][0][0]), 7776); };
 };
 
 f32(BeaconPhase) beacon_phase_code = fn(phase) {
@@ -1586,10 +1658,10 @@ unit(bool) publish_avatar = fn(visible) {
 };
 
 f32(i32, f32, f32, f32, f32, f32, f32) ray_hit_distance = fn(hit, ox, oy, oz, dx, dy, dz) {
-	i32 side = hit / 65536;
-	f32 x = core.sint_to_float<f32>(hit % 64);
-	f32 y = core.sint_to_float<f32>((hit / 64) % 16);
-	f32 z = core.sint_to_float<f32>((hit / 1024) % 64);
+	i32 side = hit_face(hit);
+	f32 x = core.sint_to_float<f32>(packed_x(hit));
+	f32 y = core.sint_to_float<f32>(packed_y(hit));
+	f32 z = core.sint_to_float<f32>(packed_z(hit));
 	if (side < 2 && dx != 0.0) {
 		(x + (if (side == 1) { 1.0 } else { 0.0 }) - ox) / dx
 	} else {
@@ -1612,14 +1684,14 @@ f32(f32, f32, f32, f32, f32, f32, f32) camera_boom_probe = fn(ox, oy, oz, dx, dy
 	f32 ex = ox + dx * reach;
 	f32 ey = oy + dy * reach;
 	f32 ez = oz + dz * reach;
-	bool outside = (ox < 0.0 && ex < 0.0) || (ox >= 48.0 && ex >= 48.0)
+	bool outside = (ox < 0.0 && ex < 0.0) || (ox >= terrain_span_f() && ex >= terrain_span_f())
 		|| (oy < 0.0 && ey < 0.0) || (oy >= 16.0 && ey >= 16.0)
-		|| (oz < 0.0 && ez < 0.0) || (oz >= 48.0 && ez >= 48.0);
+		|| (oz < 0.0 && ez < 0.0) || (oz >= terrain_span_f() && ez >= terrain_span_f());
 	if (reach <= 0.0 || outside) { reach } else {
 		i32 hit = pick_in_range(ox, oy, oz, dx, dy, dz, reach);
 		if (hit < 0) { reach } else {
-			bool starts_in_hit = hit % 64 == floor_i(ox) && (hit / 64) % 16 == floor_i(oy)
-				&& (hit / 1024) % 64 == floor_i(oz);
+			bool starts_in_hit = packed_x(hit) == floor_i(ox) && packed_y(hit) == floor_i(oy)
+				&& packed_z(hit) == floor_i(oz);
 			if (starts_in_hit) { 0.0 } else {
 				clamp_f(ray_hit_distance(hit, ox, oy, oz, dx, dy, dz) - 0.29, 0.0, reach)
 			}
@@ -1642,7 +1714,7 @@ bool(i32, f32, f32, f32, f32, f32, f32) camera_sees_target = fn(hit, view_x, vie
 	f32 reach = if (xy > az) { xy } else { az };
 	if (reach <= 0.0) { true } else {
 		i32 viewed = pick_in_range(view_x, view_y, view_z, dx / reach, dy / reach, dz / reach, reach);
-		viewed >= 0 && viewed % 65536 == hit % 65536
+		viewed >= 0 && hit_cell(viewed) == hit_cell(hit)
 	}
 };
 
@@ -1768,8 +1840,8 @@ unit(i32, i32, i32, i32) settle_wood = fn(at, x, y, z) {
 	if (at < loose_count) {
 		u64 index = index_of(at);
 		i32 key = loose_wood[index];
-		if (loot_x(key) == x && loot_z(key) == z && loot_y(key) == y + 1) {
-			loose_wood[index] = loot_key(x, loose_floor(x, y, z), z);
+		if (packed_x(key) == x && packed_z(key) == z && packed_y(key) == y + 1) {
+			loose_wood[index] = packed_cell(x, loose_floor(x, y, z), z);
 		};
 		settle_wood(at + 1, x, y, z);
 	};
@@ -1781,18 +1853,26 @@ bool(i32, i32) has_loose_wood = fn(at, key) {
 	}
 };
 
+bool(i32) within_loose_reach = fn(key) {
+	f32 x = loose_cube_side(packed_x(key));
+	f32 y = loose_cube_base(packed_y(key));
+	f32 z = loose_cube_side(packed_z(key));
+	f32 side = loose_cube_size();
+	f32 tx = clamp_f(camera_pose.x, x, x + side);
+	f32 ty = clamp_f(camera_pose.y, y, y + side);
+	f32 tz = clamp_f(camera_pose.z, z, z + side);
+	f32 ox = clamp_f(tx, camera_pose.x - player_radius + contact_skin, camera_pose.x + player_radius - contact_skin);
+	f32 oy = clamp_f(ty, camera_pose.y - player_feet + contact_skin, camera_pose.y + player_head - contact_skin);
+	f32 oz = clamp_f(tz, camera_pose.z - player_radius + contact_skin, camera_pose.z + player_radius - contact_skin);
+	f32 dx = tx - ox;
+	f32 dy = ty - oy;
+	f32 dz = tz - oz;
+	dx * dx + dy * dy + dz * dz <= 0.25 && pick_in_range(ox, oy, oz, dx, dy, dz, 1.0) < 0
+};
+
 i32(i32) reachable_wood = fn(at) {
 	if (at == loose_count) { -1 } else {
-		i32 key = loose_wood[index_of(at)];
-		f32 x = core.sint_to_float<f32>(loot_x(key)) + 0.50;
-		f32 y = core.sint_to_float<f32>(loot_y(key)) + 0.14;
-		f32 z = core.sint_to_float<f32>(loot_z(key)) + 0.50;
-		f32 oy = clamp_f(y, camera_pose.y - player_feet + contact_skin, camera_pose.y + player_head - contact_skin);
-		f32 dx = x - camera_pose.x;
-		f32 dy = y - oy;
-		f32 dz = z - camera_pose.z;
-		if (dx * dx + dy * dy + dz * dz <= 0.64
-			&& pick_in_range(camera_pose.x, oy, camera_pose.z, dx, dy, dz, 1.0) < 0) { at } else { reachable_wood(at + 1) }
+		if (within_loose_reach(loose_wood[index_of(at)])) { at } else { reachable_wood(at + 1) }
 	}
 };
 
@@ -1804,7 +1884,7 @@ unit() collect_wood = fn {
 		loose_count = loose_count - 1;
 		loose_wood[index] = loose_wood[index_of(loose_count)];
 		bridge_blocks = bridge_blocks + 1;
-		refresh_visible_terrain(chunk_at(loot_x(key), loot_z(key)));
+		refresh_visible_terrain(chunk_at(packed_x(key), packed_z(key)));
 	};
 };
 
@@ -1849,13 +1929,13 @@ i32(i32, i32, i32, i32) edit_beacon = fn(x, y, z, material) {
 		bool place = material == 5 && present == 0 && bridge_blocks > 0;
 		if (!(loosen || open_tunnel || place)) { -4 } else {
 			if (loosen && loose_count >= 48) { -6 } else {
-				if (place && has_loose_wood(0, loot_key(x, y, z))) { -5 } else {
+				if (place && has_loose_wood(0, packed_cell(x, y, z))) { -5 } else {
 					i32 changed = write_cell(x, y, z, material);
 					if (changed == 1) {
 						if (place) { bridge_blocks = bridge_blocks - 1; } else {
 							if (loose_count > 0) { settle_wood(0, x, y, z); };
 							if (loosen) {
-								loose_wood[index_of(loose_count)] = loot_key(x, loose_floor(x, y, z), z);
+								loose_wood[index_of(loose_count)] = packed_cell(x, loose_floor(x, y, z), z);
 								loose_count = loose_count + 1;
 							};
 						};
@@ -1872,10 +1952,10 @@ i32(i32) edit_view = fn(material) {
 	update_orientation();
 	i32 hit = current_view_target();
 	if (hit < 0) { -1 } else {
-		i32 side = hit / 65536;
-		i32 x = hit % 64;
-		i32 y = (hit / 64) % 16;
-		i32 z = (hit / 1024) % 64;
+		i32 side = hit_face(hit);
+		i32 x = packed_x(hit);
+		i32 y = packed_y(hit);
+		i32 z = packed_z(hit);
 		if (material > 0) {
 			if (side == 0) { x = x - 1; };
 			if (side == 1) { x = x + 1; };
