@@ -60,14 +60,16 @@ engine = new WebAssembly.Instance(binary, {
       assert.equal(new Set(tileHashes).size, 8, 'surface material tiles must be distinct');
       atlasCount++;
     },
-    mesh(pointer, count, chunk) {
-      assert(Number.isInteger(chunk) && chunk >= 0 && chunk < 64, 'valid terrain chunk id');
+    mesh(pointer, count, chunkX, chunkZ) {
+      assert(Number.isInteger(chunkX) && chunkX >= 0 && chunkX < 8, 'valid fixed-terrain X chunk');
+      assert(Number.isInteger(chunkZ) && chunkZ >= 0 && chunkZ < 8, 'valid fixed-terrain Z chunk');
+      const chunk = chunkX + 8 * chunkZ;
       const current = layer(pointer, count, 3, 55296);
       const data = view(pointer, count * 6);
       const lantern = new Set();
       for (let i = 0; i < data.length; i += 6) {
-        assert(data[i] >= (chunk % 8) * 12 && data[i] <= (chunk % 8 + 1) * 12);
-        assert(data[i + 2] >= Math.floor(chunk / 8) * 12 && data[i + 2] <= (Math.floor(chunk / 8) + 1) * 12);
+        assert(data[i] >= chunkX * 12 && data[i] <= (chunkX + 1) * 12);
+        assert(data[i + 2] >= chunkZ * 12 && data[i + 2] <= (chunkZ + 1) * 12);
         assert(data[i + 3] > 0 && data[i + 3] < 1, 'baked atlas U outside bounds');
         assert(data[i + 4] > 0 && data[i + 4] < 1, 'baked atlas V outside bounds');
         const light = data[i + 5];

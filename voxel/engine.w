@@ -1,6 +1,6 @@
 %%start
 host = extern wasm "showcase" {
-	unsafe unit(*?u8, i32, i32) mesh;
+	unsafe unit(*?u8, i32, i32, i32) mesh;
 	unsafe unit(*?u8, i32, i32) atlas;
 	unsafe unit(*?u8, i32) frame;
 	unsafe unit(*?u8, i32) outline;
@@ -577,9 +577,14 @@ i32(RayHit) legacy_hit = fn(hit) {
 	}
 };
 
-i32(i32, i32) chunk_id = fn(x, z) { x + z * terrain_columns() };
+i32(i32) chunk_axis = fn(value) {
+	value / 12 - (if (value % 12 < 0) { 1 } else { 0 })
+};
 
-i32(i32, i32) chunk_at = fn(x, z) { chunk_id(x / 12, z / 12) };
+i32(i32) chunk_local = fn(value) {
+	i32 local = value % 12;
+	if (local < 0) { local + 12 } else { local }
+};
 
 f32() loose_cube_size = fn { 0.24 };
 
@@ -591,15 +596,15 @@ unit(f32, f32, f32, i32) draw_loose_cube = fn(x, y, z, side) {
 	if (side < 6) { box_face(x, y, z, loose_cube_size(), side, 5); draw_loose_cube(x, y, z, side + 1); };
 };
 
-unit(i32, i32) mesh_loose = fn(at, chunk) {
+unit(i32, i32, i32) mesh_loose = fn(at, chunk_x, chunk_z) {
 	if (at < loose_count) {
 		u64 slot = index_of(at);
 		i32 x = loose_x[slot];
 		i32 z = loose_z[slot];
-		if (chunk_at(x, z) == chunk) {
+		if (chunk_axis(x) == chunk_x && chunk_axis(z) == chunk_z) {
 			draw_loose_cube(loose_cube_side(x), loose_cube_base(loose_y[slot]), loose_cube_side(z), 0);
 		};
-		mesh_loose(at + 1, chunk);
+		mesh_loose(at + 1, chunk_x, chunk_z);
 	};
 };
 
@@ -632,18 +637,18 @@ unit(i32, i32, i32) mesh_cells = fn(y, start_x, start_z) {
 	};
 };
 
-i32(i32) rebuild_chunk = fn(chunk) {
+i32(i32, i32) rebuild_chunk = fn(chunk_x, chunk_z) {
 	write_position = 0;
-	mesh_cells(0, (chunk % terrain_columns()) * 12, (chunk / terrain_columns()) * 12);
-	if (loose_count > 0) { mesh_loose(0, chunk); };
+	mesh_cells(0, chunk_x * 12, chunk_z * 12);
+	if (loose_count > 0) { mesh_loose(0, chunk_x, chunk_z); };
 	i32 count = write_position;
-	unsafe { host.mesh(core.pointer_cast<*?u8>(&?vertices[0][0][0][0][0]), count, chunk); };
+	unsafe { host.mesh(core.pointer_cast<*?u8>(&?vertices[0][0][0][0][0]), count, chunk_x, chunk_z); };
 	count
 };
 
 i32(i32) rebuild_chunks = fn(chunk) {
 	if (chunk < creative_columns() * creative_columns()) {
-		i32 count = rebuild_chunk(chunk_id(chunk % creative_columns(), chunk / creative_columns()));
+		i32 count = rebuild_chunk(chunk % creative_columns(), chunk / creative_columns());
 		count + rebuild_chunks(chunk + 1)
 	} else { 0 }
 };
@@ -662,7 +667,7 @@ bool(i32, i32, i32, i32) terrain_resident = fn(x, z, center_x, center_z) {
 unit(i32, i32, i32, i32, i32) retire_terrain_row = fn(x, z, east, next_x, next_z) {
 	if (x <= east) {
 		if (!terrain_resident(x, z, next_x, next_z)) {
-			unsafe { host.mesh(core.pointer_cast<*?u8>(&?vertices[0][0][0][0][0]), 0, chunk_id(x, z)); };
+			unsafe { host.mesh(core.pointer_cast<*?u8>(&?vertices[0][0][0][0][0]), 0, x, z); };
 		};
 		retire_terrain_row(x + 1, z, east, next_x, next_z);
 	};
@@ -677,7 +682,7 @@ unit(i32, i32, i32, i32, i32, i32) retire_terrain = fn(z, west, east, south, nex
 
 i32(i32, i32, i32, bool, i32, i32) enter_terrain_row = fn(x, z, east, force, old_x, old_z) {
 	if (x <= east) {
-		i32 count = if (force || !terrain_resident(x, z, old_x, old_z)) { rebuild_chunk(chunk_id(x, z)) } else { 0 };
+		i32 count = if (force || !terrain_resident(x, z, old_x, old_z)) { rebuild_chunk(x, z) } else { 0 };
 		count + enter_terrain_row(x + 1, z, east, force, old_x, old_z)
 	} else { 0 }
 };
@@ -690,7 +695,7 @@ i32(i32, i32, i32, i32, bool, i32, i32) enter_terrain = fn(z, west, east, south,
 };
 
 i32(f32) terrain_axis = fn(value) {
-	i32 axis = floor_i(value / 12.0);
+	i32 axis = chunk_axis(floor_i(value));
 	if (axis < 0) { 0 } else { min_i(terrain_columns() - 1, axis) }
 };
 
@@ -720,19 +725,26 @@ i32() rebuild = fn {
 	}
 };
 
-unit(i32) refresh_visible_terrain = fn(chunk) {
-	if (terrain_resident(chunk % terrain_columns(), chunk / terrain_columns(), terrain_chunk_x, terrain_chunk_z)) {
-		rebuild_chunk(chunk);
+unit(i32, i32) refresh_visible_terrain = fn(chunk_x, chunk_z) {
+	if (terrain_resident(chunk_x, chunk_z, terrain_chunk_x, terrain_chunk_z)) {
+		rebuild_chunk(chunk_x, chunk_z);
 	};
 };
 
+unit(i32, i32) refresh_cell_owner = fn(x, z) {
+	refresh_visible_terrain(chunk_axis(x), chunk_axis(z));
+};
+
 unit(i32, i32) rebuild_near = fn(x, z) {
-	i32 chunk = chunk_at(x, z);
-	refresh_visible_terrain(chunk);
-	if (x > 0 && x % 12 == 0) { refresh_visible_terrain(chunk - 1); };
-	if (x < terrain_span() - 1 && x % 12 == 11) { refresh_visible_terrain(chunk + 1); };
-	if (z > 0 && z % 12 == 0) { refresh_visible_terrain(chunk - terrain_columns()); };
-	if (z < terrain_span() - 1 && z % 12 == 11) { refresh_visible_terrain(chunk + terrain_columns()); };
+	i32 cx = chunk_axis(x);
+	i32 cz = chunk_axis(z);
+	i32 lx = chunk_local(x);
+	i32 lz = chunk_local(z);
+	refresh_visible_terrain(cx, cz);
+	if (lx == 0) { refresh_visible_terrain(cx - 1, cz); };
+	if (lx == 11) { refresh_visible_terrain(cx + 1, cz); };
+	if (lz == 0) { refresh_visible_terrain(cx, cz - 1); };
+	if (lz == 11) { refresh_visible_terrain(cx, cz + 1); };
 };
 
 bool(i32, i32) coast_cave = fn(x, z) {
@@ -1935,12 +1947,12 @@ unit(f32) update_beacon = fn(dt) {
 		beacon_guide = 0;
 		guide_drop_slot = -1;
 		world[6][15][22] = 8;
-		refresh_visible_terrain(chunk_at(22, 15));
+		refresh_cell_owner(22, 15);
 	} else {
 		if (relay_stage == 1 && at_second) {
 			relay_stage = 2;
 			world[6][8][7] = 8;
-			refresh_visible_terrain(chunk_at(7, 8));
+			refresh_cell_owner(7, 8);
 		};
 	};
 	bool at_lamp = relay_stage == 2 && camera_pose.x >= 23.0 && camera_pose.x < 26.0 && camera_pose.z >= 4.0 && camera_pose.z < 6.0
@@ -1950,8 +1962,8 @@ unit(f32) update_beacon = fn(dt) {
 		world[14][4][23] = 8; world[14][4][24] = 8; world[14][4][25] = 8;
 		world[14][5][23] = 8; world[14][5][24] = 8; world[14][5][25] = 8;
 		clear_controls();
-		refresh_visible_terrain(chunk_at(23, 4));
-		refresh_visible_terrain(chunk_at(24, 4));
+		refresh_cell_owner(23, 4);
+		refresh_cell_owner(24, 4);
 	} else {
 		f32 lantern_y = camera_pose.y - lamp_offset;
 		if (lantern_y < sea_level + swell + chop) {
@@ -2029,7 +2041,7 @@ unit() collect_wood = fn {
 		loose_y[index] = loose_y[last];
 		loose_z[index] = loose_z[last];
 		bridge_blocks = bridge_blocks + 1;
-		refresh_visible_terrain(chunk_at(x, z));
+		refresh_cell_owner(x, z);
 	};
 };
 

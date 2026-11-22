@@ -148,7 +148,7 @@ async function loadHost(caseId, startsLost = false, stored = null, mobile = fals
     devicePixelRatio: 1,
     fetch(url) {
       assert(url.pathname.endsWith('/voxel/engine.wasm'));
-      assert.equal(url.search, '?v=beacon-east-arch-v1');
+      assert.equal(url.search, '?v=beacon-signed-chunks-v1');
       return fetchResponse.promise;
     },
     requestAnimationFrame(fn) { frames.set(++frameId, fn); return frameId; },
@@ -193,7 +193,15 @@ async function loadHost(caseId, startsLost = false, stored = null, mobile = fals
           showcase.atlas(6144,caseId === "invalid-atlas" ? 64 : 128,caseId === "invalid-atlas" ? 32 : 16);
         }
         showcase.water(0, 6);
-        showcase.mesh(256, 3, 0);
+        showcase.mesh(256, 3, 0, 0);
+        if (caseId === 'signed-chunks') {
+          const vertices = new Float32Array(memory.buffer, 256, 18);
+          for (const [x, z, marker] of [[-1, 0, 0.25], [7, -1, 0.5], [-1, -1, 0.75]]) {
+            vertices.fill(marker);
+            showcase.mesh(256, 3, x, z);
+          }
+          showcase.mesh(256, 0, -1, 0);
+        }
       },
       start_beacon() { mission = 1; counters.missionStarts = (counters.missionStarts || 0) + 1; },
       leave_beacon() { mission = 0; counters.missionLeaves = (counters.missionLeaves || 0) + 1; },
@@ -233,7 +241,7 @@ async function loadHost(caseId, startsLost = false, stored = null, mobile = fals
         if (state === 0) return 0;
         counters.edits.push(mode === 1 ? counters.picked : 0);
         new Float32Array(memory.buffer,256,18).fill(0.25);
-        showcase.mesh(256,3,0);
+        showcase.mesh(256, 3, 0, 0);
         return 1;
       },
     };
@@ -269,6 +277,18 @@ async function loadHost(caseId, startsLost = false, stored = null, mobile = fals
 function disabled(host, state) {
   for (const button of host.controls) assert.equal(button.disabled, state);
 }
+
+const signedChunks = await loadHost('signed-chunks');
+signedChunks.lostEvent();
+await signedChunks.resolveFetch();
+signedChunks.restoredEvent();
+assert.equal(signedChunks.status.textContent, 'Wosy · engine ready');
+const retainedTerrain = signedChunks.counters.uploads.filter((vertices) => vertices.length === 18);
+assert.equal(retainedTerrain.length, 3, 'restore keeps three independently keyed terrain chunks');
+assert(retainedTerrain.some((vertices) => vertices.every((v) => v === 0.5)),
+  'retiring (-1,0) must not erase (7,-1), though their old flat IDs would collide');
+assert(retainedTerrain.some((vertices) => vertices.every((v) => v === 0.75)), 'the diagonally negative chunk survives restore');
+assert(!retainedTerrain.some((vertices) => vertices.every((v) => v === 0.25)), 'the negative X chunk retires exactly');
 
 const pending = await loadHost('lost-pending');
 pending.lostEvent();
@@ -551,7 +571,7 @@ const page = await readFile(new URL('../voxel/index.html', import.meta.url), 'ut
 assert.match(page, /<html lang="en">/);
 assert.match(page, /<title>Pocket Island • Wosy<\/title>/);
 assert.match(page, /href="\.\/style\.css\?v=beacon-bearing-v1"/);
-assert.match(page, /src="\.\/main\.js\?v=beacon-east-arch-v1"/);
+assert.match(page, /src="\.\/main\.js\?v=beacon-signed-chunks-v1"/);
 assert.match(page, /id="move-stick"/);
 assert.doesNotMatch(page, /class="dpad"|data-move="Key[WASD]"/);
 assert.match(page, /title="Dirt · 2"/);

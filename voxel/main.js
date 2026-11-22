@@ -265,10 +265,12 @@ function bindLayer(name, stride) {
   };
 }
 
-function bindMesh(pointer, count, id) {
-  if (!Number.isInteger(id) || id < 0 || id >= 64 || !Number.isInteger(count) || count < 0 || count > 55296 || count % 3 !== 0) {
+function bindMesh(pointer, count, chunkX, chunkZ) {
+  if (!Number.isInteger(chunkX) || chunkX !== (chunkX | 0) ||
+      !Number.isInteger(chunkZ) || chunkZ !== (chunkZ | 0) || !Number.isInteger(count) || count < 0 || count > 55296 || count % 3 !== 0) {
     throw new Error("The engine returned an invalid terrain chunk.");
   }
+  const id = `${chunkX},${chunkZ}`;
   terrainVersion++;
   if (count === 0) {
     terrainChunks.delete(id);
@@ -396,7 +398,7 @@ async function boot() {
   }
   try {
     prepareGraphics();
-    const response = await fetch(new URL("./engine.wasm?v=beacon-east-arch-v1", import.meta.url));
+    const response = await fetch(new URL("./engine.wasm?v=beacon-signed-chunks-v1", import.meta.url));
     if (!response.ok) throw new Error(`Engine not found (HTTP ${response.status}).`);
     const bytes = await response.arrayBuffer();
     const api = {

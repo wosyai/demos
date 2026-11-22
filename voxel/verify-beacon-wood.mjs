@@ -11,7 +11,8 @@ for (const aspect of [.56, 1.67]) {
     showcase: {
       aim() {}, atlas() {}, outline() {}, player() {},
       water(pointer, count) { sea = { pointer, count }; },
-      mesh(pointer, count, chunk) {
+      mesh(pointer, count, chunkX, chunkZ) {
+        const chunk = chunkX + 8 * chunkZ;
         changed.push(chunk);
         counts.set(chunk, count);
         assert([...counts.values()].filter((size) => size > 0).length <= 25, 'bounded visible terrain');
