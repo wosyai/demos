@@ -1,6 +1,6 @@
 # Building Last Ferry
 
-Build with Wosy revision `7c80c31f97ea35c80b7344f23337dedfcbaa9776`,
+Build with Wosy revision `4e6e51710d4d129df8dd5c00574a31b8c4234f91`,
 LLVM/Clang/LLD 18.1.8, Python 3, and Node. No npm packages are required.
 
 ```sh
