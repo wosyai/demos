@@ -80,8 +80,25 @@ f32[37] frame_values = [
 ];
 i32 write_position = 0;
 i32 wire_position = 0;
-i32 selected_hit = -2;
-i32 target_hit = -1;
+struct copy CellPosition {
+	i32 x;
+	i32 y;
+	i32 z;
+}
+
+struct copy RayHit {
+	CellPosition position;
+	i32 face;
+}
+
+CellPosition zero_cell = { .x = 0; .y = 0; .z = 0; };
+RayHit no_hit = { .position = zero_cell; .face = -1; };
+RayHit selected_hit = no_hit;
+bool outline_dirty = true;
+RayHit target_hit = no_hit;
+i32 pick_result_x = 0;
+i32 pick_result_y = 0;
+i32 pick_result_z = 0;
 bool target_dirty = true;
 bool orientation_dirty = true;
 f32 sin_yaw = 0.0;
@@ -157,12 +174,15 @@ enum copy BeaconPhase {
 }
 BeaconPhase beacon_phase = BeaconPhase::sandbox;
 i32 bridge_blocks = 12;
-i32[48] loose_wood = [
+i32[48] empty_loose_axis = [
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
 ];
+i32[48] loose_x = empty_loose_axis;
+i32[48] loose_y = empty_loose_axis;
+i32[48] loose_z = empty_loose_axis;
 i32 loose_count = 0;
 i32 beacon_guide = 0;
 i32 guide_drop_slot = -1;
@@ -541,16 +561,21 @@ unit(i32, i32, i32, i32, u8) face = fn(ix, iy, iz, side, material) {
 	box_face(core.sint_to_float<f32>(ix), core.sint_to_float<f32>(iy), core.sint_to_float<f32>(iz), 1.0, side, material);
 };
 
-i32(i32, i32, i32) packed_cell = fn(x, y, z) {
-	x % 64 + y * 64 + (z % 64) * 1024 + (x / 64) * 524288 + (z / 64) * 1048576
+CellPosition(i32, i32, i32) cell_position = fn(x, y, z) {
+	CellPosition pos = { .x = x; .y = y; .z = z; };
+	pos
 };
 
-i32(i32) packed_x = fn(key) { key % 64 + ((key / 524288) % 2) * 64 };
-i32(i32) packed_y = fn(key) { (key / 64) % 16 };
-i32(i32) packed_z = fn(key) { (key / 1024) % 64 + ((key / 1048576) % 2) * 64 };
-i32(i32) hit_face = fn(key) { (key / 65536) % 8 };
-i32(i32) hit_cell = fn(key) { key - hit_face(key) * 65536 };
+bool(CellPosition, CellPosition) same_position = fn(a, b) {
+	a.x == b.x && a.y == b.y && a.z == b.z
+};
 
+i32(RayHit) legacy_hit = fn(hit) {
+	CellPosition pos = hit.position;
+	if (hit.face < 0 || pos.x < 0 || pos.x >= 128 || pos.y < 0 || pos.y >= 16 || pos.z < 0 || pos.z >= 128) { -1 } else {
+		pos.x % 64 + pos.y * 64 + (pos.z % 64) * 1024 + hit.face * 65536 + (pos.x / 64) * 524288 + (pos.z / 64) * 1048576
+	}
+};
 
 i32(i32, i32) chunk_id = fn(x, z) { x + z * terrain_columns() };
 
@@ -568,11 +593,11 @@ unit(f32, f32, f32, i32) draw_loose_cube = fn(x, y, z, side) {
 
 unit(i32, i32) mesh_loose = fn(at, chunk) {
 	if (at < loose_count) {
-		i32 key = loose_wood[index_of(at)];
-		i32 x = packed_x(key);
-		i32 z = packed_z(key);
+		u64 slot = index_of(at);
+		i32 x = loose_x[slot];
+		i32 z = loose_z[slot];
 		if (chunk_at(x, z) == chunk) {
-			draw_loose_cube(loose_cube_side(x), loose_cube_base(packed_y(key)), loose_cube_side(z), 0);
+			draw_loose_cube(loose_cube_side(x), loose_cube_base(loose_y[slot]), loose_cube_side(z), 0);
 		};
 		mesh_loose(at + 1, chunk);
 	};
@@ -854,16 +879,16 @@ u8(i32, i32, i32) harbor_structure = fn(x, y, z) {
 	}
 };
 
-i32() guide_timber = fn { packed_cell(23, 5, 40) };
+CellPosition guide_timber = { .x = 23; .y = 5; .z = 40; };
 
-i32() guide_crossing = fn { packed_cell(24, 4, 28) };
+CellPosition guide_crossing = { .x = 24; .y = 4; .z = 28; };
 
 bool(i32, i32, i32) crossing_plank = fn(x, y, z) {
 	x >= 22 && x <= 26 && y == 4 && z >= 18 && z <= 29
 };
 
 u8(i32, i32, i32, i32) beacon_tile = fn(x, y, z, ground) {
-	if (y == 5 && packed_cell(x, y, z) == guide_timber()) { 5 } else { beacon_features(x, y, z, ground) }
+	if (y == guide_timber.y && x == guide_timber.x && z == guide_timber.z) { 5 } else { beacon_features(x, y, z, ground) }
 };
 
 u8(i32, i32, i32, i32) beacon_features = fn(x, y, z, ground) {
@@ -974,7 +999,7 @@ i32() start_beacon = fn {
 	camera_pose.pitch = -0.10;
 	orientation_dirty = true;
 	target_dirty = true;
-	selected_hit = -2;
+	outline_dirty = true;
 	grounded = true;
 	flying = false;
 	ground_contact_dirty = false;
@@ -1060,8 +1085,15 @@ f32(f32, f32, i32) first_distance = fn(origin, direction, index) {
 	}
 };
 
+i32(i32, i32, i32, i32) record_pick = fn(x, y, z, side) {
+	pick_result_x = x;
+	pick_result_y = y;
+	pick_result_z = z;
+	side
+};
+
 i32(i32, i32, i32, i32, i32, i32, i32, f32, f32, f32, f32, f32, f32, f32, i32) pick_step = fn(x, y, z, side, sx, sy, sz, tx, ty, tz, dx, dy, dz, reach, remaining) {
-	if (cell(x, y, z) != 0) { packed_cell(x, y, z) + side * 65536 } else {
+	if (cell(x, y, z) != 0) { record_pick(x, y, z, side) } else {
 		i32 span = terrain_span();
 		bool leaving = (x < 0 && sx <= 0) || (x >= span && sx >= 0) || (y < 0 && sy <= 0) || (y >= 16 && sy >= 0) || (z < 0 && sz <= 0) || (z >= span && sz >= 0);
 		if (remaining == 0 || leaving) { -1 } else {
@@ -1081,7 +1113,7 @@ i32(i32, i32, i32, i32, i32, i32, i32, f32, f32, f32, f32, f32, f32, f32, i32) p
 	}
 };
 
-i32(f32, f32, f32, f32, f32, f32, f32) pick_in_range = fn(ox, oy, oz, dx, dy, dz, reach) {
+i32(f32, f32, f32, f32, f32, f32, f32) trace_pick = fn(ox, oy, oz, dx, dy, dz, reach) {
 	bool inside_ray_range = ox >= -128.0 && ox <= 128.0 && oy >= -128.0 && oy <= 128.0 && oz >= -128.0 && oz <= 128.0;
 	bool finite_direction = dx >= -1.0 && dx <= 1.0 && dy >= -1.0 && dy <= 1.0 && dz >= -1.0 && dz <= 1.0;
 	if (!inside_ray_range || !finite_direction || (dx == 0.0 && dy == 0.0 && dz == 0.0)) { -1 } else {
@@ -1092,8 +1124,16 @@ i32(f32, f32, f32, f32, f32, f32, f32) pick_in_range = fn(ox, oy, oz, dx, dy, dz
 	}
 };
 
+RayHit(f32, f32, f32, f32, f32, f32, f32) pick_in_range = fn(ox, oy, oz, dx, dy, dz, reach) {
+	i32 trace_face = trace_pick(ox, oy, oz, dx, dy, dz, reach);
+	if (trace_face < 0) { no_hit } else {
+		RayHit snapshot = { .position = cell_position(pick_result_x, pick_result_y, pick_result_z); .face = trace_face; };
+		snapshot
+	}
+};
+
 i32(f32, f32, f32, f32, f32, f32) pick = fn(ox, oy, oz, dx, dy, dz) {
-	pick_in_range(ox, oy, oz, dx, dy, dz, 3.402823466e38)
+	legacy_hit(pick_in_range(ox, oy, oz, dx, dy, dz, 3.402823466e38))
 };
 
 f32(f32, f32, f32) clamp_f = fn(value, low, high) {
@@ -1174,7 +1214,7 @@ unit() spawn_player = fn {
 	swim_phase = 0.0;
 	flight_pitch = 0.0;
 	flight_bank = 0.0;
-	selected_hit = -2;
+	outline_dirty = true;
 	target_dirty = true;
 };
 
@@ -1434,14 +1474,15 @@ unit(f32, f32, f32, f32, f32, f32) wire_edge = fn(x0, y0, z0, x1, y1, z1) {
 	wire_position = at + 2;
 };
 
-unit(i32) publish_outline = fn(hit) {
-	if (hit != selected_hit) {
+unit(RayHit) publish_outline = fn(hit) {
+	if (outline_dirty || hit.face != selected_hit.face || !same_position(hit.position, selected_hit.position)) {
+		outline_dirty = false;
 		selected_hit = hit;
 		wire_position = 0;
-		if (hit >= 0) {
-			f32 x = core.sint_to_float<f32>(packed_x(hit));
-			f32 y = core.sint_to_float<f32>(packed_y(hit));
-			f32 z = core.sint_to_float<f32>(packed_z(hit));
+		if (hit.face >= 0) {
+			f32 x = core.sint_to_float<f32>(hit.position.x);
+			f32 y = core.sint_to_float<f32>(hit.position.y);
+			f32 z = core.sint_to_float<f32>(hit.position.z);
 			f32 x0 = x - 0.012;
 			f32 y0 = y - 0.012;
 			f32 z0 = z - 0.012;
@@ -1562,7 +1603,7 @@ f32(BeaconPhase) beacon_phase_code = fn(phase) {
 	}
 };
 
-unit(f32, f32, f32, f32, f32, f32, f32, f32, i32) publish_frame = fn(x, y, z, sy, cy, sp, cp, view_pitch, hit) {
+unit(f32, f32, f32, f32, f32, f32, f32, f32, RayHit) publish_frame = fn(x, y, z, sy, cy, sp, cp, view_pitch, hit) {
 	f32 q = view_scale;
 	f32 qw = q / frame_values[20];
 	f32 depth = -1.00100050;
@@ -1610,7 +1651,7 @@ unit(f32, f32, f32, f32, f32, f32, f32, f32, i32) publish_frame = fn(x, y, z, sy
 			frame_values[36] = dx * sy - dz * cy;
 		};
 	};
-	unsafe { host.frame(core.pointer_cast<*?u8>(&?frame_values[0]), hit); };
+	unsafe { host.frame(core.pointer_cast<*?u8>(&?frame_values[0]), legacy_hit(hit)); };
 };
 
 unit() update_orientation = fn {
@@ -1623,7 +1664,7 @@ unit() update_orientation = fn {
 	};
 };
 
-i32() current_view_target = fn {
+RayHit() current_view_target = fn {
 	if (target_dirty) {
 		f32 dx = sin_yaw * cos_pitch;
 		f32 dy = sin_pitch;
@@ -1746,11 +1787,11 @@ unit(bool) publish_avatar = fn(visible) {
 	avatar_visible = visible;
 };
 
-f32(i32, f32, f32, f32, f32, f32, f32) ray_hit_distance = fn(hit, ox, oy, oz, dx, dy, dz) {
-	i32 side = hit_face(hit);
-	f32 x = core.sint_to_float<f32>(packed_x(hit));
-	f32 y = core.sint_to_float<f32>(packed_y(hit));
-	f32 z = core.sint_to_float<f32>(packed_z(hit));
+f32(RayHit, f32, f32, f32, f32, f32, f32) ray_hit_distance = fn(hit, ox, oy, oz, dx, dy, dz) {
+	i32 side = hit.face;
+	f32 x = core.sint_to_float<f32>(hit.position.x);
+	f32 y = core.sint_to_float<f32>(hit.position.y);
+	f32 z = core.sint_to_float<f32>(hit.position.z);
 	if (side < 2 && dx != 0.0) {
 		(x + (if (side == 1) { 1.0 } else { 0.0 }) - ox) / dx
 	} else {
@@ -1777,10 +1818,10 @@ f32(f32, f32, f32, f32, f32, f32, f32) camera_boom_probe = fn(ox, oy, oz, dx, dy
 		|| (oy < 0.0 && ey < 0.0) || (oy >= 16.0 && ey >= 16.0)
 		|| (oz < 0.0 && ez < 0.0) || (oz >= terrain_span_f() && ez >= terrain_span_f());
 	if (reach <= 0.0 || outside) { reach } else {
-		i32 hit = pick_in_range(ox, oy, oz, dx, dy, dz, reach);
-		if (hit < 0) { reach } else {
-			bool starts_in_hit = packed_x(hit) == floor_i(ox) && packed_y(hit) == floor_i(oy)
-				&& packed_z(hit) == floor_i(oz);
+		RayHit hit = pick_in_range(ox, oy, oz, dx, dy, dz, reach);
+		if (hit.face < 0) { reach } else {
+			bool starts_in_hit = hit.position.x == floor_i(ox) && hit.position.y == floor_i(oy)
+				&& hit.position.z == floor_i(oz);
 			if (starts_in_hit) { 0.0 } else {
 				clamp_f(ray_hit_distance(hit, ox, oy, oz, dx, dy, dz) - 0.29, 0.0, reach)
 			}
@@ -1792,7 +1833,7 @@ f32(f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32, f32) camera_corner = 
 	camera_boom_probe(near_x + ux + sx, near_y + uy, near_z + uz + sz, dx, dy, dz, reach)
 };
 
-bool(i32, f32, f32, f32, f32, f32, f32) camera_sees_target = fn(hit, view_x, view_y, view_z, target_x, target_y, target_z) {
+bool(i32, i32, i32, f32, f32, f32, f32, f32, f32) camera_sees_target = fn(hit_x, hit_y, hit_z, view_x, view_y, view_z, target_x, target_y, target_z) {
 	f32 dx = target_x - view_x;
 	f32 dy = target_y - view_y;
 	f32 dz = target_z - view_z;
@@ -1802,25 +1843,25 @@ bool(i32, f32, f32, f32, f32, f32, f32) camera_sees_target = fn(hit, view_x, vie
 	f32 xy = if (ax > ay) { ax } else { ay };
 	f32 reach = if (xy > az) { xy } else { az };
 	if (reach <= 0.0) { true } else {
-		i32 viewed = pick_in_range(view_x, view_y, view_z, dx / reach, dy / reach, dz / reach, reach);
-		viewed >= 0 && hit_cell(viewed) == hit_cell(hit)
+		i32 visible_face = trace_pick(view_x, view_y, view_z, dx / reach, dy / reach, dz / reach, reach);
+		visible_face >= 0 && pick_result_x == hit_x && pick_result_y == hit_y && pick_result_z == hit_z
 	}
 };
 
-f32(i32, f32, f32, f32, f32, f32, f32, f32, f32, i32) find_visible_boom = fn(hit, dx, dy, dz, target_x, target_y, target_z, min, max, remaining) {
+f32(i32, i32, i32, f32, f32, f32, f32, f32, f32, f32, f32, i32) find_visible_boom = fn(hit_x, hit_y, hit_z, dx, dy, dz, target_x, target_y, target_z, min, max, remaining) {
 	if (remaining == 0) { min } else {
 		f32 mid = (min + max) * 0.5;
-		bool visible = camera_sees_target(hit, camera_pose.x + dx * mid, camera_pose.y + dy * mid, camera_pose.z + dz * mid,
+		bool visible = camera_sees_target(hit_x, hit_y, hit_z, camera_pose.x + dx * mid, camera_pose.y + dy * mid, camera_pose.z + dz * mid,
 			target_x, target_y, target_z);
 		if (visible) {
-			find_visible_boom(hit, dx, dy, dz, target_x, target_y, target_z, mid, max, remaining - 1)
+			find_visible_boom(hit_x, hit_y, hit_z, dx, dy, dz, target_x, target_y, target_z, mid, max, remaining - 1)
 		} else {
-			find_visible_boom(hit, dx, dy, dz, target_x, target_y, target_z, min, mid, remaining - 1)
+			find_visible_boom(hit_x, hit_y, hit_z, dx, dy, dz, target_x, target_y, target_z, min, mid, remaining - 1)
 		}
 	}
 };
 
-unit(i32, f32) publish_play_frame = fn(hit, dt) {
+unit(RayHit, f32) publish_play_frame = fn(hit, dt) {
 	if (!third_person) {
 		publish_avatar(false);
 		center_aim();
@@ -1850,21 +1891,21 @@ unit(i32, f32) publish_play_frame = fn(hit, dt) {
 		f32 corner1 = camera_corner(near_x, near_y, near_z, ux, uy, uz, 0.0 - sx, 0.0 - sz, dx, dy, dz, corner0);
 		f32 corner2 = camera_corner(near_x, near_y, near_z, 0.0 - ux, 0.0 - uy, 0.0 - uz, sx, sz, dx, dy, dz, corner1);
 		f32 terrain_limit = camera_corner(near_x, near_y, near_z, 0.0 - ux, 0.0 - uy, 0.0 - uz, 0.0 - sx, 0.0 - sz, dx, dy, dz, corner2);
-		f32 aim_distance = if (hit < 0) { 5.0 } else {
+		f32 aim_distance = if (hit.face < 0) { 5.0 } else {
 			clamp_f(ray_hit_distance(hit, camera_pose.x, camera_pose.y, camera_pose.z, fx, fy, fz), 0.0, 5.0)
 		};
 		f32 reach = aim_distance + 0.035;
 		f32 tx = camera_pose.x + fx * reach;
 		f32 ty = camera_pose.y + fy * reach;
 		f32 tz = camera_pose.z + fz * reach;
-		f32 limit = if (hit < 0 || camera_sees_target(hit, camera_pose.x + dx * terrain_limit,
+		f32 limit = if (hit.face < 0 || camera_sees_target(hit.position.x, hit.position.y, hit.position.z, camera_pose.x + dx * terrain_limit,
 			camera_pose.y + dy * terrain_limit, camera_pose.z + dz * terrain_limit, tx, ty, tz)) { terrain_limit } else {
-			find_visible_boom(hit, dx, dy, dz, tx, ty, tz, 0.0, terrain_limit, 5)
+			find_visible_boom(hit.position.x, hit.position.y, hit.position.z, dx, dy, dz, tx, ty, tz, 0.0, terrain_limit, 5)
 		};
 		f32 blended = if (dt == 0.0 || limit <= boom_distance) { limit } else {
 			boom_distance + (limit - boom_distance) * clamp_f(dt * 6.0, 0.0, 1.0)
 		};
-		f32 distance = if (hit < 0 || blended == limit || camera_sees_target(hit, camera_pose.x + dx * blended,
+		f32 distance = if (hit.face < 0 || blended == limit || camera_sees_target(hit.position.x, hit.position.y, hit.position.z, camera_pose.x + dx * blended,
 			camera_pose.y + dy * blended, camera_pose.z + dz * blended, tx, ty, tz)) { blended } else { limit };
 		boom_distance = distance;
 		f32 depth = clamp_f(aim_distance + back * distance, 0.16, 9.0);
@@ -1930,24 +1971,26 @@ i32(i32, i32, i32) loose_floor = fn(x, y, z) {
 unit(i32, i32, i32, i32) settle_wood = fn(at, x, y, z) {
 	if (at < loose_count) {
 		u64 index = index_of(at);
-		i32 key = loose_wood[index];
-		if (packed_x(key) == x && packed_z(key) == z && packed_y(key) == y + 1) {
-			loose_wood[index] = packed_cell(x, loose_floor(x, y, z), z);
+		if (loose_x[index] == x && loose_z[index] == z && loose_y[index] == y + 1) {
+			loose_y[index] = loose_floor(x, y, z);
 		};
 		settle_wood(at + 1, x, y, z);
 	};
 };
 
-bool(i32, i32) has_loose_wood = fn(at, key) {
+bool(i32, i32, i32, i32) has_loose_wood = fn(at, x, y, z) {
 	if (at == loose_count) { false } else {
-		loose_wood[index_of(at)] == key || has_loose_wood(at + 1, key)
+		u64 slot = index_of(at);
+		if (loose_x[slot] == x && loose_y[slot] == y && loose_z[slot] == z) {
+			true
+		} else { has_loose_wood(at + 1, x, y, z) }
 	}
 };
 
-bool(i32) within_loose_reach = fn(key) {
-	f32 x = loose_cube_side(packed_x(key));
-	f32 y = loose_cube_base(packed_y(key));
-	f32 z = loose_cube_side(packed_z(key));
+bool(u64) within_loose_reach = fn(slot) {
+	f32 x = loose_cube_side(loose_x[slot]);
+	f32 y = loose_cube_base(loose_y[slot]);
+	f32 z = loose_cube_side(loose_z[slot]);
 	f32 side = loose_cube_size();
 	f32 tx = clamp_f(camera_pose.x, x, x + side);
 	f32 ty = clamp_f(camera_pose.y, y, y + side);
@@ -1958,12 +2001,14 @@ bool(i32) within_loose_reach = fn(key) {
 	f32 dx = tx - ox;
 	f32 dy = ty - oy;
 	f32 dz = tz - oz;
-	dx * dx + dy * dy + dz * dz <= 0.25 && pick_in_range(ox, oy, oz, dx, dy, dz, 1.0) < 0
+	if (dx * dx + dy * dy + dz * dz <= 0.25) {
+		trace_pick(ox, oy, oz, dx, dy, dz, 1.0) < 0
+	} else { false }
 };
 
 i32(i32) reachable_wood = fn(at) {
 	if (at == loose_count) { -1 } else {
-		if (within_loose_reach(loose_wood[index_of(at)])) { at } else { reachable_wood(at + 1) }
+		if (within_loose_reach(index_of(at))) { at } else { reachable_wood(at + 1) }
 	}
 };
 
@@ -1971,16 +2016,20 @@ unit() collect_wood = fn {
 	i32 at = reachable_wood(0);
 	if (at >= 0) {
 		u64 index = index_of(at);
-		i32 key = loose_wood[index];
+		i32 x = loose_x[index];
+		i32 z = loose_z[index];
 		loose_count = loose_count - 1;
 		if (beacon_guide == 2) {
 			if (at == guide_drop_slot) { beacon_guide = 3; guide_drop_slot = -1; } else {
 				if (loose_count == guide_drop_slot) { guide_drop_slot = at; };
 			};
 		};
-		loose_wood[index] = loose_wood[index_of(loose_count)];
+		u64 last = index_of(loose_count);
+		loose_x[index] = loose_x[last];
+		loose_y[index] = loose_y[last];
+		loose_z[index] = loose_z[last];
 		bridge_blocks = bridge_blocks + 1;
-		refresh_visible_terrain(chunk_at(packed_x(key), packed_z(key)));
+		refresh_visible_terrain(chunk_at(x, z));
 	};
 };
 
@@ -2006,14 +2055,14 @@ unit(f32, f32, i32) tick = fn(dt, aspect, playing) {
 			advance_edits(step);
 			if (beacon_phase == BeaconPhase::active && step > 0.0) { update_beacon(step); };
 		};
-		i32 hit = if (beacon_phase == BeaconPhase::restored || beacon_phase == BeaconPhase::flooded) { -1 } else { current_view_target() };
+		RayHit hit = if (beacon_phase == BeaconPhase::restored || beacon_phase == BeaconPhase::flooded) { no_hit } else { current_view_target() };
 		publish_outline(hit);
 		publish_play_frame(hit, step);
 	} else {
-		publish_outline(-1);
+		publish_outline(no_hit);
 		publish_avatar(false);
 		center_aim();
-		publish_frame(camera_pose.x, camera_pose.y, camera_pose.z, sin_yaw, cos_yaw, sin_pitch, cos_pitch, camera_pose.pitch, -1);
+		publish_frame(camera_pose.x, camera_pose.y, camera_pose.z, sin_yaw, cos_yaw, sin_pitch, cos_pitch, camera_pose.pitch, no_hit);
 	};
 };
 
@@ -2025,7 +2074,7 @@ i32(i32, i32, i32, i32) beacon_edit_status = fn(x, y, z, material) {
 		bool place = material == 5 && present == 0 && bridge_blocks > 0;
 		if (!(loosen || open_tunnel || place)) { -4 } else {
 			if (loosen && loose_count >= 48) { -6 } else {
-				if (place && has_loose_wood(0, packed_cell(x, y, z))) { -5 } else { 1 }
+				if (place && has_loose_wood(0, x, y, z)) { -5 } else { 1 }
 			}
 		}
 	}
@@ -2044,7 +2093,10 @@ i32(i32, i32, i32, i32) edit_beacon = fn(x, y, z, material) {
 				if (loose_count > 0) { settle_wood(0, x, y, z); };
 				if (loosen) {
 					if (beacon_guide == 1) { beacon_guide = 2; guide_drop_slot = loose_count; };
-					loose_wood[index_of(loose_count)] = packed_cell(x, loose_floor(x, y, z), z);
+					u64 slot = index_of(loose_count);
+					loose_x[slot] = x;
+					loose_y[slot] = loose_floor(x, y, z);
+					loose_z[slot] = z;
 					loose_count = loose_count + 1;
 				};
 			};
@@ -2054,29 +2106,32 @@ i32(i32, i32, i32, i32) edit_beacon = fn(x, y, z, material) {
 	}
 };
 
-i32(i32) adjacent_cell = fn(hit) {
-	i32 side = hit_face(hit);
-	i32 x = packed_x(hit) + (if (side == 0) { -1 } else { if (side == 1) { 1 } else { 0 } });
-	i32 y = packed_y(hit) + (if (side == 2) { -1 } else { if (side == 3) { 1 } else { 0 } });
-	i32 z = packed_z(hit) + (if (side == 4) { -1 } else { if (side == 5) { 1 } else { 0 } });
-	if (inside(x, y, z)) { packed_cell(x, y, z) } else { -1 }
+CellPosition(RayHit) adjacent_cell = fn(hit) {
+	i32 side = hit.face;
+	i32 x = hit.position.x + (if (side == 0) { -1 } else { if (side == 1) { 1 } else { 0 } });
+	i32 y = hit.position.y + (if (side == 2) { -1 } else { if (side == 3) { 1 } else { 0 } });
+	i32 z = hit.position.z + (if (side == 4) { -1 } else { if (side == 5) { 1 } else { 0 } });
+	cell_position(x, y, z)
 };
 
-unit(i32) publish_beacon_guide = fn(hit) {
+unit(RayHit) publish_beacon_guide = fn(hit) {
 	i32 stage = if (beacon_phase == BeaconPhase::active) { beacon_guide } else { 0 };
 	frame_values[30] = core.sint_to_float<f32>(stage);
 	if (stage != 0) {
-		i32 key = if (stage == 1) { guide_timber() } else {
-			if (stage == 2) { loose_wood[index_of(guide_drop_slot)] } else { guide_crossing() }
+		CellPosition key = if (stage == 1) { guide_timber } else {
+			if (stage == 2) {
+				u64 slot = index_of(guide_drop_slot);
+				cell_position(loose_x[slot], loose_y[slot], loose_z[slot])
+			} else { guide_crossing }
 		};
-		i32 x = packed_x(key);
-		i32 y = packed_y(key);
-		i32 z = packed_z(key);
-		bool ready = if (hit < 0) { false } else {
+		i32 x = key.x;
+		i32 y = key.y;
+		i32 z = key.z;
+		bool ready = if (hit.face < 0) { false } else {
 			if (stage == 1) {
-				hit_cell(hit) == key && beacon_edit_status(x, y, z, 0) == 1
+				same_position(hit.position, key) && beacon_edit_status(x, y, z, 0) == 1
 			} else {
-				stage == 3 && adjacent_cell(hit) == key && !overlaps_player(x, y, z)
+				stage == 3 && same_position(adjacent_cell(hit), key) && !overlaps_player(x, y, z)
 					&& beacon_edit_status(x, y, z, 5) == 1
 			}
 		};
@@ -2094,13 +2149,13 @@ unit(i32) publish_beacon_guide = fn(hit) {
 
 i32(i32) edit_view = fn(material) {
 	update_orientation();
-	i32 hit = current_view_target();
-	if (hit < 0) { -1 } else {
-		i32 key = if (material > 0) { adjacent_cell(hit) } else { hit_cell(hit) };
-		if (key < 0) { -2 } else {
-			i32 x = packed_x(key);
-			i32 y = packed_y(key);
-			i32 z = packed_z(key);
+	RayHit hit = current_view_target();
+	if (hit.face < 0) { -1 } else {
+		CellPosition key = if (material > 0) { adjacent_cell(hit) } else { hit.position };
+		if (material > 0 && !inside(key.x, key.y, key.z)) { -2 } else {
+			i32 x = key.x;
+			i32 y = key.y;
+			i32 z = key.z;
 			if (material > 0 && overlaps_player(x, y, z)) { -3 } else {
 				if (beacon_phase == BeaconPhase::sandbox) {
 					i32 changed = write_cell(x, y, z, material);

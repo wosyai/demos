@@ -582,13 +582,19 @@ function lightWatchfires() {
 generate(726);
 assert(pick(38.5, 15.5, 38.5, 0, -1, 0) >= 0, 'creative terrain extends well beyond the old world');
 edit(42, 14, 42, 5);
-assert((pick(42.5, 15.5, 42.5, 0, -1, 0) & 63) === 42, 'far-end editable block survives ray encoding');
+assert.equal(pick(42.5, 15.5, 42.5, 0, -1, 0), 42 + (14 << 6) + (42 << 10) + (3 << 16),
+  'first hit retains legacy x, y, z, and top face');
 select_material(4);
 rebuild();
 const editedSandbox = mesh;
 assert(start_beacon() > 0);
 tick(0, 1, 1);
 const freshMission = mesh, freshWater = water, spawn = coords();
+assert.equal(pick(65.5, -0.5, 67.5, 0, 1, 0), 1 + (3 << 10) + (2 << 16) + (1 << 19) + (1 << 20),
+  'Beacon hit retains both high coordinate bits and the bottom face');
+assert.equal(pick(-128, 15.5, 67.5, 1, 0, 0), -1,
+  'a long ray from outside through empty columns still misses immediately after a hit');
+assert.equal(pick(96.5, -0.5, 67.5, 0, 1, 0), -1, 'a ray outside the fixed Beacon extent still misses');
 assert.equal(freshWater.count, 7776, 'Beacon updates the extended sea without truncating far waters');
 assert.equal(freshWater.pointer, initialSea.pointer, 'both modes reuse the same packed vertex buffer');
 assert.deepEqual(missionHUD(), [1, 1, 0, 12, 0]);
