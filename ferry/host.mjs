@@ -1,4 +1,4 @@
-export const ENGINE_PATH = "./ferry.wasm?v=map-ferry-v3";
+export const ENGINE_PATH = "./ferry.wasm?v=annex-ferry-v4";
 const INPUTS = new Map([
   ["KeyA","left"],["ArrowLeft","left"],["KeyD","right"],["ArrowRight","right"],
   ["KeyW","up"],["ArrowUp","up"],["KeyS","down"],["ArrowDown","down"],["Space","brake"],
