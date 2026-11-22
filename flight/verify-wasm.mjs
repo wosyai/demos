@@ -258,6 +258,50 @@ if (!comparisonBaseline) {
     }
 }
 
+if (!comparisonBaseline) {
+    const controls = [
+        [.98,.52,.28], [.46,.86,.95], [.59,.96,.54], [.94,.62,.27],
+    ];
+    const materials = [[.67,.43,.23],[.34,.18,.12]];
+    const projection = ([x,y,z], i) => frame[i]*x+frame[i+4]*y+frame[i+8]*z+frame[i+12];
+    const instrument = points => points.map(point => [0,1,2].map(i => projection(point,i)/projection(point,3)));
+    const vertical = points => Math.max(...instrument(points).map(point => point[1]));
+    for (const kind of [0,1]) {
+        engine.select_view(0);
+        reset(kind);
+        assert.equal(marker(materials[kind]).length,0,"the actual interior is absent in chase view");
+        engine.select_view(1);
+        for (const aspect of [1.65,.45]) {
+            tick(0,0,aspect);
+            assert(marker(materials[kind]).length > 5,"the cockpit has real airframe-specific framing");
+            assert.equal(marker(materials[1-kind]).length,0,"the other cockpit geometry is absent");
+            for (const color of controls) {
+                const points = marker(color);
+                assert(points.length >= 3,"each instrument emits actual mesh geometry");
+                assert(points.every(point => projection(point,3)>1.7 && projection(point,3)<2.4),"instrument has true foreground depth");
+                assert(instrument(points).every(([x,y,z]) => Math.abs(x)<.94 && y<-.4 && y>-.97 && Math.abs(z)<1),
+                    "instruments stay in view below the horizon in portrait and landscape");
+            }
+        }
+        const resting = controls.map(color => instrument(marker(color)));
+        const closed = vertical(marker(controls[3]));
+        for (let i=0;i<45;i++) tick(16,1/30,.45);
+        assert(frame[18] > 10 && frame[20] === 6,"actual ground throttle speeds up without liftoff");
+        assert.notDeepEqual(instrument(marker(controls[0])),resting[0],"ground acceleration moves the airspeed needle");
+        assert(vertical(marker(controls[3])) > closed+.035,"effective throttle moves the lever forward");
+        tick(48,1/30,.45);
+        assert(vertical(marker(controls[3])) < closed-.035,"ground braking matches the simulation's brake priority over throttle");
+        for (let i=0;i<54;i++) tick(20,1/30,.45);
+        assert(frame[19] > 2,"the plane actually climbed");
+        assert(Math.abs(instrument(marker(controls[1]))[1][0]-resting[1][1][0]) > .003,
+            "real climbing moves the altitude needle");
+        for (let i=0;i<9;i++) tick(18,1/30,.45);
+        assert(Math.abs(instrument(marker(controls[2]))[1][0]-resting[2][1][0]) > .035,
+            "an actual bank moves the slip-free bank needle, not the yaw or pitch");
+    }
+    engine.select_view(0);
+}
+
 function cueRanges() {
     let offset = 0;
     const ranges = {};
