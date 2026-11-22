@@ -8,6 +8,21 @@ assert.deepEqual(WebAssembly.Module.exports(binary).map(({ name }) => name).sort
   ["_start", "cancel_action", "memory", "reset", "tick"]);
 
 let engine, frame, world, moving, worldSends = 0;
+let walkingBearingSamples=0, drivingBearingSamples=0;
+function normalAngle(a) { return Math.atan2(Math.sin(a),Math.cos(a)); }
+function verifyBearing(s) {
+  const angle=s[29], active=[0,1,8].includes(s[17]);
+  if (!active || s[23]<.25) {
+    assert.equal(angle,0,"no turning cue away from a route or inside the arrival radius");
+    return;
+  }
+  const expected=normalAngle(Math.atan2(s[24]-s[26],s[25]-s[27])-s[28]);
+  assert(Math.abs(angle)<=Math.PI+.000001,"bearing remains in the principal range");
+  const error=Math.abs(normalAngle(angle-expected));
+  assert(error<.005, `bearing error ${error} at stage ${s[17]}, driving=${s[16]}`);
+  if (s[16]===0) walkingBearingSamples++;
+  else drivingBearingSamples++;
+}
 const WORLD_FLOATS=8*4096*6;
 const MOVING_FLOATS=24*256*6;
 function view(pointer, count, max, stride) {
@@ -18,7 +33,7 @@ function view(pointer, count, max, stride) {
 }
 
 engine = new WebAssembly.Instance(binary, { ferry: {
-  frame(p,n) { assert.equal(n,30); frame=view(p,n,30,1).slice(); assert(frame.every(Number.isFinite)); },
+  frame(p,n) { assert.equal(n,30); frame=view(p,n,30,1).slice(); assert(frame.every(Number.isFinite)); verifyBearing(frame); },
   world(p,n) { worldSends++; assert(n>120000); assert(view(p,n,WORLD_FLOATS,18).every(Number.isFinite)); world=[p,n]; },
   moving(p,n) { view(p,n,MOVING_FLOATS,18); moving=[p,n]; },
 }}).exports;
@@ -450,5 +465,27 @@ assert.equal(frame[17],8);
 assert.equal(frame[18],90);
 assert.deepEqual(rawMoving(),prior,"mission retry restores its distinct initial mesh and shadows");
 assert.equal(worldSends,1);
+const phoneX=frame[24], phoneZ=frame[25];
+for (const [x,z,expected] of [
+  [0,-1.2,0], [-1.2,-1.2,Math.PI/4], [-1.2,0,Math.PI/2],
+  [-1.2,1.2,3*Math.PI/4], [0,1.2,Math.PI], [1.2,1.2,-3*Math.PI/4],
+  [1.2,0,-Math.PI/2], [1.2,-1.2,-Math.PI/4],
+]) {
+  walkTo(phoneX+x,phoneZ+z);
+  assert.equal(frame[17],8);
+  assert(Math.abs(normalAngle(frame[29]-expected))<.12,"walk compass reaches every octant");
+}
+walkTo(phoneX+.16,phoneZ+1.2);
+const rearLeft=frame[29];
+walkTo(phoneX-.16,phoneZ+1.2);
+const rearRight=frame[29];
+assert(rearLeft < -2.85 && rearRight > 2.85,"rear bearing wraps between signed halves");
+assert(Math.abs(normalAngle(rearRight-rearLeft))<.4,"rear wrap remains visually continuous");
+walkTo(phoneX,phoneZ);
+assert.equal(frame[29],0,"arrival neutralizes the arrow");
+engine.reset(0);
+mount();
+assert(Math.abs(frame[29])>2.4,"a target behind the car is not shown at ninety degrees");
+assert(walkingBearingSamples>0 && drivingBearingSamples>0,"check live route bearings in both movement modes");
 console.log("Last Ferry: fixed stepping, expanded mission, reciprocal swept vehicle contact, and all four collision classes passed.");
 console.log("Last Ferry mission seconds remaining at boarding:", JSON.stringify(boardingTimeLeft));
