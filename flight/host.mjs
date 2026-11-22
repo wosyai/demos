@@ -7,7 +7,7 @@ const KEYS = new Map([
   ["KeyE", STEER.power], ["KeyQ", STEER.brake],
 ]);
 const COURSES = ["Crop Patrol", "Paris Air Mail"];
-const STORAGE_KEY = "wosy-flying-low/missions-v6/";
+const STORAGE_KEY = "wosy-flying-low/missions-v7/";
 const MISSION_FRAME_FLOATS = 35;
 const LANDING_CUES = [
   "Land in the marked strip", "Level wings and align with the strip", "Brake to slow down",
@@ -727,7 +727,7 @@ export function bootFlight(win, doc) {
     if (!gl) { failure("This game needs WebGL 2. Try a current browser with hardware acceleration enabled."); return; }
     try {
       gpu = graphics(gl);
-      const wasm = await win.fetch(new URL("./flight.wasm?v=course-modules-flight-v6", import.meta.url));
+      const wasm = await win.fetch(new URL("./flight.wasm?v=paris-quay-flight-v7", import.meta.url));
       if (!wasm.ok) throw new Error("The flight engine could not be downloaded.");
       const { instance } = await win.WebAssembly.instantiate(await wasm.arrayBuffer(), imports);
       engine = instance.exports;

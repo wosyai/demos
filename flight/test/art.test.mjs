@@ -59,6 +59,27 @@ test("Paris scenery includes four tapered feet, an arch apex, separate decks, an
   assert(point(world, [228, 84, 359]), "mast reaches the original height");
 });
 
+test("Paris has a continuous northeast river and a complete gabled quay station", async () => {
+  const {world} = (await art()).sample(1);
+  assert(world.length <= 32768 * 6);
+  const water = vertices(world, [.29, .52, .67]);
+  const seam = water.filter(([x]) => close(x, 330));
+  for (const z of [265.2, 368.2]) assert(seam.filter(([, y, edge]) => close(y, .025) && close(edge, z)).length >= 2,
+    "the adjoining reaches share both original bank vertices");
+  for (const z of [430, 533]) assert(water.some(([x, y, edge]) => close(x, 450) && close(y, .025) && close(edge, z)),
+    "the water reaches the new northeast banks");
+  for (const x of [-450, 450]) assert(point(world, [x, 0, 570]), "flyable ground spans the raised map edge");
+  for (const z of [458, 481]) {
+    for (const x of [353, 386]) {
+      assert(point(world, [x, 0, z]), "the station wall meets its bank");
+      assert(point(world, [x, 12, z]), "the station wall meets its roof");
+    }
+    assert(point(world, [369.5, 18, z]), "the roof has a full-width centered gable");
+  }
+  assert.equal(vertices(world, [.24, .42, .48]).filter(([x, , z]) => x >= 353 && x <= 386 && close(z, 457.982)).length, 42,
+    "a seven-bay window rhythm distinguishes the station facade");
+});
+
 test("Wright Flyer has thirteen striped cells and a navy canton; Paris has one Brazilian flag mark", async () => {
   const demo = await art();
   const farm = demo.sample(0).plane;

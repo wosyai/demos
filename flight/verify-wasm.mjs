@@ -340,6 +340,7 @@ function sortie(course, mode = "normal") {
     const visited = new Set();
     const observer = observeMarkers(course, mode);
     let premature = false, canceled = false, wrongWindow = false, checkedSupply = false, confirmed = 0;
+    let surveyCruise = false, surveyEast = false;
     function step(input = 0, dt = 1/30, aspect = 1.65) {
         const gates = frame[32];
         tick(input,dt,aspect);
@@ -409,6 +410,13 @@ function sortie(course, mode = "normal") {
             if (status === 9) input |= 128;
         }
         if (phase === 0) {
+            if (mode === "riverside") {
+                if (p.z >= 105 && p.y >= 35) surveyCruise = true;
+                const target = surveyCruise ? [67, 190] : [-111, p.z + 90];
+                input = pilot(p, Math.atan2(target[0]-p.x, target[1]-p.z), 38, 0, 16);
+                step(input);
+                continue;
+            }
             const target = p.z < 100 ? [-111,160] : [67,190];
             const slope = mode === "cyan" && p.x >= 24 && p.x < 49 ? .23 : 0;
             const height = mode === "high" && p.z > 140 ? 19 :
@@ -417,6 +425,17 @@ function sortie(course, mode = "normal") {
             input = pilot(p,Math.atan2(target[0]-p.x,target[1]-p.z),height,slope,0);
         }
         if (phase === 1) {
+            if (mode === "riverside") {
+                assert(surveyCruise, "the survey reached roof clearance before leaving the launch corridor");
+                if (surveyEast && p.z > 447 && p.x > 315 && p.x < 435 && p.y > 19) {
+                    return {result: "northeast reach", position: p};
+                }
+                if (p.x >= 310 && p.z >= 240 && p.z <= 310) surveyEast = true;
+                const target = surveyEast ? [368, 468] : [332, 272];
+                input = pilot(p, Math.atan2(target[0]-p.x, target[1]-p.z), 38, 0, 16);
+                step(input);
+                continue;
+            }
             input = pilot(p,Math.atan2(109-p.x,218-p.z),mode === "high" ? 20 : 11,0,32);
             if (mode === "high" && status === 5) {
                 step(input|128);
@@ -438,12 +457,17 @@ function sortie(course, mode = "normal") {
     }
     assert.equal(confirmed, frame[32], "for each scored gate, the mesh confirms the score");
     observer?.finish();
+    if (mode === "riverside") return {result: frame[22], phase:frame[20], position: aircraftPose(), surveyCruise, surveyEast};
     return {result:frame[22], course, visited, time:frame[17], data:packet, actions:frame[31], gates:frame[32], route:frame[25]};
 }
 const goodFarm = sortie(0), goodParis = sortie(1), cyanParis = sortie(1,"cyan");
 assert.equal(goodFarm.gates,3,"Crop Patrol confirms all three rings on a real flight");
 assert.equal(goodParis.gates,3,"Paris Air Mail confirms all three rings on a real flight");
 assert.equal(goodParis.route,2,"the higher, wider Paris route earns the amber route outcome");
+if (!comparisonBaseline) {
+    const east = sortie(1, "riverside");
+    assert.equal(east.result, "northeast reach", `ordinary flight controls can reach the new Paris northeast district: ${JSON.stringify(east)}`);
+}
 assert.equal(cyanParis.route,1,"the low Paris departure earns the cyan route outcome");
 assert.equal(sortie(1,"strike").result,8,"failing to climb out of the low route hits the bridge");
 assert.equal(sortie(0,"overrun").result,9,"pickup overrun remains an explicit failure");
@@ -456,7 +480,7 @@ for (const {course, visited, result, time, data, actions, gates} of [goodFarm,go
     assert.equal(actions,course?1:3);
     assert(gates>0 && gates<=3,"timed gate score is earned by a real flight path");
     reset(1-course); reset(course);
-    assert.equal(data[2],6);
+    assert.equal(data[2],7);
     assert.equal(data.length,6+2*(data[4]+data[5]*256));
     const noActions = data.slice();
     for (let i=6;i<noActions.length;i+=2) noActions[i] &= 127;
@@ -501,7 +525,7 @@ for (const course of [0, 1]) {
 }
 function visibleGhost(rejectedCandidate) {
     reset(1); reset(0);
-    for (const oldVersion of [1, 2, 3, 4, 5]) {
+    for (const oldVersion of [1, 2, 3, 4, 5, 6]) {
         const oldPacket = goodFarm.data.slice();
         oldPacket[2] = oldVersion;
         load(oldPacket);
