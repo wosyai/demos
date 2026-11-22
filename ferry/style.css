@@ -50,9 +50,12 @@ h1 span{color:var(--rust)}
 
 .symbols{position:absolute;width:0;height:0;overflow:hidden}
 .icon{display:block;width:23px;height:23px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
-.deck{left:auto;margin-left:max(12px,env(safe-area-inset-left));width:min-content;max-width:calc(100% - max(12px,env(safe-area-inset-left)) - max(12px,env(safe-area-inset-right)));grid-template-columns:minmax(0,1fr) auto auto;gap:9px;padding:5px;background:#102525df}
+.deck{left:auto;margin-left:max(12px,env(safe-area-inset-left));width:max-content;max-width:calc(100% - max(12px,env(safe-area-inset-left)) - max(12px,env(safe-area-inset-right)));grid-template-columns:minmax(0,1fr) auto auto;gap:9px;padding:5px;background:#102525df}
 .trip,.departure{display:flex;align-items:center;gap:6px;padding-inline:5px}
-.trip strong,.trip span,.departure strong{white-space:nowrap}
+.trip{min-width:0}
+.trip strong{min-width:0;white-space:normal;overflow-wrap:anywhere}
+.trip span,.departure strong{white-space:nowrap}
+.trip span{flex:none}
 .trip strong{font-size:.88rem}.trip span{font-size:.74rem}
 .trip .icon{width:19px;height:19px;color:var(--amber);transform:rotate(var(--bearing,0deg))}
 .trip:not([data-route=true]) .icon{display:none}
@@ -66,6 +69,19 @@ h1 span{color:var(--rust)}
 .keys summary{cursor:pointer}
 .keys p{margin:.35rem 0}
 @media (pointer:coarse),(any-pointer:coarse){.hint:not([data-notice=true]){display:none}.hint{top:max(68px,calc(env(safe-area-inset-top) + 64px))}}
-@media (max-width:390px){.deck{gap:5px}.trip,.departure{gap:4px;padding-inline:3px}.trip strong{font-size:.78rem}.trip span{font-size:.68rem}}
+@media (max-width:440px){
+  .deck{left:max(12px,env(safe-area-inset-left));margin-left:0;width:auto;max-width:none;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"trip trip" "timer actions";gap:4px 8px}
+  .trip{grid-area:trip;min-width:0;flex-wrap:wrap}
+  .departure{grid-area:timer;justify-self:start}
+  .deck-actions{grid-area:actions}
+  .trip,.departure{gap:4px;padding-inline:3px}
+  .trip strong{font-size:.78rem}
+  .trip span{font-size:.68rem}
+}
+@media (max-width:440px) and (pointer:coarse),(max-width:440px) and (any-pointer:coarse){
+  .hint[data-notice=true]{top:max(108px,calc(env(safe-area-inset-top) + 97px))}
+}
 
 .touch[data-docked=true] .wheel,.touch[data-docked=true] #power,.touch[data-docked=true] #brake{display:none}
+
+.deck-actions{display:flex;gap:4px;white-space:nowrap}
