@@ -251,8 +251,8 @@ function selectWaterfront() {
   assert.deepEqual(spot(),origin,"marking the waterfront never moves the player");
   assert(frame[18]<time&&frame[18]>time-.04,"the same ferry countdown keeps running");
   assert(Math.abs(frame[24]+64.8)<.01&&Math.abs(frame[25]-38.4)<.01);
-  assert.equal(guidePoints().length,3);
-  guidePoints().forEach((point,i)=>closePoint(point,[[-64.8,38.4],[-64.8,73.45],[8.10,73.55]][i]));
+  assert.equal(guidePoints().length,4);
+  guidePoints().forEach((point,i)=>closePoint(point,[[-64.8,38.4],[-64.8,73.45],[8.10,73.55],[11,83]][i]));
 }
 engine.reset(0); pickup(); selectWaterfront();
 walkTo(-82,33.7);
@@ -269,6 +269,10 @@ for(const [x,z] of [[-64.8,38.4],[-64.8,73.45],[8.10,73.55]]) {
 }
 assert.equal(frame[24],11);
 assert.equal(frame[25],83);
+const waterfrontFinal=guidePoints();
+assert.equal(waterfrontFinal.length,2,"after reaching the harbor entrance keep the last leg on the map");
+closePoint(waterfrontFinal[0],[8.10,73.55]);
+closePoint(waterfrontFinal[1],[11,83]);
 walkTo(frame[24],frame[25]);
 assert.equal(frame[20],4);
 assert(frame[18]>0&&frame[18]<90);
@@ -357,6 +361,9 @@ tick(0,0,2);
 assert.equal(frame[16],0);
 assert(frame[27]>bay[1]+1.2,"the passenger exits toward the marked footway, away from the travel lane");
 assert(Math.abs(frame[24]+4.55)<.01&&Math.abs(frame[25]-62.10)<.01,"guide starts the curbside footway");
+const parkPoints=guidePoints();
+assert.equal(parkPoints.length,4);
+parkPoints.forEach((point,i)=>closePoint(point,[[-4.55,62.10],[-4.55,73.55],[8.10,73.55],[11,83]][i]));
 walkTo(frame[24],frame[25]);
 assert(Math.abs(frame[24]+4.55)<.01&&Math.abs(frame[25]-73.55)<.01,"next guide target is the protected harbor crossing");
 walkTo(frame[24],frame[25]);
@@ -364,6 +371,10 @@ assert(Math.abs(frame[24]-8.10)<.01&&Math.abs(frame[25]-73.55)<.01,"the marked w
 walkTo(frame[24],frame[25]);
 assert.equal(frame[24],11);
 assert.equal(frame[25],83);
+const pierPoints=guidePoints();
+assert.equal(pierPoints.length,2,"after reaching the harbor entrance keep the last leg on the map");
+closePoint(pierPoints[0],[8.10,73.55]);
+closePoint(pierPoints[1],[11,83]);
 walkTo(frame[24],frame[25]);
 assert.equal(frame[20],4);
 assert(frame[18]>30,"no collision-induced crawl on the pickup loop");
@@ -410,7 +421,10 @@ run(105,0,0,1);
 assert.equal(frame[20],7,"off-lane bay offers the normal curbside Park & walk action");
 tick(0,0,2);
 assert.equal(frame[16],0);
-for(const [x,z] of [[-9.5,30.2],[3.9,30.2],[3.9,70.7],[8.10,73.55],[11,83]]) {
+const avenueWalkPoints=[[-9.5,30.2],[3.9,30.2],[3.9,70.7],[8.10,73.55],[11,83]];
+assert.equal(guidePoints().length,5);
+guidePoints().forEach((point,i)=>closePoint(point,avenueWalkPoints[i]));
+for(const [x,z] of avenueWalkPoints) {
   assert(Math.hypot(frame[24]-x,frame[25]-z)<.03,"avenue bay foot guidance avoids the building frontage");
   walkTo(frame[24],frame[25]);
 }
