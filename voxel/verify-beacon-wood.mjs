@@ -104,4 +104,33 @@ for (const aspect of [.56, 1.67]) {
   assert.equal(hud[28], woodBefore);
   assert.equal(hashes.get(5), watchfireBefore);
   assert.deepEqual(hitCell(target), [22, 5, 15]);
+
+  engine.look(-yaw / .0034, hud[19] / .0034);
+  tick();
+  forwardTo(11.5);
+  const caveZ = hud[18];
+  assert(caveZ >= 10.8 && caveZ <= 11.5, 'reach the middle of the cave entrance lane');
+  assert.deepEqual(hitCell(engine.pick(34.5, 6.25, caveZ, 0, 1, 0)), [34, 8, Math.floor(caveZ)],
+    'the real terrain contains a continuous overhead rock layer');
+  assert.deepEqual(hitCell(engine.pick(34.5, 6.25, caveZ, 0, -1, 0)), [34, 4, Math.floor(caveZ)],
+    'the real terrain leaves a clear three-voxel passage above its floor');
+
+  const coastTraverse = (control, limit, sign) => {
+    const visited = new Set();
+    engine.control(control, 1);
+    for (let i = 0; i < 120 && (limit - hud[16]) * sign > 0; i++) {
+      engine.tick(.05, aspect, 1);
+      assert.equal(hud[25], 1, 'traversal is inside normal active play');
+      assert.equal(hud[26], 1, 'the roofed coastal route keeps the flame dry');
+      assert.equal(hud[29], 1, 'exploring the cave does not alter mission requirements');
+      assert(Math.abs(hud[17] - 6.62) < .03 && Math.abs(hud[18] - caveZ) < .015,
+        'ordinary movement crosses at walking height without entering a side wall');
+      if (hud[16] >= 30 && hud[16] < 39) visited.add(Math.floor(hud[16]));
+    }
+    engine.control(control, 0);
+    assert((limit - hud[16]) * sign <= 0, 'walk out of the opposite cave mouth');
+    assert.deepEqual([...visited].sort((a, b) => a - b), [30, 31, 32, 33, 34, 35, 36, 37, 38]);
+  };
+  coastTraverse(3, 40.1, 1);
+  coastTraverse(2, 28.8, -1);
 }
