@@ -105,12 +105,16 @@ engine.reset(0);
 const roads=[
   [-111,25.35,110,7.65],[-111,54.5,112,7.6],[-65,-17,9,91.5],[-111,29.1,8,33.4],
   [-4.45,-20,8.9,94.4],[-18.8,-12,5.8,85.4],[-18.8,27.6,26.2,5.9],[-18.8,57,23.3,5.1],
-  [-14,125,50,20],[-63.2,-16.02,68,3.54],[-103.85,20.2,47.79,4.9]
+  [-14,125,50,20],[-63.2,-16.02,68,3.54],[-103.85,20.2,47.79,4.9],
+  [-127,25.35,16,7.65],[-143,25.35,16,7.65],[-159,25.35,16,7.65],
+  [-127,40,14,5.6],[-143,40,16,5.6],[-159,40,16,5.6],
+  [-127,54.5,16,7.6],[-143,54.5,16,7.6],[-159,54.5,16,7.6],
+  [-127,27,5.4,33],[-143,27,5.4,33],[-159,27,5,33]
 ];
 assert.equal(engine.map_value(-1,0),roads.length);
 for(const [row,road] of roads.entries()) {
   for(const [column,expected] of road.entries()) {
-    assert.equal(engine.map_value(row,column),row>=9&&column===1 ?
+    assert.equal(engine.map_value(row,column),(row===9||row===10)&&column===1 ?
       Math.fround(Math.fround(row===9 ? -14.25 : 22.65)+Math.fround(row===9 ? -1.77 : -2.45)) :
       Math.fround(expected),`map road ${row} field ${column}`);
   }
@@ -121,6 +125,16 @@ assert.equal(frame[16],0); assert.equal(frame[17],8); assert.equal(frame[18],90)
 assert.equal(worldSends,1);
 assert(world[0]+world[1]*4<=moving[0] || moving[0]+moving[1]*4<=world[0]);
 const scenery=view(...world,WORLD_FLOATS,18).slice(), prior=rawMoving().slice(), projection=frame[0];
+if (process.argv[3]) {
+  let previous, base;
+  base=new WebAssembly.Instance(new WebAssembly.Module(readFileSync(process.argv[3])),{ferry:{
+    frame(){},moving(){},
+    world(ptr,count){previous=new Float32Array(base.memory.buffer,ptr,count).slice();}
+  }}).exports;
+  base._start(); base.reset(0);
+  assert(previous && scenery.length>previous.length,"annex adds drawable geometry");
+  assert.deepEqual(scenery.subarray(0,previous.length),previous,"previous city mesh is byte-for-byte unchanged");
+}
 tick(0,0,0,0,.53);
 assert.notEqual(frame[0],projection); assert.deepEqual(rawMoving(),prior);
 function cameraRoute(wide) {
@@ -143,6 +157,22 @@ assert(switchedView[23].view[15]-closeView[23].view[15]>1,"wide camera noticeabl
 assert(switchedView[47].view[15]-closeView[47].view[15]>1,"toggle persists after the one-shot flag");
 assert(switchedView[119].view.every((v,i)=>Math.abs(v-closeView[119].view[i])<.0001),
   "second independent toggle returns to the original close projection");
+engine.reset(1);
+assert.equal(frame[17],4,"annex is reachable in free roam");
+for(const p of [[3.8,-4.6],[3.8,28.9],[-82,28.9],[-118,28.9]]) walkTo(...p);
+assert(frame[26]<-117,"the old west edge really opens at the southern junction");
+run(140,0,1,1);
+assert(frame[27]>32.90 && frame[27]<=33.01,"ordinary movement stops against the same annex storefront the world draws");
+for(const p of [[-124,32.95],[-124,43],[-140,43],[-140,58],[-114,58]]) walkTo(...p);
+assert(Math.abs(frame[27]-58)<.11,"ordinary movement uses the connected cross streets");
+walkTo(-108,58);
+assert(frame[26]>-110.69 && Math.abs(frame[27]-58)<.11,
+  "the north junction crosses back into the original city");
+walkTo(-118,58);
+assert(frame[26]<-117 && Math.abs(frame[27]-58)<.11,
+  "the same northern junction allows ordinary re-entry");
+assert.equal(frame[17],4);
+assert.equal(worldSends,1);
 engine.reset(0);
 tick(0,0,0,0,.53);
 tick(0,0,2,.003); assert.equal(frame[16],0);

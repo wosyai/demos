@@ -125,7 +125,7 @@ f32(f32,f32) length = fn(x,z) {
 f32(f32,f32) min_f = fn(a,b) { if (a<b) { a } else { b } };
 f32(f32,f32) max_f = fn(a,b) { if (a>b) { a } else { b } };
 
-f32[5][30] buildings = [
+f32[5][36] buildings = [
     [-31.0, -10.0, 11.0, 13.0, 9.2],
     [-11.1, -8.0, 5.1, 12.6, 5.0],
     [7.8, -10.0, 16.0, 13.5, 10.8],
@@ -147,7 +147,9 @@ f32[5][30] buildings = [
     [-54.5,8.8,8.3,13.1,11.9],[-106.0,34.0,17.0,16.5,9.1],
     [-75.0,42.5,7.0,9.0,8.3],[-53.6,34.2,14.1,17.0,12.4],
     [-99.5,63.0,20.0,8.1,6.0],[-75.5,63.1,8.2,8.0,10.9],
-    [-55.5,63.8,12.5,7.6,9.2],[-39.6,63.9,4.6,7.1,7.9],[-88.8,41.00,14.0,9.15,4.65]
+    [-55.5,63.8,12.5,7.6,9.2],[-39.6,63.9,4.6,7.1,7.9],[-88.8,41.00,14.0,9.15,4.65],
+    [-121.0,33.3,6.0,5.2,3.6],[-136.0,33.3,7.0,5.6,4.1],[-153.5,33.3,10.0,5.4,3.4],
+    [-121.0,46.4,6.0,6.1,3.8],[-136.0,46.4,7.0,6.2,4.6],[-153.5,46.4,10.0,6.2,3.9]
 ];
 f32[2][12] trees = [
     [5.4,22.0],[-5.1,19.0],[13.5,24.7],[5.0,54.0],[-5.2,45.0],[-18.7,18.0],
@@ -483,7 +485,7 @@ unit() draw_landmarks = fn {
     neon_words(2,0,8.26,3.94,75.08,0.234,false,0.98,0.83,0.53);
 };
 
-f32[4][11] map_roads = [
+f32[4][23] map_roads = [
     [-111.0,25.35,110.0,7.65],
     [-111.0,54.5,112.0,7.6],
     [-65.0,-17.0,9.0,91.5],
@@ -494,7 +496,11 @@ f32[4][11] map_roads = [
     [-18.8,57.0,23.3,5.1],
     [-14.0,125.0,50.0,20.0],
     [-63.20,-1.77,68.0,3.54],
-    [-103.85,-2.45,47.79,4.90]
+    [-103.85,-2.45,47.79,4.90],
+    [-127.0,25.35,16.0,7.65],[-143.0,25.35,16.0,7.65],[-159.0,25.35,16.0,7.65],
+    [-127.0,40.0,14.0,5.6],[-143.0,40.0,16.0,5.6],[-159.0,40.0,16.0,5.6],
+    [-127.0,54.5,16.0,7.6],[-143.0,54.5,16.0,7.6],[-159.0,54.5,16.0,7.6],
+    [-127.0,27.0,5.4,33.0],[-143.0,27.0,5.4,33.0],[-159.0,27.0,5.0,33.0]
 ];
 
 f32(i32) road_z = fn(row) {
@@ -503,8 +509,8 @@ f32(i32) road_z = fn(row) {
 };
 
 f32(i32,i32) map_value = fn(row,column) {
-    if (row>=0 && row<11 && column>=0 && column<4) { if (column==1) { road_z(row) } else { map_roads[ix(row)][ix(column)] } } else {
-        if (row==-1 && column==0) { 11.0 } else { 0.0 }
+    if (row>=0 && row<23 && column>=0 && column<4) { if (column==1) { road_z(row) } else { map_roads[ix(row)][ix(column)] } } else {
+        if (row==-1 && column==0) { 23.0 } else { 0.0 }
     }
 };
 
@@ -592,6 +598,25 @@ unit(i32) draw_skyline = fn(i) {
             box(x+4.15,h-4.26,z-0.01,0.59,0.36,0.05,0.75,0.55,0.48);
         };
         draw_skyline(i+1);
+    };
+};
+
+unit(i32) draw_annex_roads = fn(i) {
+    if (i<23) {
+        road_ground(i,0.018,0.26,0.30,0.37);
+        draw_annex_roads(i+1);
+    };
+};
+
+unit(i32) draw_annex_buildings = fn(i) {
+    if (i<36) {
+        u64 n=ix(i);
+        f32 x=buildings[n][0]; f32 z=buildings[n][1]; f32 w=buildings[n][2]; f32 d=buildings[n][3]; f32 h=buildings[n][4];
+        f32 r=if (i%2==0) { 0.57 } else { 0.69 };
+        box(x,0.0,z,w,h,d,r,0.51,0.49);
+        box(x,h,z,w,0.18,d,0.88,0.77,0.62);
+        facade(0,0,x,z,w,d,h,r,0.51);
+        draw_annex_buildings(i+1);
     };
 };
 
@@ -712,11 +737,14 @@ unit() render_world = fn {
     box(12.4,6.55,8.77,8.8,0.26,0.16,0.90,0.43,0.62);
     box(12.7,4.25,8.85,8.2,2.20,0.12,0.15,0.20,0.31);
     quad(13.6,4.75,8.66,16.0,6.02,8.66,17.7,5.55,8.66,19.9,4.75,8.66,0.96,0.63,0.38);
+    ground(-161.0,23.0,44.0,41.0,-0.035,0.43,0.37,0.43);
+    draw_annex_roads(11);
+    draw_annex_buildings(30);
     unsafe { host.world(core.pointer_cast<*?u8>(&?scenery[0][0][0][0][0]),vertex_count*6); };
     world_ready=true;
 };
 bool(f32,f32,f32,i32) wall_hit = fn(x,z,r,i) {
-    if (i>=30) { false } else {
+    if (i>=36 || (i==30 && x-r> -115.0)) { false } else {
         u64 n=ix(i);
         f32 bx=buildings[n][0]; f32 bz=buildings[n][1];
         f32 px=clamp(x,bx,bx+buildings[n][2]);
@@ -756,8 +784,19 @@ bool(f32,f32,f32) bollard_hit = fn(x,z,r) {
     }
 };
 
+bool(f32,f32,i32) inside_annex_gate = fn(z,r,i) {
+    u64 row=ix(i);
+    f32 lo=map_roads[row][1];
+    z>=lo+r && z<=lo+map_roads[row][3]-r
+};
+
+bool(f32,f32,f32) annex_clear = fn(x,z,r) {
+    stage==MissionStage::free_roam && x>= -161.0+r && z>=23.0+r && z<=64.0-r &&
+        (x<= -117.0-r || inside_annex_gate(z,r,11) || inside_annex_gate(z,r,17))
+};
+
 i32(f32,f32,f32,bool) static_hit = fn(x,z,r,vehicle) {
-    if (x < -111.0+r || x>31.0-r || z < -17.0+r || z>86.0-r || (z>74.9-r && (vehicle || x<7.1+r || x>14.9-r)) ||
+    if ((x < -111.0+r && !annex_clear(x,z,r)) || x>31.0-r || z < -17.0+r || z>86.0-r || (z>74.9-r && (vehicle || x<7.1+r || x>14.9-r)) ||
         wall_hit(x,z,r,0) || bollard_hit(x,z,r)) { 5 } else {
         if (palm_hit(x,z,r,0) || promenade_hit(x,z,r,0)) { 2 } else { 0 }
     }
@@ -1303,7 +1342,7 @@ unit() interact = fn {
 };
 
 f32(f32,f32,f32,f32,f32,i32) clear_boom = fn(x,z,dx,dz,limit,i) {
-    if (i>=30 || limit<=0.75) { limit } else {
+    if (i>=36 || limit<=0.75 || (i==30 && x-limit> -114.7)) { limit } else {
         u64 n=ix(i);
         f32 bx=buildings[n][0]-0.30; f32 ex=bx+buildings[n][2]+0.60;
         f32 bz=buildings[n][1]-0.30; f32 ez=bz+buildings[n][3]+0.60;
