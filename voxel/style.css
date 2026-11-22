@@ -186,8 +186,18 @@ kbd{display:inline-block;border:1px solid #ffffff4a;border-radius:.27rem;margin-
   .supplies{flex-wrap:wrap;column-gap:.52rem;row-gap:.18rem}
   .objective{font-size:.85rem}
 }
+@media(max-height:640px){
+  .intro{
+    --intro-top:calc(max(1rem,env(safe-area-inset-top)) + clamp(0rem,1.5vw,1rem) + 3rem);
+    --intro-bottom:max(.85rem,env(safe-area-inset-bottom));
+    top:auto;bottom:var(--intro-bottom);transform:none;
+    max-height:calc(100dvh - var(--intro-top) - var(--intro-bottom));
+    width:min(33rem,calc(100% - clamp(1.15rem,6.75vw,7rem) - max(.85rem,env(safe-area-inset-right))));
+    padding:.4rem;overflow-y:auto;scroll-padding-block:.4rem;
+    pointer-events:auto;
+  }
+}
 @media(max-height:430px){
-  .intro{max-height:calc(100dvh - 4rem);top:auto;bottom:.85rem;transform:none;overflow-y:auto;pointer-events:auto}
   .intro .mission-intro{margin:.52rem 0 0;font-size:.82rem}
   .intro .world-options{margin-top:.25rem}
 }

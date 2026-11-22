@@ -6,8 +6,9 @@
 <meta name="theme-color" content="#152a24">
 <meta name="description" content="Explore and reshape a small block island built in Wosy and rendered in your browser.">
 <title>Pocket Island • Wosy</title>
-<link rel="stylesheet" href="./style.css?v=beacon-5">
+<link rel="stylesheet" href="./style.css?v=beacon-5-arcade-1">
 <script type="module" src="./main.js?v=typed-state-v1"></script>
+  <link rel="stylesheet" href="../arcade/shell.css?v=1">
 </head>
 <body>
 <svg class="glyph-source" width="0" height="0" aria-hidden="true" focusable="false"><defs>
@@ -58,21 +59,29 @@
       <button class="secondary" id="enter" type="button" disabled>Play sandbox</button>
     </div>
     <p class="mission-intro">Keep the flame alive. Light both watchfires and reach the lighthouse.</p>
-    <details class="entry-guide">
-      <summary><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#glyph-help"/></svg> Controls</summary>
-      <p class="entry-keys"><kbd>WASD</kbd> Move <kbd>Space</kbd> Jump / hold to swim up <kbd>F</kbd> Fly<br><kbd>Q</kbd> or left click: break · <kbd>E</kbd> or right click: place<br><kbd>1–6</kbd> Select block</p>
-      <p class="entry-touch">Use the left stick to move. Drag the right side to look. Hold Jump to swim up. Hold Break or Place to edit.</p>
-      <p class="camera-legend"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#glyph-view"/></svg><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#glyph-person"/></svg><span>Switch first / third person <kbd>V</kbd></span></p>
-    </details>
-    <details class="world-options">
-      <summary>Sandbox settings</summary>
-      <form class="seed" id="seed-form">
-        <label for="seed">SEED</label>
-        <input id="seed" name="seed" type="text" inputmode="numeric" autocomplete="off">
-        <button type="submit" id="apply-seed" disabled>Generate</button>
-        <button type="button" class="random" id="random-seed" title="New random seed" aria-label="New random seed" disabled><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 7h3c4 0 6 10 10 10h5m-3-3 3 3-3 3M3 17h3c1.3 0 2.4-1 3.4-2.5M14 8.9C14.7 7.7 15.3 7 16 7h5m-3-3 3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
-      </form>
-    </details>
+    <nav class="arcade-menu-tools" aria-label="Arcade menu">
+      <details class="arcade-settings">
+        <summary><svg class="arcade-tool-icon" aria-hidden="true" focusable="false"><use href="../arcade/icons.svg?v=1#settings"></use></svg> Settings</summary>
+        <div class="arcade-settings-body">
+          <details class="entry-guide">
+            <summary><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#glyph-help"/></svg> Controls</summary>
+            <p class="entry-keys"><kbd>WASD</kbd> Move <kbd>Space</kbd> Jump / hold to swim up <kbd>F</kbd> Fly<br><kbd>Q</kbd> or left click: break · <kbd>E</kbd> or right click: place<br><kbd>1–6</kbd> Select block</p>
+            <p class="entry-touch">Use the left stick to move. Drag the right side to look. Hold Jump to swim up. Hold Break or Place to edit.</p>
+            <p class="camera-legend"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#glyph-view"/></svg><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#glyph-person"/></svg><span>Switch first / third person <kbd>V</kbd></span></p>
+          </details>
+          <details class="world-options">
+            <summary>Sandbox settings</summary>
+            <form class="seed" id="seed-form">
+              <label for="seed">SEED</label>
+              <input id="seed" name="seed" type="text" inputmode="numeric" autocomplete="off">
+              <button type="submit" id="apply-seed" disabled>Generate</button>
+              <button type="button" class="random" id="random-seed" title="New random seed" aria-label="New random seed" disabled><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M3 7h3c4 0 6 10 10 10h5m-3-3 3 3-3 3M3 17h3c1.3 0 2.4-1 3.4-2.5M14 8.9C14.7 7.7 15.3 7 16 7h5m-3-3 3 3-3 3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            </form>
+          </details>
+        </div>
+      </details>
+      <a class="arcade-back" href="../"><svg class="arcade-tool-icon" aria-hidden="true" focusable="false"><use href="../arcade/icons.svg?v=1#back"></use></svg> Back to Wosy Arcade</a>
+    </nav>
     <p class="error" id="error" role="alert" hidden></p>
   </section>
   <span class="reticle" aria-hidden="true"></span>

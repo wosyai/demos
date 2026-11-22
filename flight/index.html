@@ -8,6 +8,7 @@
   <meta name="description" content="Fly two pioneering aircraft on crop patrol and an aerial mail delivery. An original Wosy browser game.">
   <link rel="stylesheet" href="./style.css?v=typed-flight-v1">
   <script type="module" src="./host.mjs?v=typed-flight-v1"></script>
+  <link rel="stylesheet" href="../arcade/shell.css?v=1">
 </head>
 <body>
   <main id="game" class="game" tabindex="-1">
@@ -33,6 +34,15 @@
         </button>
       </div>
       <p id="menu-help" class="menu-help">Take off, land at the marked supply strip, then lift off again with cargo. Deliver mail across Paris or spray three marked farm rows. Fly through the amber rings early for bonus points.</p>
+      <nav class="arcade-menu-tools" aria-label="Arcade menu">
+        <details class="arcade-settings">
+          <summary><svg class="arcade-tool-icon" aria-hidden="true" focusable="false"><use href="../arcade/icons.svg?v=1#settings"></use></svg> Settings</summary>
+          <div class="arcade-settings-body">
+            <p>WASD or arrows to steer. Q and E control power. Space triggers a mission action. Press R to restart.</p>
+          </div>
+        </details>
+        <a class="arcade-back" href="../"><svg class="arcade-tool-icon" aria-hidden="true" focusable="false"><use href="../arcade/icons.svg?v=1#back"></use></svg> Back to Wosy Arcade</a>
+      </nav>
       <p id="problem" class="problem" role="alert" hidden></p>
     </section>
 
