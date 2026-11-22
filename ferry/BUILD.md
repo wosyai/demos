@@ -66,7 +66,7 @@ default. No route changes the clock or grants collision immunity.
 - Frame length 30: view-projection [0–15], walking/driving [16], mission
   state [17], seconds [18], speed [19], action cue [20], latest contact and
   sequence [21–22], target range and position [23–25], player position
-  [26–27], heading [28], signed turn cue [29]. Mission states: 0 pickup,
+  [26–27], heading [28], signed target bearing in radians [29]. Mission states: 0 pickup,
   1 timed drive/walk to Pier 8, 2 delivered ashore, 3 missed departure,
   4 free roam, 5 boarding/crossing, 6 docked awaiting disembark,
   7 walking the far gangway, 8 phone prologue. The phone unlocks the drive-in

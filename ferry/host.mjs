@@ -1,4 +1,4 @@
-export const ENGINE_PATH = "./ferry.wasm?v=ferry-6";
+export const ENGINE_PATH = "./ferry.wasm?v=bearing-v1";
 const INPUTS = new Map([
   ["KeyA","left"],["ArrowLeft","left"],["KeyD","right"],["ArrowRight","right"],
   ["KeyW","up"],["ArrowUp","up"],["KeyS","down"],["ArrowDown","down"],["Space","brake"],
@@ -239,7 +239,7 @@ export async function boot(env=globalThis,createGraphics=graphics) {
     label(objective,OBJECTIVES[state]||"Find the ferry");
     label(stats,target ? `${Math.round(frame[23])} m` : "");
     trip.dataset.route=String(target);
-    trip.style.setProperty("--bearing",`${Math.round(frame[29]*90)}deg`);
+    trip.style.setProperty("--bearing",`${frame[29]}rad`);
     departure.hidden=state!==1;
     if(state===1) label(clock,countdown(frame[18]));
     touch.dataset.crossing=String(state===5||state===7);

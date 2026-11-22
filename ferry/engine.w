@@ -29,6 +29,15 @@ u64(i32) ix = fn(value) { core.int_extend<u64>(value) };
 f32(f32) abs_f = fn(value) { if (value < 0.0) { -value } else { value } };
 f32(f32, f32, f32) clamp = fn(v, lo, hi) { if (v < lo) { lo } else { if (v > hi) { hi } else { v } } };
 f32(f32) wrap = fn(a) { if (a > 3.14159265) { a - 6.28318530 } else { if (a < -3.14159265) { a + 6.28318530 } else { a } } };
+f32(f32, f32) bearing = fn(x, z) {
+    f32 ax=abs_f(x); f32 az=abs_f(z);
+    bool steep=ax>az;
+    f32 ratio=if (steep) { az/ax } else { ax/az };
+    f32 angle=ratio*(0.78539816+0.273*(1.0-ratio));
+    f32 quadrant=if (steep) { 1.57079633-angle } else { angle };
+    f32 magnitude=if (z<0.0) { 3.14159265-quadrant } else { quadrant };
+    if (x<0.0) { -magnitude } else { magnitude }
+};
 f32(f32) sin_small = fn(a) {
 	f32 u = if (a > 1.57079633) { 3.14159265 - a } else { if (a < -1.57079633) { -3.14159265 - a } else { a } };
 	f32 d = u * u;
@@ -1532,9 +1541,7 @@ unit(f32) render_frame = fn(alpha) {
     f32 tz=if (stage==8) { phone_z } else { if (stage==0) { tape_guide_z() } else { if (stage==1) { pier_guide_z() } else { pz } } };
     f32 dx=tx-px; f32 dz=tz-pz;
     f32 heading=if (in_car) { car_yaw } else { 0.0 };
-    f32 hs=sin_small(heading); f32 hc=cos_small(heading);
-    f32 side=dx*hc-dz*hs;
-    f32 ahead=dx*hs+dz*hc;
+    f32 distance=length(dx,dz);
     display[16]=if (in_car) { 1.0 } else { 0.0 };
     display[17]=float_i(stage);
     display[18]=seconds_left;
@@ -1542,13 +1549,10 @@ unit(f32) render_frame = fn(alpha) {
     display[20]=float_i(cue());
     display[21]=float_i(collision_kind);
     display[22]=float_i(collision_seq);
-    display[23]=length(dx,dz);
+    display[23]=distance;
     display[24]=tx; display[25]=tz; display[26]=px; display[27]=pz;
     display[28]=heading;
-    display[29]=if ((stage>1 && stage!=8) || length(dx,dz)<0.25) { 0.0 } else {
-        if (ahead<=0.0) { if (side<0.0) { -1.0 } else { 1.0 } }
-        else { clamp(side*1.3/ahead,-1.0,1.0) }
-    };
+    display[29]=if ((stage>1 && stage!=8) || distance<0.25) { 0.0 } else { wrap(bearing(dx,dz)-heading) };
     unsafe { host.frame(core.pointer_cast<*?u8>(&?display[0]),30); };
 };
 
