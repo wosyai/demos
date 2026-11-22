@@ -42,6 +42,8 @@ i32[3] spray_count = [0, 0, 0];
 i32 spray_tick = -50;
 i32[3] next_gate = [0, 0, 0];
 i32[3] ring_score = [0, 0, 0];
+i32 gate_flash = -1;
+i32 gate_flash_until = 0;
 i32[3] event_code = [0, 0, 0];
 bool pending_drop = false;
 i32 best_ticks = 0;
@@ -494,7 +496,7 @@ unit(i32) crop_markers = fn(n) {
 	};
 };
 
-unit(f32,f32,f32,i32) gate_arch = fn(x,y,z,n) {
+unit(f32,f32,f32,i32,bool) gate_arch = fn(x,y,z,n,cleared) {
 	if (n < 14) {
 		f32 low = float_i(n)*0.44879895-3.14159265;
 		f32 high = wrap(low+0.44879895);
@@ -502,15 +504,11 @@ unit(f32,f32,f32,i32) gate_arch = fn(x,y,z,n) {
 		f32 cs = cos_small(low);
 		f32 es = sin_small(high);
 		f32 ec = cos_small(high);
-		quad(x+ss*9.5,y+cs*5.3,z,x+es*9.5,y+ec*5.3,z,x+es*9.1,y+ec*4.93,z,x+ss*9.1,y+cs*4.93,z,0.90,0.59,0.29);
-		gate_arch(x,y,z,n+1);
-	};
-};
-
-unit(i32) timed_gates = fn(n) {
-	if (n < 3) {
-		gate_arch(gate_x(n),gate_y(n),gate_z(n),0);
-		timed_gates(n+1);
+		f32 r = if (cleared) { 0.22 } else { 1.0 };
+		f32 g = if (cleared) { 1.0 } else { 0.66 };
+		f32 b = if (cleared) { 0.43 } else { 0.19 };
+		quad(x+ss*9.5,y+cs*5.3,z,x+es*9.5,y+ec*5.3,z,x+es*9.1,y+ec*4.93,z,x+ss*9.1,y+cs*4.93,z,r,g,b);
+		gate_arch(x,y,z,n+1,cleared);
 	};
 };
 
@@ -688,7 +686,15 @@ unit() render_land = fn {
 	box(sx-0.4,service_h()-0.32,sz-0.4,service_w()+0.8,0.32,service_l()+0.8,0.41,0.61,0.54);
 	box(sx-0.1,0.2,sz+2.0,0.10,2.1,4.8,0.82,0.72,0.42);
 	if (course == 0) { crop_markers(0); };
-	timed_gates(0);
+	if (course == 1) {
+		box(sx+1.0,4.34,sz+3.0,5.0,2.2,3.8,0.83,0.31,0.15);
+		quad(sx+1.5,4.76,sz+2.97,sx+5.5,4.76,sz+2.97,sx+5.5,6.15,sz+2.97,sx+1.5,6.15,sz+2.97,0.97,0.92,0.76);
+		tri(sx+1.5,6.15,sz+2.94,sx+5.5,6.15,sz+2.94,sx+3.5,5.26,sz+2.94,0.73,0.39,0.22);
+	} else {
+		box(sx+1.2,4.34,sz+3.0,4.6,2.4,4.3,0.18,0.74,0.57);
+		box(sx+2.7,6.74,sz+4.4,1.6,0.7,1.5,0.96,0.84,0.42);
+		box(sx+4.9,5.1,sz+2.4,1.8,0.24,0.52,0.96,0.84,0.42);
+	};
 	i32 count = vertex_count * 6;
 	unsafe { host.world(core.pointer_cast<*?u8>(&?scenery[0][0][0][0][0]), count); };
 };
@@ -788,7 +794,6 @@ unit() paris_steering_surfaces = fn {
 	quad(-4.74,1.16,-1.30,4.74,1.16,-1.30,4.74,1.16,-0.07,-4.74,1.16,-0.07,0.96,0.96,0.86);
 	brazilian_flag(0.48,1.19,-1.245,3.96,1.11);
 	cloth_sides(-1.40,0.99,2.34,2.80,0.16,1.64,0.54,0.70,0.43);
-	brazilian_flag(-1.40,1.15,2.34,2.80,1.64);
 };
 
 unit(i32) plane_model = fn(kind) {
@@ -1130,6 +1135,7 @@ unit(u64,u64,f32,f32,f32) score_gate = fn(plane,race,x0,y0,z0) {
 			if (dx*dx+dy*dy <= 1.0) {
 				ring_score[race] = ring_score[race]+1;
 				next_gate[race] = n+1;
+				if (race == 0) { gate_flash = n; gate_flash_until = stage_tick[0]+43; };
 			};
 		};
 	};
@@ -1388,9 +1394,79 @@ unit(i32,i32) spray_mist = fn(n,age) {
 	};
 };
 
+f32(i32,f32,f32) objective_x = fn(stage,x,z) {
+	if (stage == 0) { if (z < 100.0) { pickup_x() } else { if (x < 27.0) { 38.0 } else { 67.0 } } } else {
+		if (stage == 1) { drop_x() } else { if (stage >= 6) { pickup_x() } else { strip_x() } }
+	}
+};
+
+f32(i32,f32,f32) objective_z = fn(stage,x,z) {
+	if (stage == 0) { if (z < 100.0) { 120.0 } else { if (x < 27.0) { 169.0 } else { 189.0 } } } else {
+		if (stage == 1) { drop_z() } else {
+			if (stage == 11) { crop_z(spray_count[0])+10.0 } else {
+				if (stage == 6) { home_z()+64.0 } else {
+					if (stage == 7) { pickup_z()+12.0 } else {
+						if (stage == 10) { pickup_z()+pickup_l()-3.0 } else { if (stage >= 8) { pickup_z()+pickup_l()-38.0 } else { strip_z()+15.0 } }
+					}
+				}
+			}
+		}
+	}
+};
+
+unit(f32,f32,f32,f32,f32) direction_arrow = fn(x,y,z,dx,dz) {
+	f32 extent = clamp(abs_f(dx)+abs_f(dz),0.01,1500.0);
+	f32 tx = dx/extent;
+	f32 tz = dz/extent;
+	f32 rx = tz;
+	f32 rz = -tx;
+	f32 tip_x = x+tx*3.1;
+	f32 tip_z = z+tz*3.1;
+	quad(tip_x,y+0.44,tip_z,x-rx*2.55-tx*1.95,y,z-rz*2.55-tz*1.95,x,y+0.2,z,x+rx*2.55-tx*1.95,y,z+rz*2.55-tz*1.95,0.05,0.30,0.28);
+	quad(tip_x,y+0.52,tip_z,x-rx*2.12-tx*1.61,y+0.1,z-rz*2.12-tz*1.61,x,y+0.28,z,x+rx*2.12-tx*1.61,y+0.1,z+rz*2.12-tz*1.61,0.28,1.0,0.89);
+};
+
+unit() flight_guides = fn {
+	i32 next = next_gate[0];
+	if (next < 3) { gate_arch(gate_x(next),gate_y(next),gate_z(next),0,false); };
+	if (gate_flash >= 0 && stage_tick[0] < gate_flash_until) {
+		gate_arch(gate_x(gate_flash),gate_y(gate_flash),gate_z(gate_flash),0,true);
+	};
+	if (result[0] == 0) {
+		i32 stage = phase[0];
+		f32 x = presented_pose[0][0];
+		f32 y = presented_pose[0][1];
+		f32 z = presented_pose[0][2];
+		f32 heading = presented_pose[0][3];
+		f32 hx = sin_small(heading);
+		f32 hz = cos_small(heading);
+		f32 tx = objective_x(stage,x,z);
+		f32 tz = objective_z(stage,x,z);
+		if (stage == 9) {
+			diamond(x,y+4.0,z,1.75,-2.25,0.28,1.0,0.89);
+		} else {
+			bool final_strip = stage == 2 || stage == 3 || stage == 5;
+			f32 run_z = if (final_strip) { strip_z() } else { pickup_z() };
+			f32 run_w = if (final_strip) { strip_w() } else { pickup_w() };
+			f32 run_l = if (final_strip) { strip_l() } else { pickup_l() };
+			bool on_runway_line = (final_strip || stage == 7 || stage == 8 || stage == 10)
+				&& abs_f(tx-x) < run_w*0.45 && z >= run_z && z < run_z+run_l && hz > 0.75;
+			f32 dx = tx-x;
+			f32 dz = if (on_runway_line && tz-z < 18.0) { 18.0 } else { tz-z };
+			if (abs_f(dx)+abs_f(dz) > 2.0) {
+				direction_arrow(x+hx*10.0,y+3.9,z+hz*10.0,dx,dz);
+			};
+			if (stage == 7 || stage == 8) {
+				diamond(pickup_x(),7.0,pickup_z()+34.0,2.5,-3.0,0.28,1.0,0.89);
+			};
+		};
+	};
+};
+
 unit(f32) draw_aircraft = fn(alpha) {
 	vertex_count = 0;
 	drawing_world = false;
+	flight_guides();
 	if (course == 0) {
 		paint_crops(0);
 		i32 age = stage_tick[0]-spray_tick;
@@ -1462,12 +1538,8 @@ unit() frame = fn {
 	i32 stage = phase[0];
 	f32 x = poses[0][0];
 	f32 z = poses[0][2];
-	f32 target_x = if (stage == 0) { if (z < 100.0) { pickup_x() } else { if (x < 27.0) { 38.0 } else { 67.0 } } } else {
-		if (stage == 1 || stage == 5) { drop_x() } else { if (stage >= 6) { pickup_x() } else { strip_x() } }
-	};
-	f32 target_z = if (stage == 0) { if (z < 100.0) { 120.0 } else { if (x < 27.0) { 169.0 } else { 189.0 } } } else {
-		if (stage == 1 || stage == 5) { drop_z() } else { if (stage == 11) { crop_z(spray_count[0])+10.0 } else { if (stage >= 6) { pickup_z()+8.0 } else { strip_z()+9.0 } } }
-	};
+	f32 target_x = objective_x(stage,x,z);
+	f32 target_z = objective_z(stage,x,z);
 	f32 steer_x = target_x-x;
 	f32 steer_z = target_z-z;
 	f32 mx = abs_f(steer_x);
@@ -1502,6 +1574,8 @@ unit(i32) reset = fn(requested) {
 	course = next;
 	cancel_drop();
 	spray_tick = -50;
+	gate_flash = -1;
+	gate_flash_until = 0;
 	reset_mission(0);
 	reset_mission(1);
 	accumulator = 0.0;

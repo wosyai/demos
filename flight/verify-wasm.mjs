@@ -198,18 +198,30 @@ function pilot(p, bearing, height, slope, power) {
     const pitch = raw(127 * (climb + glide) / (.34 * p.speed));
     return hostAnalog(bank, pitch, power);
 }
+function marker(color, minY = -Infinity) {
+    const result = [];
+    for (let i = 0; i < aircraft.length; i += 6) {
+        if (aircraft[i+1] >= minY && color.every((value, c) => Math.abs(aircraft[i+3+c] - value) < .001)) {
+            result.push(aircraft.slice(i,i+3));
+        }
+    }
+    return result;
+}
 function sortie(course, mode = "normal") {
     reset(1-course); reset(course);
     packet = undefined;
     const supply = course ? -71 : 68;
     const visited = new Set();
-    let premature = false, canceled = false, wrongWindow = false;
+    let premature = false, canceled = false, wrongWindow = false, confirmed = 0;
     for (let i = 0; i < 1700 && frame[22] === 0; i++) {
         const p = aircraftPose(), phase = frame[20], status = frame[21];
         visited.add(phase);
         let input = 0;
         if (phase === 6 || phase === 10) input = 20;
         if (phase === 7) {
+            assert(marker([.28, 1, .89]).some(([x,y,z]) => Math.abs(x - (course ? -111 : -15)) < .001
+                && Math.abs(y - 4) < .001 && Math.abs(z - (supply+34)) < .001),
+                "supply approach renders a world-space beacon at the pickup strip");
             const distance = supply+12-p.z;
             const height = Math.min(6.5,1+distance*.064);
             input = pilot(p,0,height,distance>80 ? 0 : -.064,p.z>supply-43 ? 32 : 0);
@@ -224,6 +236,7 @@ function sortie(course, mode = "normal") {
         if (phase === 8) input = mode === "overrun" ? 16 : 32;
         if (phase === 3) input = 32;
         if (phase === 9) {
+            assert(marker([.28, 1, .89]).length >= 3, "stopped cargo pickup has a world-space marker");
             if (!canceled) {
                 assert.equal(p.speed, 0);
                 tick(128,0);
@@ -272,11 +285,19 @@ function sortie(course, mode = "normal") {
             const height = Math.min(12.3,1+(p.z-target)*slope);
             input = pilot(p,bearing,height,height<12.3?slope:0,p.z>final-50?32:0);
         }
+        const before = frame[32];
         tick(input);
+        if (frame[32] > before) {
+            assert(marker([.22, 1, .43]).length === 84, "an earned ring immediately turns green");
+            confirmed += 1;
+        }
     }
+    assert.equal(confirmed, frame[32], "for each scored gate, the mesh confirms the score");
     return {result:frame[22], course, visited, time:frame[17], data:packet, actions:frame[31], gates:frame[32], route:frame[25]};
 }
 const goodFarm = sortie(0), goodParis = sortie(1), cyanParis = sortie(1,"cyan");
+assert.equal(goodFarm.gates,3,"Crop Patrol confirms all three rings on a real flight");
+assert.equal(goodParis.gates,3,"Paris Air Mail confirms all three rings on a real flight");
 assert.equal(goodParis.route,2,"the higher, wider Paris route earns the amber route outcome");
 assert.equal(cyanParis.route,1,"the low Paris departure earns the cyan route outcome");
 assert.equal(sortie(1,"strike").result,8,"failing to climb out of the low route hits the bridge");
@@ -308,6 +329,18 @@ assert.equal(frame[33],0,"first timed gate stays available through its deadline"
 for (let i=0;i<8;i++) tick(0);
 assert.equal(frame[33],1,"expired gate advances without points or changing the mission phase");
 assert.equal(frame[20],6);
+for (const course of [0, 1]) {
+    reset(course);
+    for (const [index,z] of (course ? [-99,167,204] : [40,160,298]).entries()) {
+        let steps = 0;
+        while (frame[33] < index && steps++ < 1000) tick(0);
+        assert.equal(frame[33], index);
+        const amber = marker([1,.66,.19]);
+        assert.equal(amber.length,84,"each course presents exactly one active ring");
+        assert(amber.every(([, , depth]) => Math.abs(depth-z) < .001),"active ring geometry matches the scoring plane");
+        assert.equal(marker([.22,1,.43]).length,0,"missing a ring never plays success coloring");
+    }
+}
 function visibleGhost(rejectedCandidate) {
     reset(1); reset(0);
     for (const oldVersion of [1, 2, 3]) {
