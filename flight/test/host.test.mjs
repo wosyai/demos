@@ -61,13 +61,23 @@ function mock({ noGraphics = false, badMesh = false, initialLost = false, exitAt
   }
   const courses = [element("farm", {course: "0"}), element("paris", {course: "1"})];
   const controls = ["power", "brake", "drop"].map((value) => element(value, {action: value}));
-  for (const name of "game view menu hud engine problem keys touch flight-stick summary summary-title summary-detail summary-kicker again choose callout flight-cue time mission-phase speed altitude best gates restart pause track drop-key".split(" ")) element(name);
+  for (const name of "game view menu hud engine problem keys touch flight-stick summary summary-title summary-detail summary-kicker again choose flight-dialog-settings flight-controls arcade-back callout flight-cue time mission-phase speed altitude best gates restart pause track drop-key".split(" ")) element(name);
+  const dialog = nodes.get("summary"), settings = nodes.get("flight-dialog-settings");
+  const dialogNodes = ["again", "choose", "flight-dialog-settings", "flight-controls", "arcade-back"].map((name) => nodes.get(name));
+  settings.open = false;
+  dialog.querySelectorAll = () => dialogNodes.filter((node) => !node.disabled);
+  for (const node of dialogNodes) {
+    node.tabIndex = 0;
+    node.getClientRects = () => dialog.hidden || node.hidden ||
+      (node.id === "flight-controls" && !settings.open) ? [] : [{}];
+  }
   const canvas = nodes.get("view");
   Object.assign(canvas, { clientWidth: 820, clientHeight: 420, getContext: () => noGraphics ? null : g.gl });
   Object.assign(doc, { hidden: false, getElementById: (name) => nodes.get(name),
     querySelectorAll: (selector) => selector === "[data-course]" ? courses : controls });
   Object.assign(win, {
     devicePixelRatio: 3,
+    getComputedStyle: (node) => ({visibility: node.visibility ?? "visible"}),
     ...(orientationAPI ? {screen: {orientation: new Hub()}} : {}),
     localStorage: { setItem: (key, value) => data.set(key, value), getItem: (key) => data.get(key) },
     fetch: async (url) => {
@@ -216,6 +226,35 @@ test("reports a result, stores only the active course, restores replay on retry 
   assert.equal(sim.called.tick.length, pauseCount + 1);
   assert.equal(sim.nodes.get("summary").hidden, true);
 });
+test("pause navigation wraps visible controls and recovers focus after Settings closes", async () => {
+  const sim = mock();
+  await sim.ready;
+  sim.courses[0].events("click");
+  const get = (id) => sim.nodes.get(id);
+  const tab = (shiftKey = false) => sim.win.events("keydown", {code: "Tab", shiftKey});
+  get("pause").events("click");
+  assert.equal(sim.doc.activeElement, get("again"));
+
+  assert.equal(tab(true).prevented, true);
+  assert.equal(sim.doc.activeElement, get("arcade-back"));
+  assert.equal(tab().prevented, true);
+  assert.equal(sim.doc.activeElement, get("again"));
+
+  get("flight-dialog-settings").open = true;
+  get("flight-controls").focus();
+  assert.equal(tab().prevented, false, "native traversal remains intact within the dialog");
+  get("flight-dialog-settings").open = false;
+  assert.equal(tab().prevented, true, "the focused control stopped being visible");
+  assert.equal(sim.doc.activeElement, get("again"));
+
+  get("arcade-back").visibility = "hidden";
+  assert.equal(tab(true).prevented, true, "CSS-hidden anchors are removed from wrap");
+  assert.equal(sim.doc.activeElement, get("flight-dialog-settings"));
+  get("flight-dialog-settings").open = true;
+  get("again").events("click");
+  assert.equal(get("flight-dialog-settings").open, false);
+  assert.equal(sim.doc.activeElement, get("game"));
+});
 test("context recovery redraws without resetting an active run", async () => {
   const sim = mock();
   await sim.ready;
@@ -343,12 +382,12 @@ test("the sky uses the live world camera projection before and after resize", as
   assert.notEqual(secondSky[2][0], firstSky[2][0]);
 });
 
-test("the light shell and its flight engine share the same release token", async () => {
+test("the Flight pause host has its own release token with matching v7 assets", async () => {
   const sim = mock();
   await sim.ready;
   const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
   assert.match(html, /href="\.\/style\.css\?v=county-reservoir-flight-v7"/);
-  assert.match(html, /src="\.\/host\.mjs\?v=county-reservoir-flight-v7"/);
+  assert.match(html, /src="\.\/host\.mjs\?v=county-reservoir-flight-v7-arcade-pause-1"/);
   assert.deepEqual(sim.called.requests.map((url) => [url.pathname.split("/").at(-1), url.search]),
     [["flight.wasm", "?v=county-reservoir-flight-v7"]]);
 });
