@@ -1,6 +1,6 @@
 # Building Flying Low
 From the demos checkout, with Wosy compiler revision
-`8aecd0acc799d9c705a1fcfdb760af463bed4936`:
+`4e6e51710d4d129df8dd5c00574a31b8c4234f91`:
 
 ```sh
 cd flight
