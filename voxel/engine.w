@@ -119,11 +119,14 @@ f32 player_radius = 0.30;
 f32 player_feet = 1.62;
 f32 player_head = 0.18;
 f32 contact_skin = 0.0001;
-f32 camera_x = 32.0;
-f32 camera_y = 16.5;
-f32 camera_z = 34.5;
-f32 yaw = -0.72664234;
-f32 pitch = -0.379571;
+struct CameraPose {
+	f32 x;
+	f32 y;
+	f32 z;
+	f32 yaw;
+	f32 pitch;
+}
+CameraPose camera_pose = { .x = 32.0; .y = 16.5; .z = 34.5; .yaw = -0.72664234; .pitch = -0.379571; };
 f32 clock_seconds = 0.0;
 f32 sea_phase = 0.0;
 f32 sea_level = 2.55;
@@ -131,7 +134,13 @@ f32 sea_low = 2.55;
 f32 tide_span = 1.85;
 f32 lamp_offset = 0.90;
 f32 lamp_limit = 3.2;
-i32 beacon_state = 0;
+enum copy BeaconPhase {
+	sandbox;
+	active;
+	restored;
+	flooded;
+}
+BeaconPhase beacon_phase = BeaconPhase::sandbox;
 i32 bridge_blocks = 12;
 i32 relay_stage = 0;
 i32 sandbox_material = 2;
@@ -674,11 +683,11 @@ unit(i32) build_beacon_island = fn(z) {
 };
 
 i32() start_beacon = fn {
-	if (beacon_state == 0) {
+	if (beacon_phase == BeaconPhase::sandbox) {
 		sandbox_cells = world;
 		sandbox_material = selected_material;
 	};
-	beacon_state = 1;
+	beacon_phase = BeaconPhase::active;
 	beacon_elapsed = 0.0;
 	lamp_wet = 0.0;
 	tide_progress = 0.0;
@@ -689,11 +698,11 @@ i32() start_beacon = fn {
 	build_beacon_island(0);
 	beacon_canopy(0);
 	clear_controls();
-	camera_x = 24.5;
-	camera_y = 5.0 + player_feet;
-	camera_z = 42.5;
-	yaw = 0.0;
-	pitch = -0.10;
+	camera_pose.x = 24.5;
+	camera_pose.y = 5.0 + player_feet;
+	camera_pose.z = 42.5;
+	camera_pose.yaw = 0.0;
+	camera_pose.pitch = -0.10;
 	orientation_dirty = true;
 	target_dirty = true;
 	selected_hit = -2;
@@ -711,8 +720,8 @@ i32() start_beacon = fn {
 };
 
 i32() leave_beacon = fn {
-	if (beacon_state == 0) { 0 } else {
-		beacon_state = 0;
+	if (beacon_phase == BeaconPhase::sandbox) { 0 } else {
+		beacon_phase = BeaconPhase::sandbox;
 		world = sandbox_cells;
 		selected_material = sandbox_material;
 		sea_level = sea_low;
@@ -724,8 +733,8 @@ i32() leave_beacon = fn {
 };
 
 i32(i32) generate = fn(seed) {
-	if (beacon_state != 0) { selected_material = sandbox_material; };
-	beacon_state = 0;
+	if (beacon_phase != BeaconPhase::sandbox) { selected_material = sandbox_material; };
+	beacon_phase = BeaconPhase::sandbox;
 	sea_level = sea_low;
 	i32 bounded = seed % 16381;
 	fill_terrain(0, bounded);
@@ -753,7 +762,7 @@ i32(i32, i32, i32, i32) write_cell = fn(x, y, z, material) {
 };
 
 i32(i32, i32, i32, i32) edit = fn(x, y, z, material) {
-	if (beacon_state == 0) { write_cell(x, y, z, material) } else { -4 }
+	if (beacon_phase == BeaconPhase::sandbox) { write_cell(x, y, z, material) } else { -4 }
 };
 
 i32(f32) floor_i = fn(value) {
@@ -869,14 +878,14 @@ i32(i32) search_spawn = fn(distance) {
 unit() spawn_player = fn {
 	i32 tile = search_spawn(0);
 	if (tile >= 0) {
-		camera_x = core.sint_to_float<f32>(tile % 48) + 0.5;
-		camera_y = core.sint_to_float<f32>(tile / 2304) + player_feet;
-		camera_z = core.sint_to_float<f32>((tile / 48) % 48) + 0.5;
+		camera_pose.x = core.sint_to_float<f32>(tile % 48) + 0.5;
+		camera_pose.y = core.sint_to_float<f32>(tile / 2304) + player_feet;
+		camera_pose.z = core.sint_to_float<f32>((tile / 48) % 48) + 0.5;
 		grounded = true;
 	} else {
-		camera_x = 12.5;
-		camera_y = 10.0;
-		camera_z = 16.5;
+		camera_pose.x = 12.5;
+		camera_pose.y = 10.0;
+		camera_pose.z = 16.5;
 		flying = true;
 		grounded = false;
 	};
@@ -905,14 +914,14 @@ unit() clear_controls = fn {
 unit() reset_camera = fn {
 	flying = false;
 	spawn_player();
-	yaw = -0.72664234;
-	pitch = -0.10;
+	camera_pose.yaw = -0.72664234;
+	camera_pose.pitch = -0.10;
 	clear_controls();
 	orientation_dirty = true;
 };
 
 unit() toggle_flight = fn {
-	if (beacon_state == 0) {
+	if (beacon_phase == BeaconPhase::sandbox) {
 		flying = !flying;
 		grounded = false;
 		ground_contact_dirty = !flying;
@@ -950,11 +959,11 @@ i32(i32) active = fn(mask) { if (((controls | pulse_controls) & mask) != 0) { 1 
 
 unit(f32, f32) look = fn(dx, dy) {
 	if (dx >= -10000.0 && dx <= 10000.0 && dy >= -10000.0 && dy <= 10000.0) {
-		f32 next_yaw = wrap_yaw(yaw + dx * 0.0034);
-		f32 next_pitch = clamp_f(pitch - dy * 0.0034, -1.46, 1.35);
-		if (next_yaw != yaw || next_pitch != pitch) {
-			yaw = next_yaw;
-			pitch = next_pitch;
+		f32 next_yaw = wrap_yaw(camera_pose.yaw + dx * 0.0034);
+		f32 next_pitch = clamp_f(camera_pose.pitch - dy * 0.0034, -1.46, 1.35);
+		if (next_yaw != camera_pose.yaw || next_pitch != camera_pose.pitch) {
+			camera_pose.yaw = next_yaw;
+			camera_pose.pitch = next_pitch;
 			orientation_dirty = true;
 			target_dirty = true;
 		};
@@ -985,12 +994,12 @@ bool(i32, i32, i32) overlaps_player = fn(x, y, z) {
 	f32 block_x = core.sint_to_float<f32>(x);
 	f32 block_y = core.sint_to_float<f32>(y);
 	f32 block_z = core.sint_to_float<f32>(z);
-	camera_x - player_radius + contact_skin < block_x + 1.0
-		&& camera_x + player_radius - contact_skin > block_x
-		&& camera_y - player_feet + contact_skin < block_y + 1.0
-		&& camera_y + player_head - contact_skin > block_y
-		&& camera_z - player_radius + contact_skin < block_z + 1.0
-		&& camera_z + player_radius - contact_skin > block_z
+	camera_pose.x - player_radius + contact_skin < block_x + 1.0
+		&& camera_pose.x + player_radius - contact_skin > block_x
+		&& camera_pose.y - player_feet + contact_skin < block_y + 1.0
+		&& camera_pose.y + player_head - contact_skin > block_y
+		&& camera_pose.z - player_radius + contact_skin < block_z + 1.0
+		&& camera_pose.z + player_radius - contact_skin > block_z
 };
 
 f32(f32, f32, f32, f32) contact_position = fn(prior, next, low_extent, high_extent) {
@@ -1003,29 +1012,29 @@ f32(f32, f32, f32, f32) contact_position = fn(prior, next, low_extent, high_exte
 
 unit(f32, f32, f32, i32) move_player_steps = fn(dx, dy, dz, remaining) {
 	if (dx != 0.0) {
-		f32 next_x = clamp_f(camera_x + dx, -20.0, 68.0);
-		if (next_x != camera_x && player_collides(next_x, camera_y, camera_z)) {
-			next_x = contact_position(camera_x, next_x, player_radius, player_radius);
+		f32 next_x = clamp_f(camera_pose.x + dx, -20.0, 68.0);
+		if (next_x != camera_pose.x && player_collides(next_x, camera_pose.y, camera_pose.z)) {
+			next_x = contact_position(camera_pose.x, next_x, player_radius, player_radius);
 		};
-		camera_x = next_x;
+		camera_pose.x = next_x;
 	};
 	if (dz != 0.0) {
-		f32 next_z = clamp_f(camera_z + dz, -20.0, 68.0);
-		if (next_z != camera_z && player_collides(camera_x, camera_y, next_z)) {
-			next_z = contact_position(camera_z, next_z, player_radius, player_radius);
+		f32 next_z = clamp_f(camera_pose.z + dz, -20.0, 68.0);
+		if (next_z != camera_pose.z && player_collides(camera_pose.x, camera_pose.y, next_z)) {
+			next_z = contact_position(camera_pose.z, next_z, player_radius, player_radius);
 		};
-		camera_z = next_z;
+		camera_pose.z = next_z;
 	};
 	f32 remaining_dy = dy;
 	if (dy != 0.0) {
-		f32 next_y = camera_y + dy;
+		f32 next_y = camera_pose.y + dy;
 		if (flying) { next_y = clamp_f(next_y, 1.8, 35.0); };
-		if (next_y != camera_y && player_collides(camera_x, next_y, camera_z)) {
-			next_y = contact_position(camera_y, next_y, player_feet, player_head);
+		if (next_y != camera_pose.y && player_collides(camera_pose.x, next_y, camera_pose.z)) {
+			next_y = contact_position(camera_pose.y, next_y, player_feet, player_head);
 			remaining_dy = 0.0;
 			vertical_speed = 0.0;
 		};
-		camera_y = next_y;
+		camera_pose.y = next_y;
 	};
 	if (remaining > 1) { move_player_steps(dx, remaining_dy, dz, remaining - 1); };
 };
@@ -1038,8 +1047,8 @@ unit(f32, f32, f32) move_camera = fn(dt, sy, cy) {
 		i32 axes = forward * forward + right * right + up * up;
 		f32 normal = if (axes == 3) { 0.577350269 } else { if (axes == 2) { 0.707106781 } else { 1.0 } };
 		f32 speed = if (active(64) == 1) { 8.0 } else { 4.8 };
-		f32 immersion = if (!flying && camera_y - player_feet < sea_level + swell + chop) {
-			clamp_f((sea_surface(camera_x, camera_z) - (camera_y - player_feet)) / (player_feet + player_head), 0.0, 1.0)
+		f32 immersion = if (!flying && camera_pose.y - player_feet < sea_level + swell + chop) {
+			clamp_f((sea_surface(camera_pose.x, camera_pose.z) - (camera_pose.y - player_feet)) / (player_feet + player_head), 0.0, 1.0)
 		} else { 0.0 };
 		f32 stride = dt * speed * normal * (1.0 - 0.65 * immersion);
 		f32 f = core.sint_to_float<f32>(forward);
@@ -1050,7 +1059,7 @@ unit(f32, f32, f32) move_camera = fn(dt, sy, cy) {
 		f32 dz = motion_z * stride;
 		if (!flying) {
 			if (ground_contact_dirty) {
-				grounded = vertical_speed <= 0.0 && player_collides(camera_x, camera_y - 0.018, camera_z);
+				grounded = vertical_speed <= 0.0 && player_collides(camera_pose.x, camera_pose.y - 0.018, camera_pose.z);
 				ground_contact_dirty = false;
 			};
 			if (jump_pending) {
@@ -1071,20 +1080,20 @@ unit(f32, f32, f32) move_camera = fn(dt, sy, cy) {
 		};
 		jump_pending = false;
 		f32 dy = if (flying) { core.sint_to_float<f32>(up) * stride } else { vertical_speed * dt };
-		f32 previous_x = camera_x;
-		f32 previous_y = camera_y;
-		f32 previous_z = camera_z;
+		f32 previous_x = camera_pose.x;
+		f32 previous_y = camera_pose.y;
+		f32 previous_z = camera_pose.z;
 		if (dx != 0.0 || dy != 0.0 || dz != 0.0) {
 			if (dt <= 0.015) { move_player_steps(dx, dy, dz, 1); } else {
 				if (dt <= 0.03) { move_player_steps(dx * 0.5, dy * 0.5, dz * 0.5, 2); } else {
 					move_player_steps(dx * 0.25, dy * 0.25, dz * 0.25, 4);
 				};
 			};
-			if (!flying) { grounded = vertical_speed <= 0.0 && player_collides(camera_x, camera_y - 0.018, camera_z); };
+			if (!flying) { grounded = vertical_speed <= 0.0 && player_collides(camera_pose.x, camera_pose.y - 0.018, camera_pose.z); };
 		};
 		gait_weight = 0.0;
-		if (grounded && !flying && (camera_x != previous_x || camera_z != previous_z)) {
-			f32 travelled = ((camera_x - previous_x) * motion_x + (camera_z - previous_z) * motion_z) * normal;
+		if (grounded && !flying && (camera_pose.x != previous_x || camera_pose.z != previous_z)) {
+			f32 travelled = ((camera_pose.x - previous_x) * motion_x + (camera_pose.z - previous_z) * motion_z) * normal;
 			gait_weight = clamp_f((travelled / dt - 0.04) * 0.15, 0.0, 1.0);
 			if (gait_weight > 0.0) {
 				f32 stride_phase = travelled * (if (forward < 0) { -5.2 } else { 5.2 });
@@ -1092,8 +1101,8 @@ unit(f32, f32, f32) move_camera = fn(dt, sy, cy) {
 			};
 		};
 		if (flying) {
-			f32 moved_x = camera_x - previous_x;
-			f32 moved_z = camera_z - previous_z;
+			f32 moved_x = camera_pose.x - previous_x;
+			f32 moved_z = camera_pose.z - previous_z;
 			f32 pitch_target = 0.0;
 			f32 bank_target = 0.0;
 			if (moved_x != 0.0 || moved_z != 0.0) {
@@ -1115,8 +1124,8 @@ unit(f32, f32, f32) move_camera = fn(dt, sy, cy) {
 		f32 air_target = if (grounded && !flying) { 0.0 } else { 1.0 };
 		f32 air_step = dt * 9.0;
 		air_weight = air_weight + clamp_f(air_target - air_weight, 0.0 - air_step, air_step);
-		if (camera_y < -6.0) { spawn_player(); };
-		if (camera_x != previous_x || camera_y != previous_y || camera_z != previous_z) { target_dirty = true; };
+		if (camera_pose.y < -6.0) { spawn_player(); };
+		if (camera_pose.x != previous_x || camera_pose.y != previous_y || camera_pose.z != previous_z) { target_dirty = true; };
 		pulse_controls = 0;
 	};
 };
@@ -1248,6 +1257,14 @@ unit() publish_water = fn {
 	unsafe { host.water(core.pointer_cast<*?u8>(&?sea_vertices[0][0][0][0]), 3456); };
 };
 
+f32(BeaconPhase) beacon_phase_code = fn(phase) {
+	if (phase == BeaconPhase::sandbox) { 0.0 } else {
+		if (phase == BeaconPhase::active) { 1.0 } else {
+			if (phase == BeaconPhase::restored) { 2.0 } else { 3.0 }
+		}
+	}
+};
+
 unit(f32, f32, f32, f32, f32, f32, f32, f32, i32) publish_frame = fn(x, y, z, sy, cy, sp, cp, view_pitch, hit) {
 	f32 q = view_scale;
 	f32 qw = q / frame_values[20];
@@ -1278,7 +1295,7 @@ unit(f32, f32, f32, f32, f32, f32, f32, f32, i32) publish_frame = fn(x, y, z, sy
 	frame_values[22] = if (flying) { 1.0 } else { 0.0 };
 	frame_values[23] = if (grounded) { 1.0 } else { 0.0 };
 	frame_values[24] = core.sint_to_float<f32>(selected_material);
-	frame_values[25] = core.sint_to_float<f32>(beacon_state);
+	frame_values[25] = beacon_phase_code(beacon_phase);
 	frame_values[26] = 1.0 - lamp_wet / lamp_limit;
 	frame_values[27] = tide_progress;
 	frame_values[28] = core.sint_to_float<f32>(bridge_blocks);
@@ -1288,10 +1305,10 @@ unit(f32, f32, f32, f32, f32, f32, f32, f32, i32) publish_frame = fn(x, y, z, sy
 
 unit() update_orientation = fn {
 	if (orientation_dirty) {
-		sin_yaw = sine(yaw);
-		cos_yaw = cosine(yaw);
-		sin_pitch = sine(pitch);
-		cos_pitch = cosine(pitch);
+		sin_yaw = sine(camera_pose.yaw);
+		cos_yaw = cosine(camera_pose.yaw);
+		sin_pitch = sine(camera_pose.pitch);
+		cos_pitch = cosine(camera_pose.pitch);
 		orientation_dirty = false;
 	};
 };
@@ -1301,7 +1318,7 @@ i32() current_view_target = fn {
 		f32 dx = sin_yaw * cos_pitch;
 		f32 dy = sin_pitch;
 		f32 dz = 0.0 - cos_yaw * cos_pitch;
-		target_hit = pick_in_range(camera_x, camera_y, camera_z, dx, dy, dz, 5.0);
+		target_hit = pick_in_range(camera_pose.x, camera_pose.y, camera_pose.z, dx, dy, dz, 5.0);
 		target_dirty = false;
 	};
 	target_hit
@@ -1326,12 +1343,12 @@ unit(f32, f32, f32, f32, f32, f32) avatar_vertex = fn(x, y, z, r, g, b) {
 		f32 tilted_y = local_y * avatar_pitch_cosine - body_z * avatar_pitch_sine;
 		body_z = local_y * avatar_pitch_sine + body_z * avatar_pitch_cosine;
 		body_x = x * avatar_bank_cosine + tilted_y * avatar_bank_sine;
-		avatar_vertices[row][col][1] = camera_y + tilted_y * avatar_bank_cosine - x * avatar_bank_sine - 0.50;
+		avatar_vertices[row][col][1] = camera_pose.y + tilted_y * avatar_bank_cosine - x * avatar_bank_sine - 0.50;
 	} else {
-		avatar_vertices[row][col][1] = camera_y + avatar_joint_y + joint_dy - joint_dz;
+		avatar_vertices[row][col][1] = camera_pose.y + avatar_joint_y + joint_dy - joint_dz;
 	};
-	avatar_vertices[row][col][0] = camera_x + cos_yaw * body_x + sin_yaw * body_z;
-	avatar_vertices[row][col][2] = camera_z + sin_yaw * body_x - cos_yaw * body_z;
+	avatar_vertices[row][col][0] = camera_pose.x + cos_yaw * body_x + sin_yaw * body_z;
+	avatar_vertices[row][col][2] = camera_pose.z + sin_yaw * body_x - cos_yaw * body_z;
 	avatar_vertices[row][col][3] = r;
 	avatar_vertices[row][col][4] = g;
 	avatar_vertices[row][col][5] = b;
@@ -1364,13 +1381,13 @@ unit(f32, f32) avatar_joint = fn(pivot, angle) {
 
 unit(bool) publish_avatar = fn(visible) {
 	if (visible) {
-		if (!avatar_visible || avatar_x != camera_x || avatar_y != camera_y || avatar_z != camera_z || avatar_yaw != yaw
+		if (!avatar_visible || avatar_x != camera_pose.x || avatar_y != camera_pose.y || avatar_z != camera_pose.z || avatar_yaw != camera_pose.yaw
 			|| avatar_phase != gait_phase || avatar_gait != gait_weight || avatar_air != air_weight
 			|| avatar_flight_pitch != flight_pitch || avatar_flight_bank != flight_bank) {
-			avatar_x = camera_x;
-			avatar_y = camera_y;
-			avatar_z = camera_z;
-			avatar_yaw = yaw;
+			avatar_x = camera_pose.x;
+			avatar_y = camera_pose.y;
+			avatar_z = camera_pose.z;
+			avatar_yaw = camera_pose.yaw;
 			avatar_phase = gait_phase;
 			avatar_gait = gait_weight;
 			avatar_air = air_weight;
@@ -1476,7 +1493,7 @@ bool(i32, f32, f32, f32, f32, f32, f32) camera_sees_target = fn(hit, view_x, vie
 f32(i32, f32, f32, f32, f32, f32, f32, f32, f32, i32) find_visible_boom = fn(hit, dx, dy, dz, target_x, target_y, target_z, min, max, remaining) {
 	if (remaining == 0) { min } else {
 		f32 mid = (min + max) * 0.5;
-		bool visible = camera_sees_target(hit, camera_x + dx * mid, camera_y + dy * mid, camera_z + dz * mid,
+		bool visible = camera_sees_target(hit, camera_pose.x + dx * mid, camera_pose.y + dy * mid, camera_pose.z + dz * mid,
 			target_x, target_y, target_z);
 		if (visible) {
 			find_visible_boom(hit, dx, dy, dz, target_x, target_y, target_z, mid, max, remaining - 1)
@@ -1490,7 +1507,7 @@ unit(i32, f32) publish_play_frame = fn(hit, dt) {
 	if (!third_person) {
 		publish_avatar(false);
 		center_aim();
-		publish_frame(camera_x, camera_y, camera_z, sin_yaw, cos_yaw, sin_pitch, cos_pitch, pitch, hit);
+		publish_frame(camera_pose.x, camera_pose.y, camera_pose.z, sin_yaw, cos_yaw, sin_pitch, cos_pitch, camera_pose.pitch, hit);
 	} else {
 		f32 fx = sin_yaw * cos_pitch;
 		f32 fy = sin_pitch;
@@ -1501,10 +1518,10 @@ unit(i32, f32) publish_play_frame = fn(hit, dt) {
 		f32 dz = 0.92 * cos_yaw + shoulder * sin_yaw;
 		f32 back = 0.92 * cos_pitch - dy * sin_pitch;
 		f32 lift = 0.92 * sin_pitch + dy * cos_pitch;
-		f32 center = camera_boom_probe(camera_x, camera_y, camera_z, dx, dy, dz, 4.72);
-		f32 near_x = camera_x + fx * 0.16;
-		f32 near_y = camera_y + fy * 0.16;
-		f32 near_z = camera_z + fz * 0.16;
+		f32 center = camera_boom_probe(camera_pose.x, camera_pose.y, camera_pose.z, dx, dy, dz, 4.72);
+		f32 near_x = camera_pose.x + fx * 0.16;
+		f32 near_y = camera_pose.y + fy * 0.16;
+		f32 near_z = camera_pose.z + fz * 0.16;
 		f32 half_height = 0.16 / view_scale;
 		f32 half_width = half_height * frame_values[20];
 		f32 ux = 0.0 - sin_yaw * sin_pitch * half_height;
@@ -1517,21 +1534,21 @@ unit(i32, f32) publish_play_frame = fn(hit, dt) {
 		f32 corner2 = camera_corner(near_x, near_y, near_z, 0.0 - ux, 0.0 - uy, 0.0 - uz, sx, sz, dx, dy, dz, corner1);
 		f32 terrain_limit = camera_corner(near_x, near_y, near_z, 0.0 - ux, 0.0 - uy, 0.0 - uz, 0.0 - sx, 0.0 - sz, dx, dy, dz, corner2);
 		f32 aim_distance = if (hit < 0) { 5.0 } else {
-			clamp_f(ray_hit_distance(hit, camera_x, camera_y, camera_z, fx, fy, fz), 0.0, 5.0)
+			clamp_f(ray_hit_distance(hit, camera_pose.x, camera_pose.y, camera_pose.z, fx, fy, fz), 0.0, 5.0)
 		};
 		f32 reach = aim_distance + 0.035;
-		f32 tx = camera_x + fx * reach;
-		f32 ty = camera_y + fy * reach;
-		f32 tz = camera_z + fz * reach;
-		f32 limit = if (hit < 0 || camera_sees_target(hit, camera_x + dx * terrain_limit,
-			camera_y + dy * terrain_limit, camera_z + dz * terrain_limit, tx, ty, tz)) { terrain_limit } else {
+		f32 tx = camera_pose.x + fx * reach;
+		f32 ty = camera_pose.y + fy * reach;
+		f32 tz = camera_pose.z + fz * reach;
+		f32 limit = if (hit < 0 || camera_sees_target(hit, camera_pose.x + dx * terrain_limit,
+			camera_pose.y + dy * terrain_limit, camera_pose.z + dz * terrain_limit, tx, ty, tz)) { terrain_limit } else {
 			find_visible_boom(hit, dx, dy, dz, tx, ty, tz, 0.0, terrain_limit, 5)
 		};
 		f32 blended = if (dt == 0.0 || limit <= boom_distance) { limit } else {
 			boom_distance + (limit - boom_distance) * clamp_f(dt * 6.0, 0.0, 1.0)
 		};
-		f32 distance = if (hit < 0 || blended == limit || camera_sees_target(hit, camera_x + dx * blended,
-			camera_y + dy * blended, camera_z + dz * blended, tx, ty, tz)) { blended } else { limit };
+		f32 distance = if (hit < 0 || blended == limit || camera_sees_target(hit, camera_pose.x + dx * blended,
+			camera_pose.y + dy * blended, camera_pose.z + dz * blended, tx, ty, tz)) { blended } else { limit };
 		boom_distance = distance;
 		f32 depth = clamp_f(aim_distance + back * distance, 0.16, 9.0);
 		f32 projected = view_scale * distance / depth;
@@ -1540,8 +1557,8 @@ unit(i32, f32) publish_play_frame = fn(hit, dt) {
 			clamp_f(0.0 - lift * projected, -0.94, 0.94));
 		f32 clearance_squared = (dx * dx + dy * dy + dz * dz) * distance * distance;
 		publish_avatar(clearance_squared >= 2.0164);
-		publish_frame(camera_x + dx * distance, camera_y + dy * distance, camera_z + dz * distance,
-			sin_yaw, cos_yaw, sin_pitch, cos_pitch, pitch, hit);
+		publish_frame(camera_pose.x + dx * distance, camera_pose.y + dy * distance, camera_pose.z + dz * distance,
+			sin_yaw, cos_yaw, sin_pitch, cos_pitch, camera_pose.pitch, hit);
 	};
 };
 
@@ -1552,9 +1569,9 @@ unit(f32) update_tide = fn(dt) {
 };
 
 unit(f32) update_beacon = fn(dt) {
-	bool safe_ground = grounded && camera_y - player_feet >= 4.98 && camera_y - player_feet <= 5.05;
-	bool at_first = safe_ground && camera_x >= 23.0 && camera_x < 26.0 && camera_z >= 14.0 && camera_z < 17.0;
-	bool at_second = safe_ground && camera_x >= 8.0 && camera_x < 11.0 && camera_z >= 7.0 && camera_z < 10.0;
+	bool safe_ground = grounded && camera_pose.y - player_feet >= 4.98 && camera_pose.y - player_feet <= 5.05;
+	bool at_first = safe_ground && camera_pose.x >= 23.0 && camera_pose.x < 26.0 && camera_pose.z >= 14.0 && camera_pose.z < 17.0;
+	bool at_second = safe_ground && camera_pose.x >= 8.0 && camera_pose.x < 11.0 && camera_pose.z >= 7.0 && camera_pose.z < 10.0;
 	if (relay_stage == 0 && at_first) {
 		relay_stage = 1;
 		world[6][15][22] = 8;
@@ -1566,24 +1583,24 @@ unit(f32) update_beacon = fn(dt) {
 			rebuild_chunk(chunk_at(7, 8));
 		};
 	};
-	bool at_lamp = relay_stage == 2 && camera_x >= 23.0 && camera_x < 26.0 && camera_z >= 4.0 && camera_z < 6.0
-		&& grounded && camera_y - player_feet >= 5.99 && camera_y - player_feet <= 6.05;
+	bool at_lamp = relay_stage == 2 && camera_pose.x >= 23.0 && camera_pose.x < 26.0 && camera_pose.z >= 4.0 && camera_pose.z < 6.0
+		&& grounded && camera_pose.y - player_feet >= 5.99 && camera_pose.y - player_feet <= 6.05;
 	if (at_lamp) {
-		beacon_state = 2;
+		beacon_phase = BeaconPhase::restored;
 		world[14][4][23] = 8; world[14][4][24] = 8; world[14][4][25] = 8;
 		world[14][5][23] = 8; world[14][5][24] = 8; world[14][5][25] = 8;
 		clear_controls();
 		rebuild_chunk(chunk_at(23, 4));
 		rebuild_chunk(chunk_at(24, 4));
 	} else {
-		f32 lantern_y = camera_y - lamp_offset;
+		f32 lantern_y = camera_pose.y - lamp_offset;
 		if (lantern_y < sea_level + swell + chop) {
-			bool wet = lantern_y < sea_surface(camera_x, camera_z);
+			bool wet = lantern_y < sea_surface(camera_pose.x, camera_pose.z);
 			lamp_wet = clamp_f(lamp_wet + (if (wet) { dt } else { 0.0 - 0.65 * dt }), 0.0, lamp_limit);
 		} else {
 			if (lamp_wet > 0.0) { lamp_wet = clamp_f(lamp_wet - 0.65 * dt, 0.0, lamp_limit); };
 		};
-		if (lamp_wet >= lamp_limit) { beacon_state = 3; clear_controls(); };
+		if (lamp_wet >= lamp_limit) { beacon_phase = BeaconPhase::flooded; clear_controls(); };
 	};
 };
 
@@ -1595,29 +1612,29 @@ unit(f32, f32, i32) tick = fn(dt, aspect, playing) {
 	clock_seconds = clock_seconds + step;
 	update_orientation();
 	if (playing != 0) {
-		if (beacon_state < 2) {
+		if (beacon_phase == BeaconPhase::sandbox || beacon_phase == BeaconPhase::active) {
 			if (step > 0.0) {
-				if (beacon_state == 1) { update_tide(step); };
+				if (beacon_phase == BeaconPhase::active) { update_tide(step); };
 				sea_phase = wrap_yaw(sea_phase + step * 0.92);
 				publish_water();
 			};
 			move_camera(step, sin_yaw, cos_yaw);
 			advance_edits(step);
-			if (beacon_state == 1 && step > 0.0) { update_beacon(step); };
+			if (beacon_phase == BeaconPhase::active && step > 0.0) { update_beacon(step); };
 		};
-		i32 hit = if (beacon_state >= 2) { -1 } else { current_view_target() };
+		i32 hit = if (beacon_phase == BeaconPhase::restored || beacon_phase == BeaconPhase::flooded) { -1 } else { current_view_target() };
 		publish_outline(hit);
 		publish_play_frame(hit, step);
 	} else {
 		publish_outline(-1);
 		publish_avatar(false);
 		center_aim();
-		publish_frame(camera_x, camera_y, camera_z, sin_yaw, cos_yaw, sin_pitch, cos_pitch, pitch, -1);
+		publish_frame(camera_pose.x, camera_pose.y, camera_pose.z, sin_yaw, cos_yaw, sin_pitch, cos_pitch, camera_pose.pitch, -1);
 	};
 };
 
 i32(i32, i32, i32, i32) edit_beacon = fn(x, y, z, material) {
-	if (beacon_state != 1) { -4 } else {
+	if (beacon_phase != BeaconPhase::active) { -4 } else {
 		bool slot = bridge_slot(x, y, z);
 		u8 present = cell(x, y, z);
 		if (material == 0 && slot && present == 5) {
@@ -1660,7 +1677,7 @@ i32(i32) edit_view = fn(material) {
 		};
 		if (inside(x, y, z)) {
 			if (material > 0 && overlaps_player(x, y, z)) { -3 } else {
-				if (beacon_state == 0) {
+				if (beacon_phase == BeaconPhase::sandbox) {
 					i32 changed = write_cell(x, y, z, material);
 					if (changed == 1) { rebuild_near(x, z); };
 					changed
@@ -1710,14 +1727,14 @@ unit(f32) advance_edits = fn(dt) {
 };
 
 unit(i32) select_material = fn(material) {
-	if (beacon_state == 0 && material >= 1 && material <= 6) { selected_material = material; };
+	if (beacon_phase == BeaconPhase::sandbox && material >= 1 && material <= 6) { selected_material = material; };
 };
 
 unit(i32) cycle_material = fn(delta) {
-	if (beacon_state == 0 && delta > 0) {
+	if (beacon_phase == BeaconPhase::sandbox && delta > 0) {
 		selected_material = if (selected_material == 6) { 1 } else { selected_material + 1 };
 	};
-	if (beacon_state == 0 && delta < 0) {
+	if (beacon_phase == BeaconPhase::sandbox && delta < 0) {
 		selected_material = if (selected_material == 1) { 6 } else { selected_material - 1 };
 	};
 };
