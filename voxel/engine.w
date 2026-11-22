@@ -583,7 +583,28 @@ unit(i32, i32) rebuild_near = fn(x, z) {
 	if (z < 47 && z % 12 == 11) { rebuild_chunk(chunk + 4); };
 };
 
+bool(i32, i32) coast_cave = fn(x, z) {
+	x >= 30 && x <= 38 && z >= 9 && z <= 13
+};
+
+bool(i32, i32) cave_passage = fn(x, z) {
+	coast_cave(x, z) && z >= 10 && z <= 12
+};
+
+i32(i32, i32) cave_ground = fn(x, z) {
+	if (coast_cave(x, z)) {
+		i32 from_mouth = min_i(x - 30, 38 - x);
+		if (from_mouth >= 2 && z == 11) { 10 } else { if (from_mouth > 0) { 9 } else { 8 } }
+	} else {
+		4
+	}
+};
+
 i32(i32, i32) beacon_ground = fn(x, z) {
+	if (x >= 28 && x <= 41 && z >= 9 && z <= 13) { cave_ground(x, z) } else { beacon_shore(x, z) }
+};
+
+i32(i32, i32) beacon_shore = fn(x, z) {
 	i32 edge = min_i(min_i(x, 47 - x), min_i(z, 47 - z));
 	i32 base = if (x >= 4 && x <= 43 && ((z >= 30 && z <= 45) || (z >= 3 && z <= 17))) { 4 } else { 0 };
 	if (x >= 22 && x <= 26 && z >= 18 && z <= 29) {
@@ -673,18 +694,20 @@ u8(i32, i32, i32, i32) beacon_tile = fn(x, y, z, ground) {
 			}
 		} else {
 			if ((y == 5 || y == 6) && watchfire_post(x, z)) { if (y == 5) { 5 } else { 7 } } else {
-				if (soft_plug(x, y, z)) { 4 } else {
-					bool cut_wall = (x == 6 || x == 10) && z >= 22 && z <= 24 && (y == 3 || y == 4);
-					bool cut_top = x >= 6 && x <= 10 && z >= 22 && z <= 24 && y == 5;
-					if (cut_wall || cut_top) { 3 } else {
-						if (y > ground) {
-							if (ground >= 5 && y <= ground + 3 && mission_tree(x, z)) { 5 } else { 0 }
-						} else {
-							if (y == ground) {
-								bool harbor_path = harbor_steps || on_coast_trail;
-								bool ridge = x >= 36 && x <= 40 && z >= 17 && z <= 29;
-								if (y <= 3 || tower || harbor_path) { 4 } else { if (ridge) { 3 } else { 1 } }
-							} else { if (y >= ground - 2) { 2 } else { 3 } }
+				if (cave_passage(x, z) && y >= 5 && y <= 7) { 0 } else {
+					if (soft_plug(x, y, z)) { 4 } else {
+						bool cut_wall = (x == 6 || x == 10) && z >= 22 && z <= 24 && (y == 3 || y == 4);
+						bool cut_top = x >= 6 && x <= 10 && z >= 22 && z <= 24 && y == 5;
+						if (cut_wall || cut_top) { 3 } else {
+							if (y > ground) {
+								if (ground >= 5 && y <= ground + 3 && mission_tree(x, z)) { 5 } else { 0 }
+							} else {
+								if (y == ground) {
+									bool harbor_path = harbor_steps || on_coast_trail;
+									bool ridge = x >= 36 && x <= 40 && z >= 17 && z <= 29;
+									if (y <= 3 || tower || harbor_path) { 4 } else { if (ridge) { 3 } else { 1 } }
+								} else { if (y >= ground - 2) { 2 } else { 3 } }
+							}
 						}
 					}
 				}
