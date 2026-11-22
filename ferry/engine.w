@@ -485,6 +485,11 @@ unit(f32,f32) draw_shop = fn(x,z) {
     ground(x+0.36,z-2.16,13.34,0.48,0.028,0.53,0.40,0.48);
 };
 
+f32 pier_marquee_x = 6.94;
+f32 pier_marquee_z = 75.10;
+f32 pier_marquee_floor = 3.69;
+f32 pier_marquee_width = 8.19;
+
 unit() draw_landmarks = fn {
     box(7.04,2.77,1.4,0.76,1.50,7.3,0.28,0.22,0.38);
     box(6.99,4.27,1.35,0.94,0.12,7.41,0.89,0.46,0.62);
@@ -493,8 +498,8 @@ unit() draw_landmarks = fn {
     box(7.18,0.02,75.25,0.21,4.04,0.21,0.34,0.28,0.37);
     box(14.64,0.02,75.25,0.21,4.04,0.21,0.34,0.28,0.37);
     box(7.02,3.72,75.13,8.03,1.40,0.45,0.40,0.30,0.45);
-    box(6.94,5.14,75.10,8.19,0.10,0.51,0.48,0.83,0.83);
-    box(6.94,3.69,75.10,8.19,0.10,0.51,0.90,0.46,0.62);
+    box(pier_marquee_x,5.14,pier_marquee_z,pier_marquee_width,0.10,0.51,0.48,0.83,0.83);
+    box(pier_marquee_x,pier_marquee_floor,pier_marquee_z,pier_marquee_width,0.10,0.51,0.90,0.46,0.62);
     neon_words(2,0,8.26,3.94,75.08,0.234,false,0.98,0.83,0.53);
 };
 
@@ -1519,8 +1524,18 @@ unit() camera_step = fn {
     camera_z=sz-dist*hz;
     f32 camera_deck=if (stage==MissionStage::crossing || stage==MissionStage::docked || stage==MissionStage::disembarking || stage==MissionStage::delivered) { board_height } else { 0.0 };
     f32 camera_base=if (dist<3.8) { 2.35 } else { if (wide_camera) { 6.1 } else { if (in_car) { 4.2 } else { 3.9 } } };
-    camera_y=blend(camera_y,camera_deck+camera_base,0.38);
-    camera_pitch=blend(camera_pitch,if (dist<3.8) { -0.48 } else { if (wide_camera) { -0.35 } else { if (in_car) { -0.29 } else { -0.25 } } },0.22);
+    f32 aim_pitch=if (dist<3.8) { -0.48 } else { if (wide_camera) { -0.35 } else { if (in_car) { -0.29 } else { -0.25 } } };
+    f32 eye_y=camera_deck+camera_base;
+    if (!in_car && sx>pier_marquee_x && sx<pier_marquee_x+pier_marquee_width &&
+        sz>pier_marquee_z-1.45 && camera_z<pier_marquee_z+1.15) {
+        f32 enters=clamp((sz-(pier_marquee_z-1.45))/0.85,0.0,1.0);
+        f32 clears=clamp(((pier_marquee_z+1.15)-camera_z)/0.62,0.0,1.0);
+        f32 underpass=min_f(enters,clears);
+        eye_y=blend(eye_y,min_f(eye_y,pier_marquee_floor-0.64),underpass);
+        if (wide_camera && dist>=3.8) { aim_pitch=blend(aim_pitch,-0.18,underpass); };
+    };
+    camera_y=blend(camera_y,eye_y,0.38);
+    camera_pitch=blend(camera_pitch,aim_pitch,0.22);
 };
 
 unit(i32) snapshot_traffic = fn(i) {

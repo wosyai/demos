@@ -1,4 +1,4 @@
-export const ENGINE_PATH = "./ferry.wasm?v=ferry-dusk-materials-v1";
+export const ENGINE_PATH = "./ferry.wasm?v=ferry-pier-camera-v1";
 const INPUTS = new Map([
   ["KeyA","left"],["ArrowLeft","left"],["KeyD","right"],["ArrowRight","right"],
   ["KeyW","up"],["ArrowUp","up"],["KeyS","down"],["ArrowDown","down"],["Space","brake"],

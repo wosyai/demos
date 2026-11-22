@@ -30,7 +30,7 @@ test("pedals and one-shot action coexist with analog steering; keyboard axis pre
 test("loader agrees with shell version, WebAssembly triangle shape, and 30-float engine frame",async()=>{
   const html=await readFile(new URL("../index.html",import.meta.url),"utf8");
   const version=html.match(/host\.mjs\?v=([^"]+)/)?.[1];
-  assert.equal(version,"ferry-dusk-materials-v1");
+  assert.equal(version,"ferry-pier-camera-v1");
   assert(html.includes("style.css?v=ferry-mobile-hud-v5"));
   assert.equal(ENGINE_PATH,`./ferry.wasm?v=${version}`);
   assert.match(html,/<div id="play-hud" class="play-hud" hidden>[\s\S]*?<header[^>]*>[\s\S]*?id="camera-view"[\s\S]*?id="hint"[\s\S]*?<\/header>[\s\S]*?id="city-map"/);

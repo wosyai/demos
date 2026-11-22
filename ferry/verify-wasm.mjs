@@ -265,6 +265,24 @@ engine.reset(0); pickup();
 for(const p of [[-82,28.9],[3.8,28.9],[3.8,70.6],[11.88,70.6],[11.88,82.1]]) walkTo(...p);
 assert.equal(frame[20],4,"reachable pier after the on-foot shortcut");
 assert(frame[18]>55 && frame[18]<75,"crossing the expanded map costs real round time");
+function checkPierView() {
+  const upLength=frame[1]**2+frame[5]**2+frame[9]**2;
+  const eyeY=-(frame[13]*frame[5]/upLength+frame[15]*frame[7]);
+  assert(eyeY<3.25 && eyeY>2.65,"walking camera fits below the Pier 8 marquee");
+  const [x,z]=spot(), y=1.23;
+  const h=frame[3]*x+frame[7]*y+frame[11]*z+frame[15];
+  const px=frame[0]*x+frame[4]*y+frame[8]*z+frame[12];
+  const py=frame[1]*x+frame[5]*y+frame[9]*z+frame[13];
+  assert(h>2 && Math.abs(px/h)<.25 && Math.abs(py/h)<.32,"the boarding character remains framed under the marquee");
+  assert.equal(frame[20],4,"camera never changes the boarding action");
+}
+checkPierView();
+tick(0,0,4,step,.53);
+for(let i=0;i<32;i++) tick(0,0,0,step,.53);
+checkPierView();
+tick(0,0,4,step,1.65);
+for(let i=0;i<32;i++) tick();
+checkPierView();
 const boardingTimeLeft = {};
 function boardAndCross(route) {
   assert.equal(frame[20],4,"the pier offers a boarding action on foot");
