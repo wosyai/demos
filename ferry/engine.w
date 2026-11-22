@@ -217,6 +217,7 @@ f32 old_camera_y = 4.1;
 f32 old_camera_z = -12.0;
 f32 old_camera_yaw = 0.0;
 f32 camera_pitch = -0.25;
+bool wide_camera = false;
 f32 accumulator = 0.0;
 f32 viewport = 1.0;
 f32 seconds_left = 90.0;
@@ -1298,14 +1299,14 @@ unit() camera_step = fn {
     camera_yaw=wrap(camera_yaw+wrap(aim-camera_yaw)*0.15);
     f32 hx=sin_small(camera_yaw); f32 hz=cos_small(camera_yaw);
     f32 sx=player_x(); f32 sz=player_z();
-    f32 goal=if (in_car) { 8.4 } else { 7.0 };
+    f32 goal=if (wide_camera) { if (in_car) { 12.0 } else { 10.5 } } else { if (in_car) { 8.4 } else { 7.0 } };
     f32 dist=clear_boom(sx,sz,-hx,-hz,goal,0);
     camera_x=sx-dist*hx;
     camera_z=sz-dist*hz;
     f32 camera_deck=if (stage==MissionStage::crossing || stage==MissionStage::docked || stage==MissionStage::disembarking || stage==MissionStage::delivered) { board_height } else { 0.0 };
-    f32 camera_base=if (dist<3.8) { 2.35 } else { if (in_car) { 4.2 } else { 3.9 } };
+    f32 camera_base=if (dist<3.8) { 2.35 } else { if (wide_camera) { 6.1 } else { if (in_car) { 4.2 } else { 3.9 } } };
     camera_y=blend(camera_y,camera_deck+camera_base,0.38);
-    camera_pitch=blend(camera_pitch,if (dist<3.8) { -0.48 } else { if (in_car) { -0.29 } else { -0.25 } },0.22);
+    camera_pitch=blend(camera_pitch,if (dist<3.8) { -0.48 } else { if (wide_camera) { -0.35 } else { if (in_car) { -0.29 } else { -0.25 } } },0.22);
 };
 
 unit(i32) snapshot_traffic = fn(i) {
@@ -1634,7 +1635,7 @@ unit(i32) reset = fn(mode) {
     car_yaw=if (mode==1) { 0.0 } else { 3.14159265 };
     vx=0.0; vz=0.0; brake_mark=0.0; car_roll=0.0;
     foot_x=2.1; foot_z=-4.6; foot_speed=0.0; foot_yaw=0.0;
-    camera_x=2.1; camera_z=-11.6; camera_y=3.9; camera_yaw=0.0; camera_pitch=-0.25;
+    camera_x=2.1; camera_z=-11.6; camera_y=3.9; camera_yaw=0.0; camera_pitch=-0.25; wide_camera=false;
     ferry_z=88.0; board_time=0.0; board_height=0.01;
     reset_props(0); snapshot();
     render_moving(1.0); render_frame(1.0);
@@ -1642,6 +1643,7 @@ unit(i32) reset = fn(mode) {
 
 unit(f32,f32,f32,i32,f32) tick = fn(dt,steer,drive,controls,aspect) {
     if (aspect>=0.25 && aspect<=4.0) { viewport=aspect; };
+    if ((controls & 4)!=0) { wide_camera=!wide_camera; };
     if ((controls & 2)!=0 && stage!=MissionStage::delivered && stage!=MissionStage::missed_departure && stage!=MissionStage::crossing && stage!=MissionStage::disembarking) {
         pending_action=true;
     };

@@ -1,4 +1,4 @@
-export const ENGINE_PATH = "./ferry.wasm?v=typed-ferry-v1";
+export const ENGINE_PATH = "./ferry.wasm?v=camera-ferry-v2";
 const INPUTS = new Map([
   ["KeyA","left"],["ArrowLeft","left"],["KeyD","right"],["ArrowRight","right"],
   ["KeyW","up"],["ArrowUp","up"],["KeyS","down"],["ArrowDown","down"],["Space","brake"],
@@ -19,8 +19,8 @@ export function axes(x,y,radius) {
 export function inputState() {
   const keys = new Map(), buttons = new Map();
   return {
-    keys, buttons, stick: null, action: false,
-    clear() { keys.clear(); buttons.clear(); this.stick=null; this.action=false; },
+    keys, buttons, stick: null, action: false, camera: false,
+    clear() { keys.clear(); buttons.clear(); this.stick=null; this.action=false; this.camera=false; },
     sample() {
       const keyboard=Array.from(keys.values());
       const held=(key)=>keyboard.includes(key);
@@ -29,8 +29,9 @@ export function inputState() {
       const pedal=Array.from(buttons.values());
       const steer=horizontal ? Number(held("right"))-Number(held("left")) : (this.stick?.axis[0]??0);
       const drive=vertical ? Number(held("up"))-Number(held("down")) : pedal.includes("power") ? 1 : (this.stick?.axis[1]??0);
-      const flags=Number(held("brake")||pedal.includes("brake")) | (this.action ? 2 : 0);
+      const flags=Number(held("brake")||pedal.includes("brake")) | (this.action ? 2 : 0) | (this.camera ? 4 : 0);
       this.action=false;
+      this.camera=false;
       return [steer,drive,flags];
     },
   };
@@ -187,7 +188,7 @@ function fit(canvas,pixelRatio) {
 export async function boot(env=globalThis,createGraphics=graphics) {
   const {document,window,WebAssembly,performance}=env;
   const get=(id)=>document.getElementById(id);
-  const canvas=get("view"), wheel=get("wheel"), thumb=get("thumb"), pause=get("pause");
+  const canvas=get("view"), wheel=get("wheel"), thumb=get("thumb"), pause=get("pause"), cameraView=get("camera-view");
   const panel=get("panel"), start=get("start"), roam=get("roam"), power=get("power"), brake=get("brake"), action=get("action");
   const objective=get("objective"), stats=get("status"), clock=get("clock"), hint=get("hint"), summary=get("summary"), announce=get("announce");
   const touch=get("touch"), trip=get("trip"), departure=get("departure"), brakeIcon=get("brake-icon"), actionIcon=get("action-icon");
@@ -225,6 +226,7 @@ export async function boot(env=globalThis,createGraphics=graphics) {
     const available=ready&&!lost;
     start.disabled=!available; roam.disabled=!available;
     pause.disabled=!available||!playing;
+    cameraView.disabled=pause.disabled;
     label(summary,lost&&!failed ? "Graphics interrupted. Waiting for the browser to restore the scene." : menuText);
   }
   function syncAspect(next) {
@@ -293,6 +295,7 @@ export async function boot(env=globalThis,createGraphics=graphics) {
   start.addEventListener("click",()=>engage(paused ? mode : 0));
   roam.addEventListener("click",()=>{ if(ready&&!lost) { paused=false;engage(1); } });
   pause.addEventListener("click",suspend);
+  cameraView.addEventListener("click",()=>{ if(playing) input.camera=true; });
   function updateStick(event) {
     const held=input.stick;
     const x=event.clientX-held.x,y=event.clientY-held.y;
@@ -334,10 +337,11 @@ export async function boot(env=globalThis,createGraphics=graphics) {
     }
     if(!playing||e.ctrlKey||e.metaKey||e.altKey) return;
     if(e.code==="Space"&&/^(BUTTON|A)$/.test(e.target?.tagName)&&e.target!==pause) return;
-    if(e.code!=="KeyE"&&!INPUTS.has(e.code)) return;
+    if(e.code!=="KeyE"&&e.code!=="KeyC"&&!INPUTS.has(e.code)) return;
     e.preventDefault();
     if(e.repeat) return;
     if(e.code==="KeyE") input.action=true;
+    else if(e.code==="KeyC") input.camera=true;
     else input.keys.set(e.code,INPUTS.get(e.code));
   });
   window.addEventListener("keyup",(e)=>input.keys.delete(e.code));

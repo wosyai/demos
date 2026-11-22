@@ -108,6 +108,28 @@ assert(world[0]+world[1]*4<=moving[0] || moving[0]+moving[1]*4<=world[0]);
 const scenery=view(...world,WORLD_FLOATS,18).slice(), prior=rawMoving().slice(), projection=frame[0];
 tick(0,0,0,0,.53);
 assert.notEqual(frame[0],projection); assert.deepEqual(rawMoving(),prior);
+function cameraRoute(wide) {
+  engine.reset(0);
+  const observations=[];
+  for(let i=0;i<120;i++) {
+    tick(0,0,wide && (i===0 || i===48) ? 4 : 0,step,i<48 ? .53 : 1.65);
+    observations.push({view:frame.slice(0,16),state:frame.slice(16),count:worldSends,
+      moving:(i===23||i===119) ? rawMoving().slice() : null});
+  }
+  return observations;
+}
+const closeView=cameraRoute(false), switchedView=cameraRoute(true);
+for(let i=0;i<120;i++) {
+  assert.deepEqual(switchedView[i].state,closeView[i].state,"camera never changes gameplay/HUD state");
+  assert.equal(switchedView[i].count,1,"camera never republishes scenery");
+  if(closeView[i].moving) assert.deepEqual(switchedView[i].moving,closeView[i].moving,"camera never changes actors");
+}
+assert(switchedView[23].view[15]-closeView[23].view[15]>1,"wide camera noticeably increases depth in portrait");
+assert(switchedView[47].view[15]-closeView[47].view[15]>1,"toggle persists after the one-shot flag");
+assert(switchedView[119].view.every((v,i)=>Math.abs(v-closeView[119].view[i])<.0001),
+  "second independent toggle returns to the original close projection");
+engine.reset(0);
+tick(0,0,0,0,.53);
 tick(0,0,2,.003); assert.equal(frame[16],0);
 engine.cancel_action();
 tick(0,0,0,.015); assert.equal(frame[16],0);

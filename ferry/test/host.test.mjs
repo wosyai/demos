@@ -256,3 +256,25 @@ test("the phone prologue has one contextual action and no countdown",async()=>{
   assert.equal(app.get("action-icon").attributes.get("href"),"#icon-phone");
   assert.equal(app.get("action").hidden,false);
 });
+
+
+test("camera is a one-shot command, works with interact, and cannot queue during pause",async()=>{
+  const app=shell(); await app.started;
+  const camera=app.get("camera-view");
+  assert.equal(camera.disabled,true);
+  app.get("start").emit("click");
+  assert.equal(camera.disabled,false);
+  camera.emit("click");
+  app.window.emit("keydown",{code:"KeyE"});
+  app.advance(); assert.equal(app.ticks.at(-1)[3],6);
+  app.advance(); assert.equal(app.ticks.at(-1)[3],0);
+  app.window.emit("keydown",{code:"KeyC",repeat:true});
+  app.advance(); assert.equal(app.ticks.at(-1)[3],0);
+  app.window.emit("keydown",{code:"KeyC"});
+  app.advance(); assert.equal(app.ticks.at(-1)[3],4);
+  app.get("pause").emit("click");
+  assert.equal(camera.disabled,true);
+  camera.emit("click");
+  app.get("start").emit("click");
+  app.advance(); assert.equal(app.ticks.at(-1)[3],0);
+});
