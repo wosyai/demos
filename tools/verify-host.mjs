@@ -1,6 +1,17 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
+const markup = await readFile(new URL('../voxel/index.html', import.meta.url), 'utf8');
+for (const id of ['pause', 'fullscreen', 'camera-view', 'view-touch', 'jump-touch', 'descend-touch', 'flight-touch', 'remove', 'place']) {
+  const button = markup.match(new RegExp(`<button[^>]+id="${id}"[^>]*>([\\s\\S]*?)</button>`));
+  assert(button && /aria-label="[^"]+"/.test(button[0]) && /<svg /.test(button[1]), id + ' is an accessible icon button');
+  assert.equal(button[1].replace(/<[^>]+>/g, '').trim(), '', id + ' has no persistent text label');
+}
+assert.match(markup, /<details class="entry-guide">[\s\S]*?<p class="camera-legend">[\s\S]*?href="#glyph-view"[\s\S]*?href="#glyph-person"[\s\S]*?Switch first \/ third person/);
+assert.match(markup, /<header class="top">[\s\S]*?id="mission-hud"[\s\S]*?class="top-actions"[\s\S]*?<\/header>/);
+assert.match(markup, /<details class="world-options">/);
+assert.match(markup, /<h1 id="title">Pocket<br>Island/);
+
 function deferred() {
   let resolve;
   const promise = new Promise((done) => { resolve = done; });
@@ -136,7 +147,7 @@ async function loadHost(caseId, startsLost = false, stored = null, mobile = fals
     devicePixelRatio: 1,
     fetch(url) {
       assert(url.pathname.endsWith('/voxel/engine.wasm'));
-      assert.equal(url.search, '?v=beacon-3');
+      assert.equal(url.search, '?v=beacon-4');
       return fetchResponse.promise;
     },
     requestAnimationFrame(fn) { frames.set(++frameId, fn); return frameId; },
@@ -363,7 +374,7 @@ creative.node('flight-touch').dispatch('click');
 creative.frame();
 assert.deepEqual(creative.counters.controls, [[4, 1], [4, 0]]);
 assert.deepEqual(creative.counters.pulses, [7]);
-assert.equal(creative.node('jump-touch').textContent, 'Rise');
+assert.equal(creative.node('jump-touch')['aria-label'], 'Rise');
 assert.equal(creative.node('descend-touch').hidden, false);
 assert.equal(creative.node('flight-touch')['aria-pressed'], 'true');
 assert.equal(creative.node('player-state').textContent, 'Flying');
@@ -537,8 +548,8 @@ console.log('Blur reset ignored repeated key-down and accepted a fresh press.');
 const page = await readFile(new URL('../voxel/index.html', import.meta.url), 'utf8');
 assert.match(page, /<html lang="en">/);
 assert.match(page, /<title>Pocket Island • Wosy<\/title>/);
-assert.match(page, /href="\.\/style\.css\?v=beacon-3"/);
-assert.match(page, /src="\.\/main\.js\?v=beacon-3"/);
+assert.match(page, /href="\.\/style\.css\?v=beacon-5"/);
+assert.match(page, /src="\.\/main\.js\?v=beacon-4"/);
 assert.match(page, /id="move-stick"/);
 assert.doesNotMatch(page, /class="dpad"|data-move="Key[WASD]"/);
 assert.match(page, /title="Dirt · 2"/);
@@ -603,7 +614,7 @@ assert.deepEqual(mobile.counters.controls.at(-1),[3,1]);
 mobile.node('flight-touch').dispatch('click');
 mobile.frame();
 assert.equal(mobile.node('player-state').textContent,'Flying');
-assert.equal(mobile.node('jump-touch').textContent,'Rise');
+assert.equal(mobile.node('jump-touch')['aria-label'],'Rise');
 mobile.node('descend-touch').dispatch('pointerdown',touchPoint(42, 270, 310));
 assert.deepEqual(mobile.counters.controls.at(-1),[5,1]);
 mobile.win.dispatch('blur');
@@ -628,7 +639,7 @@ viewMode.node('enter').dispatch('click');
 viewMode.doc.dispatch('keydown',{code:'KeyV',ctrlKey:true});
 assert.equal(viewMode.counters.cameraToggles,undefined);
 assert(viewMode.doc.dispatch('keydown',{code:'KeyV'}).prevented);
-assert.equal(viewMode.node('view-touch').textContent, 'View: 3rd');
+assert.equal(viewMode.node('view-touch')['aria-pressed'], 'true');
 assert.equal(viewMode.node('camera-view')['aria-pressed'], 'true');
 viewMode.doc.dispatch('keydown',{code:'KeyV',repeat:true});
 assert.equal(viewMode.counters.cameraToggles,1,'held keyboard V must not oscillate');
@@ -639,7 +650,7 @@ assert.equal(viewMode.counters.uploads.at(-1).length,18,'host uploads the Wosy p
 viewMode.node('view-touch').dispatch('click');
 viewMode.frame();
 assert.equal(viewMode.counters.cameraToggles,2);
-assert.equal(viewMode.node('camera-view').textContent, 'View: 1st');
+assert.equal(viewMode.node('camera-view')['aria-pressed'], 'false');
 assert.equal(viewMode.node('view-touch')['aria-pressed'], 'false');
 assert.equal(viewMode.node('.reticle').properties.get('--aim-x'), '50%');
 assert.equal(viewMode.node('.reticle').properties.get('--aim-y'), '50%');
@@ -688,7 +699,7 @@ assert.equal(beacon.node('mission-result').hidden, true);
 assert.equal(beacon.node('mission-hud').hidden, false);
 assert.equal(beacon.node('flame').value, .75);
 assert.equal(beacon.node('tide-level').textContent, 'Rising tide');
-assert.equal(beacon.node('bridge-stock').textContent, 'Wood: 5');
+assert.equal(beacon.node('bridge-stock').textContent, '5');
 assert.equal(beacon.node('relay-goal').textContent, 'Cross to the north watchfire');
 beacon.counters.relay = 1;
 beacon.frame();
