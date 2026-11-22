@@ -1278,6 +1278,50 @@ f32() pier_guide_z = fn {
         else { if (follows_return()) { return_route[ix(return_leg)][1] } else { dock_z } }
     } } } }
 };
+i32() route_selection = fn {
+    if (stage==MissionStage::pickup_tape && follows_backstreet()) { 16+pickup_leg }
+    else {
+        if (stage!=MissionStage::reach_pier) { 0 }
+        else {
+            if (avenue_leg>=0 && in_car) { 32+avenue_leg }
+            else {
+                if (avenue_walk_leg>=0) { 48+avenue_walk_leg }
+                else {
+                    if (waterfront_leg>=0) { 64+waterfront_leg }
+                    else {
+                        if (follows_return() && !park_walk && avenue_leg<0) { 80+return_leg } else { 0 }
+                    }
+                }
+            }
+        }
+    }
+};
+
+f32(i32,i32,i32) route_value = fn(key,row,column) {
+    i32 route=key/16;
+    i32 leg=key%16;
+    i32 start=if (leg>0) { leg-1 } else { 0 };
+    i32 route_count=if (route==1) { 4 }
+    else { if (route==2) { 10 }
+    else { if (route==3) { 4 }
+    else { if (route==4) { 3 }
+    else { if (route==5) { 7 } else { 0 } } } } };
+    if (key<=0 || leg>=route_count) { 0.0 }
+    else {
+        if (row==-1 && column==0) { float_i(route_count-start) }
+        else {
+            if (row<0 || row>=route_count-start || column<0 || column>1) { 0.0 }
+            else {
+                u64 n=ix(start+row); u64 c=ix(column);
+                if (route==1) { pickup_route[n][c] }
+                else { if (route==2) { avenue_route[n][c] }
+                else { if (route==3) { avenue_foot[n][c] }
+                else { if (route==4) { waterfront_route[n][c] } else { return_route[n][c] } } } }
+            }
+        }
+    }
+};
+
 bool() avenue_prepared = fn {
     abs_f(car_x-avenue_prep_x)<0.85 && abs_f(car_z-shop_service_z)<0.40 &&
         sin_small(car_yaw)>0.994 && abs_f(cos_small(car_yaw))<0.10 && sq(vx)+sq(vz)<0.04
