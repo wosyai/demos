@@ -47,12 +47,12 @@ axes to ±7. Bit 7 is a one-shot contextual mission action (load, spray, or mail
 `cancel_drop()` clears a not-yet-consumed release when input is interrupted
 without changing the simulation clock or undoing a pouch already launched.
 
-Mission replay format uses magic bytes `WF`, version byte 6, mission byte, a
+Mission replay format uses magic bytes `WF`, version byte 7, mission byte, a
 little-endian 16-bit step count, then one little-endian canonical control word
 per step. The mission action is included in its original step. Only legally completed
 missions on the final step are admitted, up to 8,100 steps and 16,206 bytes.
-The browser stores v6 separately from v4/v5 mission records and older race records.
-Older packets are not accepted under the changed landing physics; the browser
+The browser stores v7 separately from v4/v5/v6 mission records and older race records.
+Older packets are not accepted under the changed course geometry and landing rules; the browser
 neither reads nor overwrites the earlier save keys.
 
 Touchdown and rollout use the same strip limits used to draw the markings.
@@ -66,3 +66,6 @@ than an invisible solid box; these approximate the drawn ironwork.
 Bonus gates are optional. The plane must pass through the opening in the
 forward (positive world Z) direction before its deadline. A missed opening
 stays available until the deadline. Gate points never unlock a mission phase.
+
+The Paris route extends beyond the old northeast bank to the quay station.
+The station uses the same typed gable dimensions for its visible walls and flight contact.

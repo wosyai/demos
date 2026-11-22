@@ -202,7 +202,7 @@ test("reports a result, stores only the active course, restores replay on retry 
   assert.match(sim.nodes.get("summary-detail").textContent, /250 points/);
   assert.equal(sim.nodes.get("touch").hidden, true);
   assert.equal(sim.data.size, 1);
-  assert.ok(sim.data.has("wosy-flying-low/missions-v6/1"));
+  assert.ok(sim.data.has("wosy-flying-low/missions-v7/1"));
   sim.complete(false);
   sim.nodes.get("again").events("click");
   assert.deepEqual(sim.called.replay, [3,4,255,-1]);
@@ -347,10 +347,10 @@ test("the light shell and its flight engine share the same release token", async
   const sim = mock();
   await sim.ready;
   const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
-  assert.match(html, /href="\.\/style\.css\?v=course-modules-flight-v6"/);
-  assert.match(html, /src="\.\/host\.mjs\?v=course-modules-flight-v6"/);
+  assert.match(html, /href="\.\/style\.css\?v=paris-quay-flight-v7"/);
+  assert.match(html, /src="\.\/host\.mjs\?v=paris-quay-flight-v7"/);
   assert.deepEqual(sim.called.requests.map((url) => [url.pathname.split("/").at(-1), url.search]),
-    [["flight.wasm", "?v=course-modules-flight-v6"]]);
+    [["flight.wasm", "?v=paris-quay-flight-v7"]]);
 });
 
 test("phone rotation releases the old touch and accepts a fresh steer in the new aspect", async () => {
@@ -431,13 +431,15 @@ test("the Paris drop control supports quick taps and keyboard without swallowing
 
 test("mission replay storage isolates both courses and other replay namespaces", () => {
   const prefix = "wosy-flying-low/";
-  const active = prefix + "missions-v6/";
+  const active = prefix + "missions-v7/";
   const preserved = new Map([
     [prefix + "v1/1", btoa("legacy race binary")],
     [prefix + "missions-v4/0", btoa("v4 Wright")],
     [prefix + "missions-v4/1", btoa("v4 Paris")],
     [prefix + "missions-v5/0", btoa("synthetic v5 Wright")],
     [prefix + "missions-v5/1", btoa("synthetic v5 Paris")],
+    [prefix + "missions-v6/0", btoa("v6 Wright")],
+    [prefix + "missions-v6/1", btoa("v6 Paris")],
   ]);
   const data = new Map(preserved);
   const reads = [], writes = [];
@@ -445,8 +447,8 @@ test("mission replay storage isolates both courses and other replay namespaces",
     getItem(key) { reads.push(key); return data.get(key); },
     setItem(key, value) { writes.push(key); data.set(key, value); },
   }));
-  const wright = Uint8Array.of(87, 70, 6, 0, 255);
-  const paris = Uint8Array.of(87, 70, 6, 1, 0);
+  const wright = Uint8Array.of(87, 70, 7, 0, 255);
+  const paris = Uint8Array.of(87, 70, 7, 1, 0);
   const wrightRecord = String.fromCharCode(...wright);
   const parisRecord = String.fromCharCode(...paris);
   const store = open();

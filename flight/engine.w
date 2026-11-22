@@ -681,6 +681,44 @@ unit(f32,f32) river_boat = fn(x,z) {
 	box(x-0.21,3.65,z-4.3,0.42,2.10,0.43,0.29,0.28,0.24);
 };
 
+unit(f32,f32,f32,f32,i32) quay_windows = fn(x,z,y,width,n) {
+	if (n < 7) {
+		f32 left = x+(float_i(n)+0.28)*width/7.0;
+		f32 right = left+width*0.067;
+		quad(left,y,z,right,y,z,right,y+3.8,z,left,y+3.8,z,0.24,0.42,0.48);
+		quad(left,y+1.82,z-0.006,right,y+1.82,z-0.006,right,y+1.96,z-0.006,left,y+1.96,z-0.006,0.90,0.79,0.59);
+		quay_windows(x,z,y,width,n+1);
+	};
+};
+
+unit() quay_station = fn {
+	f32 x = paris.station_x();
+	f32 z = paris.station_z();
+	f32 w = paris.station_width();
+	f32 l = paris.station_length();
+	f32 eaves = paris.station_eaves();
+	f32 ridge = paris.station_ridge();
+	f32 middle = x+w*0.5;
+	ground_patch(x-9.0,z-7.0,w+18.0,l+12.0,0.074,0.68,0.63,0.52);
+	ground_patch(x-10.0,z+l+6.0,w+20.0,1.4,0.079,0.56,0.50,0.43);
+	box(x,0.0,z,w,eaves,l,0.76,0.64,0.48);
+	tri(x,eaves,z,x+w,eaves,z,middle,ridge,z,0.77,0.65,0.48);
+	tri(x+w,eaves,z+l,x,eaves,z+l,middle,ridge,z+l,0.71,0.59,0.43);
+	quad(x,eaves,z,x,eaves,z+l,middle,ridge,z+l,middle,ridge,z,0.34,0.38,0.42);
+	quad(middle,ridge,z,middle,ridge,z+l,x+w,eaves,z+l,x+w,eaves,z,0.45,0.47,0.46);
+	quay_windows(x,z-0.018,5.2,w,0);
+	quad(middle-2.3,0.15,z-0.018,middle+2.3,0.15,z-0.018,middle+2.3,4.0,z-0.018,middle-2.3,4.0,z-0.018,0.30,0.28,0.27);
+	quad(middle-6.8,9.5,z-0.018,middle+6.8,9.5,z-0.018,middle+6.8,10.35,z-0.018,middle-6.8,10.35,z-0.018,0.92,0.81,0.57);
+};
+
+unit(f32,f32,f32,f32,f32,f32) seine_reach = fn(x0,a0,b0,x1,a1,b1) {
+	quad(x0,0.025,a0,x1,0.025,a1,x1,0.025,b1,x0,0.025,b0,0.29,0.52,0.67);
+	quad(x0,0.055,a0,x1,0.055,a1,x1,0.055,a1-5.0,x0,0.055,a0-5.0,0.73,0.69,0.55);
+	quad(x0,0.055,b0,x1,0.055,b1,x1,0.055,b1+5.0,x0,0.055,b0+5.0,0.73,0.69,0.55);
+	promenade(x0,a0-8.0,x1,a1-8.0);
+	promenade(x0,b0+6.0,x1,b1+6.0);
+};
+
 unit() render_land = fn {
 	vertex_count = 0;
 	drawing_world = true;
@@ -703,12 +741,10 @@ unit() render_land = fn {
 		hay_roll(-217.0,33.0,0);
 		hay_roll(190.0,119.0,0);
 	} else {
-		quad(-450.0,0.0,-320.0,450.0,0.0,-320.0,450.0,0.0,450.0,-450.0,0.0,450.0,0.54,0.62,0.47);
-		quad(-450.0,0.025,-117.0,450.0,0.025,324.0,450.0,0.025,427.0,-450.0,0.025,-14.0,0.29,0.52,0.67);
-		quad(-450.0,0.055,-117.0,450.0,0.055,324.0,450.0,0.055,319.0,-450.0,0.055,-122.0,0.73,0.69,0.55);
-		quad(-450.0,0.055,-14.0,450.0,0.055,427.0,450.0,0.055,432.0,-450.0,0.055,-9.0,0.73,0.69,0.55);
-		promenade(-450.0,-125.0,450.0,316.0);
-		promenade(-450.0,-8.0,450.0,433.0);
+		quad(-450.0,0.0,-320.0,450.0,0.0,-320.0,450.0,0.0,570.0,-450.0,0.0,570.0,0.54,0.62,0.47);
+		seine_reach(-450.0,-117.0,-14.0,330.0,265.2,368.2);
+		seine_reach(330.0,265.2,368.2,450.0,430.0,533.0);
+		quay_station();
 		bank_details(-400.0,-98.0,0);
 		bank_details(-400.0,18.5,0);
 		bridge(54.0,172.0,10.0);
@@ -1037,7 +1073,7 @@ bool(f32,f32,f32) obstacle = fn(x,y,z) {
 		f32 bz = float_i(row)*59.0-205.0;
 		i32 lot = row*12+col;
 		bool buildings = col>=0 && col<12 && row>=0 && row<8 && city_lot(bx,bz) && within(x,y,z,bx-1.0,bz-1.0,30.0,29.0,float_i(8+lot*11%18)+roof_rise(lot)+(if (lot%6 == 1) { 0.91 } else { 0.02 }));
-		buildings || within(x,y,z,-216.0,48.0,8.0,27.0,5.8) || within(x,y,z,281.0,288.0,8.0,27.0,5.8) || tower_hit(x,y,z) || within(x,y,z,54.0,172.0,10.0,119.0,9.35) || within(x,y,z,158.0,221.0,12.0,119.0,4.3)
+		buildings || paris.station_hit(x,y,z) || within(x,y,z,-216.0,48.0,8.0,27.0,5.8) || within(x,y,z,281.0,288.0,8.0,27.0,5.8) || tower_hit(x,y,z) || within(x,y,z,54.0,172.0,10.0,119.0,9.35) || within(x,y,z,158.0,221.0,12.0,119.0,4.3)
 	} }
 };
 
@@ -1242,7 +1278,7 @@ unit() store_record = fn {
 		best_ticks = record_ticks;
 		set_best_byte(0,87);
 		set_best_byte(1,70);
-		set_best_byte(2,6);
+		set_best_byte(2,7);
 		set_best_byte(3,core.int_trunc<u8>(course));
 		set_best_byte(4,core.int_trunc<u8>(record_ticks % 256));
 		set_best_byte(5,core.int_trunc<u8>(record_ticks / 256));
@@ -1397,7 +1433,7 @@ unit() ghost_end = fn {
 	    packet_byte(3)==core.int_trunc<u8>(course)) {
 		i32 version = core.int_extend<i32>(packet_byte(2));
 		i32 length = core.int_extend<i32>(packet_byte(4)) + 256*core.int_extend<i32>(packet_byte(5));
-		if (version == 6 && length >= 180 && length <= 8100 && length*2+6 == incoming_count &&
+		if (version == 7 && length >= 180 && length <= 8100 && length*2+6 == incoming_count &&
 		    stage_tick[0] == 0 && (best_ticks == 0 || length < best_ticks) && validate_replay(length)) {
 			best_ticks = length;
 			copy_packet(0,incoming_count);

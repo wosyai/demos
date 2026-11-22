@@ -11,4 +11,12 @@ struct copy Course {
 	Runway supply;
 	Runway finish;
 }
+struct copy GabledLandmark {
+	f32 x;
+	f32 z;
+	f32 width;
+	f32 length;
+	f32 eaves;
+	f32 ridge;
+}
 %%end
