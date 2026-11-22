@@ -1485,6 +1485,16 @@ unit(f32,f32,f32,f32,f32) direction_arrow = fn(x,y,z,dx,dz) {
 	arrow_wing(x,y,z,tx,tz,-tz,tx);
 };
 
+unit() supply_beacon = fn {
+	f32 x = pickup_x();
+	f32 z = pickup_z()+34.0;
+	diamond(x,7.0,z,2.5,-3.0,0.28,1.0,0.89);
+	ground_patch(x-5.0,z-6.0,10.0,0.62,0.39,0.14,0.72,0.67);
+	ground_patch(x-5.0,z+5.38,10.0,0.62,0.39,0.14,0.72,0.67);
+	ground_patch(x-5.0,z-5.38,0.62,10.76,0.39,0.14,0.72,0.67);
+	ground_patch(x+4.38,z-5.38,0.62,10.76,0.39,0.14,0.72,0.67);
+};
+
 unit() flight_guides = fn {
 	i32 next = next_gate[0];
 	if (next < 3) { gate_arch(gate_x(next),gate_y(next),gate_z(next),0,false); };
@@ -1516,7 +1526,7 @@ unit() flight_guides = fn {
 				direction_arrow(x+hx*10.0,y+3.9,z+hz*10.0,dx,dz);
 			};
 			if (stage == MissionPhase::supply_approach || stage == MissionPhase::supply_rollout) {
-				diamond(pickup_x(),7.0,pickup_z()+34.0,2.5,-3.0,0.28,1.0,0.89);
+				supply_beacon();
 			};
 		};
 	};

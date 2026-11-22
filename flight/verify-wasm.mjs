@@ -251,6 +251,8 @@ function cueRanges() {
         group("arrow",comparisonBaseline ? 12 : 30,[cyan,rim]);
     if ([7,8,9].includes(frame[20]))
         group("pickup",12,[1,.89,.77,.95].map(scale => cyan.map(value => value*scale)));
+    if (!comparisonBaseline && [7,8].includes(frame[20]))
+        group("pickup-footprint",24,[[.14,.72,.67]]);
     return ranges;
 }
 
@@ -331,7 +333,7 @@ function sortie(course, mode = "normal") {
     const supply = course ? -71 : 68;
     const visited = new Set();
     const observer = observeMarkers(course, mode);
-    let premature = false, canceled = false, wrongWindow = false, confirmed = 0;
+    let premature = false, canceled = false, wrongWindow = false, checkedSupply = false, confirmed = 0;
     function step(input = 0, dt = 1/30, aspect = 1.65) {
         const gates = frame[32];
         tick(input,dt,aspect);
@@ -351,6 +353,16 @@ function sortie(course, mode = "normal") {
             assert(marker([.28, 1, .89]).some(([x,y,z]) => Math.abs(x - (course ? -111 : -15)) < .001
                 && Math.abs(y - 4) < .001 && Math.abs(z - (supply+34)) < .001),
                 "supply approach renders a world-space beacon at the pickup strip");
+            if (!comparisonBaseline && !checkedSupply && mode === "normal") {
+                const cx = course ? -111 : -15, cz = supply + 34;
+                const footprint = marker([.14,.72,.67]);
+                assert.equal(footprint.length, 24, "the fixed supply outline uses four flat quads");
+                for (const [,y] of footprint) assert(Math.abs(y-.39)<.001, "the outline sits above the painted strip");
+                const xs = footprint.map(([x]) => x), zs = footprint.map(([, ,z]) => z);
+                const bounded = (values, lo, hi) => Math.abs(Math.min(...values)-lo)<.001 && Math.abs(Math.max(...values)-hi)<.001;
+                assert(bounded(xs, cx-5, cx+5) && bounded(zs, cz-6, cz+6), "the outline is anchored at the same runway position as the floating beacon");
+                checkedSupply = true;
+            }
             const distance = supply+12-p.z;
             const height = Math.min(6.5,1+distance*.064);
             input = pilot(p,0,height,distance>80 ? 0 : -.064,p.z>supply-43 ? 32 : 0);
