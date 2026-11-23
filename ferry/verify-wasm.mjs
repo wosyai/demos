@@ -159,12 +159,17 @@ if (process.argv[3]) {
     world(ptr,count){previous=new Float32Array(base.memory.buffer,ptr,count).slice();}
   }}).exports;
   base._start(); base.reset(0);
-  assert(previous && scenery.length>previous.length,"annex adds drawable geometry");
-  for(let i=0;i<previous.length;i+=6) {
-    for(const lane of [0,1,2,4,5]) assert.equal(scenery[i+lane],previous[i+lane],"previous city geometry and color lanes are preserved");
-    const raw=scenery[i+3], decoded=raw-2*Math.floor(raw/2);
-    assert(Math.abs(decoded-previous[i+3])<.000001,"only the explicit material band changes the previous red lane");
+  assert(previous && scenery.length>previous.length,"the neighborhood adds drawable geometry");
+  const phoneFinish=[],videoFinish=[];
+  for(let i=previous.length;i<scenery.length;i+=6) {
+    const x=scenery[i],y=scenery[i+1],z=scenery[i+2];
+    if(x>2.9&&x<4.8&&y>=.02&&y<2.0&&z>-2.4&&z<-.80) phoneFinish.push(y);
+    if(x>-88.4&&x< -75.4&&y>1.1&&y<2.3&&z>39.73&&z<39.9) videoFinish.push(x);
   }
+  assert(phoneFinish.some(y=>y<.04)&&phoneFinish.some(y=>y>1.65),"same phone gains both pavement and raised booth details");
+  assert(videoFinish.some(x=>x< -85)&&videoFinish.some(x=>x> -77),"both existing video windows display distinct additions");
+  assert.deepEqual(scenery.subarray(0,previous.length),previous,
+    "the immediate waterfront baseline retains all raw positions, colors and material tags");
 }
 const materialCount=Array(6).fill(0), bulbs=[], pools=[];
 for(let i=0;i<scenery.length;i+=18) {
