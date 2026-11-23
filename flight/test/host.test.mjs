@@ -388,10 +388,10 @@ test("the Flight minimal HUD updates both host assets and retains the same Wasm 
   const sim = mock();
   await sim.ready;
   const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
-  assert.match(html, /href="\.\/style\.css\?v=paris-postal-stencil-flight-v10-hud1"/);
-  assert.match(html, /src="\.\/host\.mjs\?v=paris-postal-stencil-flight-v10-space1-hud1"/);
+  assert.match(html, /href="\.\/style\.css\?v=paris-quay-quarter-flight-v11-hud1"/);
+  assert.match(html, /src="\.\/host\.mjs\?v=paris-quay-quarter-flight-v11-space1-hud1"/);
   assert.deepEqual(sim.called.requests.map((url) => [url.pathname.split("/").at(-1), url.search]),
-    [["flight.wasm", "?v=paris-postal-stencil-flight-v10"]]);
+    [["flight.wasm", "?v=paris-quay-quarter-flight-v11"]]);
 });
 
 test("view button and V toggle the engine camera without resetting a route", async () => {
