@@ -107,7 +107,8 @@ void main() {
       if (pass==3) {
         vec3 normal=normalize(cross(dFdx(point),dFdy(point))) * (gl_FrontFacing ? 1.0 : -1.0);
         float lit=max(dot(normal,${sunVector}),0.0);
-        if (range<18.5 || range>82.0) discard;
+        if (range<18.5 || range>=82.0) discard;
+        alpha=1.0-smoothstep(64.0,82.0,range);
         col=rgb*(.75+.44*lit);
         haze=max(haze,.12+.88*smoothstep(29.0,82.0,range));
       } else {
@@ -116,7 +117,7 @@ void main() {
       }
     }
     if (pass==3) {
-      pixel=vec4(mix(col,fog,pow(haze,1.08)*0.94),1.0);
+      pixel=vec4(mix(col,fog,pow(haze,1.08)*0.94),alpha);
       return;
     }
     if (rgb.z > 1.0) {
@@ -636,9 +637,12 @@ function present(pointer, hit) {
   if (adventure === 2) {
     gl.stencilFunc(gl.EQUAL, 0, 1);
     gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     gl.uniform1i(gpu.main.pass, 3);
     gl.bindVertexArray(gpu.horizon.vao);
     gl.drawArrays(gl.TRIANGLES, 0, layers.horizon.count);
+    gl.disable(gl.BLEND);
     gl.disable(gl.STENCIL_TEST);
   }
   if (layers.player.count > 0) {
