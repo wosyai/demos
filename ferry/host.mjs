@@ -5,7 +5,6 @@ const INPUTS = new Map([
 ]);
 const ACTIONS = ["","Enter car","Exit car","Collect tape","Board ferry","Leave ferry","Answer phone","Park & walk","Mark waterfront","Mark avenue"];
 const ACTION_ICONS = ["","enter","exit","tape","board","exit","phone","exit","waterfront","avenue"];
-const HIT = ["","Mailbox hit","Tree hit","Pedestrian hit","Vehicle hit","Wall hit"];
 const OBJECTIVES = ["Collect the tape","Reach Pier 8","Tape delivered","Missed the ferry","Free roam","Crossing the canal","Leave the ferry","Walk ashore","Answer the phone"];
 
 export function axes(x,y,radius) {
@@ -345,7 +344,7 @@ export async function boot(env=globalThis,createGraphics=graphics) {
   const roadLayer=chart&&document.createElement?.("canvas").getContext("2d");
   const projection={}, painted={};
   let roads=[], roadBounds, routeKey=-1, route=[], routeStep=-1, nextMap=0, mapPhase=-1;
-  let engine, renderer, frame, aspect=0, menuText="Loading the waterfront…", failed=false, noticeUntil=0, notice="", last=0, playing=false, lost=false, ready=false, paused=false, mode=0, event=0, previousCue=-1, previousState=-1;
+  let engine, renderer, frame, aspect=0, menuText="Loading the waterfront…", failed=false, last=0, playing=false, lost=false, ready=false, paused=false, mode=0, previousCue=-1, previousState=-1;
   const heldButtons=[power,reverse,brake,action];
   const renderThumb=(x,y)=>{
     thumb.style.setProperty("--x",`${x}px`);
@@ -436,7 +435,7 @@ export async function boot(env=globalThis,createGraphics=graphics) {
     if(!frame || !renderer) return;
     renderer.draw(frame);
     paintMap();
-    const foot=frame[16]===0,state=frame[17],cue=frame[20],hit=frame[21],target=state===0||state===1||state===8;
+    const foot=frame[16]===0,state=frame[17],cue=frame[20],target=state===0||state===1||state===8;
     label(objective,OBJECTIVES[state]||"Find the ferry");
     label(stats,target ? `${Math.round(frame[23])} m` : "");
     trip.dataset.route=String(target);
@@ -462,18 +461,9 @@ export async function boot(env=globalThis,createGraphics=graphics) {
       label(brakeCaption,brakeMode);
       brakeIcon.setAttribute("href",foot?"#icon-sprint":"#icon-brake");
     }
-    if(frame[22]!==event) {
-      notice=HIT[hit]||""; noticeUntil=performance.now()+1800;
-    }
-    const message=performance.now()<noticeUntil ? notice : "";
-    label(hint,message|| (ACTIONS[cue] ? `E · ${ACTIONS[cue]}` : ""));
-    hint.dataset.notice=String(Boolean(message));
+    label(hint,ACTIONS[cue] ? `E · ${ACTIONS[cue]}` : "");
     hint.hidden=!playing||!hint.textContent;
-    if(frame[22]!==event) {
-      event=frame[22]; if(HIT[hit]) label(announce,HIT[hit]);
-    } else if(previousState!==state||previousCue!==cue) {
-      label(announce,ACTIONS[cue]||OBJECTIVES[state]||"");
-    }
+    if(previousState!==state||previousCue!==cue) label(announce,ACTIONS[cue]||OBJECTIVES[state]||"");
     previousCue=cue; previousState=state;
     if(playing && (state===2||state===3)) overlay(state===2?"Tape delivered. You made it ashore.":"The ferry left without the tape. Try a quicker route.","Play again");
   }
@@ -482,7 +472,7 @@ export async function boot(env=globalThis,createGraphics=graphics) {
     try {
       clear();
       if(!paused||nextMode!==mode) {
-        event=0; previousCue=-1; previousState=-1; noticeUntil=0;
+        previousCue=-1; previousState=-1;
         mode=nextMode; engine.reset(mode); aspect=0;
       }
       paused=false; playing=true; last=0;

@@ -30,8 +30,8 @@ test("pedals and one-shot action coexist with analog steering; keyboard axis pre
 test("loader agrees with shell version, WebAssembly triangle shape, and 30-float engine frame",async()=>{
   const html=await readFile(new URL("../index.html",import.meta.url),"utf8");
   const version=html.match(/host\.mjs\?v=([^"]+)/)?.[1];
-  assert.equal(version,"ferry-pier-signal-v1-navigation-v1");
-  assert(html.includes('style.css?v=ferry-navigation-v1"'));
+  assert.equal(version,"ferry-pier-signal-v1-navigation-v2");
+  assert(html.includes('style.css?v=ferry-navigation-v2"'));
   assert.equal(ENGINE_PATH,"./ferry.wasm?v=ferry-pier-signal-v1");
   assert.match(html,/<div id="play-hud" class="play-hud" hidden>[\s\S]*?<header[^>]*>[\s\S]*?id="objective"[\s\S]*?id="status"[\s\S]*?id="camera-view"[\s\S]*?id="city-map"[\s\S]*?id="hint"[\s\S]*?<\/header>/);
   assert.match(html,/id="action-icon"[\s\S]*?<span id="action-caption">Interact<\/span>/);
@@ -100,7 +100,7 @@ function shell({defer=false,missing="",cue=1}={}) {
   const memory=new WebAssembly.Memory({initial:1});
   const frames=[],ticks=[],draws=[],uploads=[],resets=[];
   let finishFetch,cancellations=0,wasmStarts=0,time=0;
-  let state=0,seconds=90,turn=0,selection=0,routeReads=0, player=[0,0],target=[0,0],heading=0,driving=false, routeSelections=0, exitOnAction=false;
+  let state=0,seconds=90,turn=0,selection=0,routeReads=0, player=[0,0],target=[0,0],heading=0,driving=false, routeSelections=0, exitOnAction=false, hit=0, hitSequence=0;
   const fetchGate=new Promise(resolve=>{finishFetch=resolve;});
   const env={
     window,document,devicePixelRatio:1,performance:{now:()=>time},
@@ -114,7 +114,7 @@ function shell({defer=false,missing="",cue=1}={}) {
       async instantiate(_,imports){
         const bus=imports.ferry;
         const view=new Float32Array(memory.buffer,0,30);
-        const publish=()=>{view[16]=+driving;view[17]=state;view[18]=seconds;view[20]=cue;view.set([...target,...player,heading,turn],24);bus.frame(0,30);};
+        const publish=()=>{view[16]=+driving;view[17]=state;view[18]=seconds;view[20]=cue;view[21]=hit;view[22]=hitSequence;view.set([...target,...player,heading,turn],24);bus.frame(0,30);};
         const exports={
           memory,_start(){wasmStarts++;},
           reset(mode){resets.push(mode);bus.world(240,18);bus.moving(360,18);publish();},
@@ -133,7 +133,7 @@ function shell({defer=false,missing="",cue=1}={}) {
   return {
     get,window,document,ticks,draws,uploads,resets,started,finishFetch,mapPaint,roadPaint,
     advance(delta=16){ const frame=frames.shift(); assert(frame,"animation callback was scheduled");frame(time+=delta); },
-    mission(next){({state,seconds,turn,cue,selection,player,target,heading,driving,exitOnAction}={state,seconds,turn,cue,selection,player,target,heading,driving,exitOnAction,...next});},
+    mission(next){({state,seconds,turn,cue,selection,player,target,heading,driving,exitOnAction,hit,hitSequence}={state,seconds,turn,cue,selection,player,target,heading,driving,exitOnAction,hit,hitSequence,...next});},
     get routeSelections(){return routeSelections;},
     get routeReads(){return routeReads;},
     get wasmStarts(){return wasmStarts;},
@@ -466,4 +466,29 @@ test("leaving a car clears all pedals before the exit tick without losing stick 
   assert.equal(app.ticks.at(-1)[3],0,"walking does not inherit Brake or repeat exit");
   reverse.emit("pointerdown",{pointerId:6});
   assert(!reverse.hasPointerCapture(6),"a stale event cannot start a vehicle hold on foot");
+});
+
+
+test("repeated contacts are silent and Pier 8 boarding cues remain actionable",async()=>{
+  const app=shell({cue:0}); await app.started;
+  app.get("start").emit("click");
+  app.mission({state:1,hit:5,hitSequence:1});
+  app.advance();
+  assert.equal(app.get("hint").hidden,true);
+  assert.equal(app.get("hint").textContent,"");
+  assert.equal(app.get("announce").textContent,"Reach Pier 8");
+  app.mission({hit:5,hitSequence:2,cue:4});
+  app.advance();
+  assert.equal(app.get("hint").hidden,false);
+  assert.equal(app.get("hint").textContent,"E · Board ferry");
+  assert.equal(app.get("announce").textContent,"Board ferry");
+  assert.equal(app.get("action").attributes.get("aria-label"),"Board ferry");
+  app.mission({hit:4,hitSequence:3});
+  app.advance();
+  assert.equal(app.get("hint").textContent,"E · Board ferry");
+  assert.equal(app.get("announce").textContent,"Board ferry");
+  app.mission({state:2,cue:0});
+  app.advance();
+  assert.equal(app.get("announce").textContent,"Tape delivered");
+  assert.equal(app.get("summary").textContent,"Tape delivered. You made it ashore.");
 });

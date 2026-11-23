@@ -112,7 +112,7 @@ h1 span{color:var(--rust)}
 .pedals[data-foot=true] #reverse, .pedals[data-foot=true] #power,
 .touch[data-docked=true] .wheel,.touch[data-docked=true] #power,.touch[data-docked=true] #reverse,.touch[data-docked=true] #brake { display:none; }
 @media(pointer:coarse),(any-pointer:coarse) {
-  .hint:not([data-notice=true]) { display:none; }
+  .hint { display:none; }
   .touch .wheel { max-width:calc(50% - max(12px,env(safe-area-inset-left)) - 3px); }
   .touch .pedals { max-width:calc(50% - max(8px,env(safe-area-inset-right)) - 3px); }
 }
