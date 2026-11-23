@@ -76,6 +76,8 @@ in vec3 point;
 uniform vec3 eye;
 uniform vec3 fog;
 uniform int pass;
+uniform int adventure;
+uniform vec3 streamOwner;
 uniform sampler2D terrainAtlas;
 out vec4 pixel;
 void main() {
@@ -94,6 +96,12 @@ void main() {
     col=mix(water,fog,0.72*fresnel);
     alpha=mix(0.55+0.37*fresnel,1.0,haze);
   } else if (pass==0) {
+    if (adventure!=0) {
+      float radial=smoothstep(19.0,23.75,distance(streamOwner.xz,point.xz));
+      float lattice=fract(52.9829189*fract(dot(gl_FragCoord.xy,vec2(0.06711056,0.00583715))));
+      if (radial>lattice) discard;
+      haze=max(haze,radial);
+    }
     if (rgb.z > 1.0) {
       col = rgb.z > 1.5 ? vec3(1.0,0.83,0.30) : vec3(0.88,0.39,0.09);
     } else {
@@ -220,7 +228,7 @@ function newGraphics() {
     water: waterGeometry(),
     outline: geometry(layers.outline.data, gl.DYNAMIC_DRAW),
     player: geometry(layers.player.data, gl.DYNAMIC_DRAW),
-    main: locations(world, ["projection", "eye", "fog", "pass", "terrainAtlas"]),
+    main: locations(world, ["projection", "eye", "fog", "pass", "adventure", "streamOwner", "terrainAtlas"]),
     background: locations(sky, ["skyProjection", "fog"]),
   };
 }
@@ -398,7 +406,7 @@ async function boot() {
   }
   try {
     prepareGraphics();
-    const response = await fetch(new URL("./engine.wasm?v=beacon-signed-chunks-v1", import.meta.url));
+    const response = await fetch(new URL("./engine.wasm?v=beacon-archipelago-v1", import.meta.url));
     if (!response.ok) throw new Error(`Engine not found (HTTP ${response.status}).`);
     const bytes = await response.arrayBuffer();
     const api = {
@@ -545,7 +553,7 @@ function renderObjectiveBearing(frame) {
 
 function present(pointer, hit) {
   if (!gpu || contextLost || document.hidden) return;
-  const data = memoryFloats(pointer, 37);
+  const data = memoryFloats(pointer, 39);
   renderMission(data[25], data[26], data[27], data[28], data[29]);
   renderBeaconGuide(data);
   renderObjectiveBearing(data);
@@ -570,6 +578,8 @@ function present(pointer, hit) {
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, gpu.terrainAtlas);
   gl.uniform1i(gpu.main.terrainAtlas, 0);
+  gl.uniform1i(gpu.main.adventure, data[25] > 0 ? 1 : 0);
+  gl.uniform3f(gpu.main.streamOwner, data[37], 0, data[38]);
   gl.uniform1i(gpu.main.pass, 0);
   for (const [id, { count }] of terrainChunks) {
     gl.bindVertexArray(gpu.terrain.get(id).vao);
