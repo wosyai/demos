@@ -576,9 +576,10 @@ function enterLighthouse() {
   jumpNorth(7.16, 'jump up one deck to the lighthouse entry');
   moveOn(0, 2, 5.95, -1, 'carry the lantern through the lighthouse door');
 }
-function lightWatchfires() {
+function lightWatchfires(whenNorth = null) {
   assert.equal(frame.values[29], 1, 'the first watchfire must be visited on the far shore');
   moveOn(0, 2, 9.45, -1, 'follow the high-bank trail past the tower approach');
+  if (whenNorth) whenNorth();
   moveOn(2, 0, 9.42, -1, 'reach the west watchfire');
   assert.equal(frame.values[29], 2, 'the west watchfire is a required second milestone');
   moveOn(3, 0, 24.40, 1, 'return to the high tower approach');
@@ -750,7 +751,34 @@ assert(Math.abs(coords()[2] - 24.3) < .05, 'second ridge rise blocks walking');
 jumpNorth(23.52, 'jump the second ridge rise');
 moveOn(0, 2, 16.40, -1, 'come off the ridge onto the north bank');
 moveOn(2, 0, 24.54, -1, 'approach the north watchfire from the ridge');
-lightWatchfires();
+lightWatchfires(() => {
+  const owner = '2,-2';
+  const original = signedMeshChunks.get(owner).hash;
+  const x = 24, z = -13;
+  const seabed = terrain_material(x, 0, z);
+  assert(seabed > 0);
+  const airY = Array.from({ length: 16 }, (_, y) => y).find((y) => y > 0 && terrain_material(x + 1, y, z) === 0);
+  assert(Number.isInteger(airY));
+  const firstEdit = meshPublications.length;
+  assert.equal(edit(x, 0, z, 0), 1, 'mine the signed exterior bottom cell through the game edit export');
+  assert.equal(edit(x + 1, airY, z, 5), 1, 'place into exterior air through the same edit path');
+  assert.equal(terrain_material(x, 0, z), 0);
+  assert.equal(terrain_material(x + 1, airY, z), 5);
+  const rebuilt = meshPublications.slice(firstEdit).map(({ chunkX, chunkZ }) => [chunkX, chunkZ].join(','));
+  for (const key of ['2,-2', '1,-2', '2,-1']) assert(rebuilt.includes(key), `invalidate seam mesh ${key}`);
+  const changed = signedMeshChunks.get(owner).hash;
+  assert.notEqual(changed, original, 'the signed edit appears in the actual mesh');
+  moveOn(1, 2, 13.25, 1, 'step south to evict the edited exterior chunk');
+  assert(!signedMeshChunks.has(owner), 'actual render retirement occurred');
+  assert.equal(terrain_material(x, 0, z), 0, 'the air edit still exists where no render chunk is resident');
+  moveOn(0, 2, 9.45, -1, 'return north to stream the edited chunk');
+  assert.equal(signedMeshChunks.get(owner).hash, changed, 'real eviction and re-entry preserve exact edited mesh bytes');
+  assert.equal(terrain_material(x + 1, airY, z), 5, 'placed material also survives eviction');
+  assert.equal(edit(x, 0, z, seabed), 1, 'restore the original seabed');
+  assert.equal(edit(x + 1, airY, z, 0), 1, 'restore the original air');
+  assert.equal(signedMeshChunks.get(owner).hash, original, 'restored cells reproduce the exact generated mesh');
+  assert.equal(edit(x, 0, z, 0), 1, 'retain a final edit to check retry isolation');
+});
 
 assert(lanternColor().length > 0 && lanternColor().every(c => Math.abs(c - 1.85) < .001),
   'the finished lighthouse and both watchfires emit the brighter signal');
@@ -975,5 +1003,6 @@ const survey = (seedValue) => {
   return profile;
 };
 const seededAdventure = survey(726);
+assert(terrain_material(24, 0, -13) > 0, 'new adventure resets the previous overlay');
 assert.deepEqual(survey(726), seededAdventure, 'same seed reproduces the same terrain beyond the authored world');
 assert.notDeepEqual(survey(726 + 16381), seededAdventure, 'old modulo aliases no longer alias in the adventure terrain');

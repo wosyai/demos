@@ -406,7 +406,7 @@ async function boot() {
   }
   try {
     prepareGraphics();
-    const response = await fetch(new URL("./engine.wasm?v=beacon-archipelago-v1", import.meta.url));
+    const response = await fetch(new URL("./engine.wasm?v=beacon-sparse-edits-v1", import.meta.url));
     if (!response.ok) throw new Error(`Engine not found (HTTP ${response.status}).`);
     const bytes = await response.arrayBuffer();
     const api = {
@@ -730,6 +730,7 @@ function sendEdit(mode, state) {
     }
     if (result === -5) toast("Pick up the loose wood before building here.");
     if (result === -6) toast("Too much loose wood. Pick some up before mining again.");
+    if (result === -7) toast("This world has reached its edit limit. Existing edits are safe.");
   } catch (e) { fail("The engine could not update the island.", e); }
 }
 

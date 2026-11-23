@@ -351,10 +351,137 @@ u8(i32, i32, i32) sampled_material = fn(x, y, z) {
 	} else { archipelago_material(y, height, 0) }
 };
 
+struct copy TerrainEdit {
+	i32 x;
+	i32 y;
+	i32 z;
+	i32 epoch;
+	u8 material;
+}
+
+TerrainEdit blank_edit = { .x = 0; .y = -1; .z = 0; .epoch = 0; .material = 0; };
+TerrainEdit[16] blank_edit_row = [
+	blank_edit, blank_edit, blank_edit, blank_edit, blank_edit, blank_edit, blank_edit, blank_edit,
+	blank_edit, blank_edit, blank_edit, blank_edit, blank_edit, blank_edit, blank_edit, blank_edit
+];
+TerrainEdit[16][16] blank_edit_page = [
+	blank_edit_row, blank_edit_row, blank_edit_row, blank_edit_row,
+	blank_edit_row, blank_edit_row, blank_edit_row, blank_edit_row,
+	blank_edit_row, blank_edit_row, blank_edit_row, blank_edit_row,
+	blank_edit_row, blank_edit_row, blank_edit_row, blank_edit_row
+];
+TerrainEdit[16][16][8] empty_terrain_edits = [
+	blank_edit_page, blank_edit_page, blank_edit_page, blank_edit_page,
+	blank_edit_page, blank_edit_page, blank_edit_page, blank_edit_page
+];
+TerrainEdit[16][16][8] terrain_edits = empty_terrain_edits;
+
+i32 edit_epoch = 1;
+i32 exterior_edits = 0;
+i32[16] blank_edit_hint = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+i32[16][16] edit_hints = [
+	blank_edit_hint, blank_edit_hint, blank_edit_hint, blank_edit_hint,
+	blank_edit_hint, blank_edit_hint, blank_edit_hint, blank_edit_hint,
+	blank_edit_hint, blank_edit_hint, blank_edit_hint, blank_edit_hint,
+	blank_edit_hint, blank_edit_hint, blank_edit_hint, blank_edit_hint
+];
+
+bool(i32, i32, i32) editable_exterior = fn(x, y, z) {
+	y >= 0 && y < 16 && adventure_column(x, z) && !inside(x, y, z)
+};
+
+i32(i32, i32) exterior_hint = fn(x, z) { (x * 101 ^ z * 173 ^ (x >> 3) ^ (z >> 1)) & 255 };
+
+bool(i32, i32) exterior_maybe_edited = fn(x, z) {
+	if (exterior_edits == 0) { false } else {
+		i32 hint = exterior_hint(x, z);
+		edit_hints[index_of(hint / 16)][index_of(hint % 16)] == edit_epoch
+	}
+};
+
+i32(i32, i32, i32) exterior_home = fn(x, y, z) {
+	((x * 2531011) ^ (z * 1752193) ^ (y * 2654439) ^ (x >> 5) ^ (z >> 2)) & 2047
+};
+
+i32(i32, i32, i32, i32, i32, i32) find_exterior_edit = fn(x, y, z, slot, remaining, free) {
+	if (remaining == 0) { free } else {
+		u64 page = index_of(slot / 256);
+		u64 row = index_of((slot / 16) % 16);
+		u64 col = index_of(slot % 16);
+		if (terrain_edits[page][row][col].epoch != edit_epoch) {
+			if (free >= 0) { free } else { slot }
+		} else {
+			i32 old_y = terrain_edits[page][row][col].y;
+			if (old_y == y && terrain_edits[page][row][col].x == x && terrain_edits[page][row][col].z == z) {
+				slot
+			} else {
+				i32 candidate = if (old_y < 0 && free < 0) { slot } else { free };
+				find_exterior_edit(x, y, z, (slot + 1) & 2047, remaining - 1, candidate)
+			}
+		}
+	}
+};
+
+i32(i32, i32, i32) read_exterior_edit = fn(x, y, z) {
+	i32 slot = find_exterior_edit(x, y, z, exterior_home(x, y, z), 24, -1);
+	if (slot < 0) { -1 } else {
+		u64 page = index_of(slot / 256);
+		u64 row = index_of((slot / 16) % 16);
+		u64 col = index_of(slot % 16);
+		if (terrain_edits[page][row][col].epoch == edit_epoch && terrain_edits[page][row][col].y >= 0) {
+			core.int_extend<i32>(terrain_edits[page][row][col].material)
+		} else { -1 }
+	}
+};
+
+u8(i32, i32, i32) exterior_cell = fn(x, y, z) {
+	i32 result = if (exterior_maybe_edited(x, z)) { read_exterior_edit(x, y, z) } else { -1 };
+	if (result < 0) { sampled_material(x, y, z) } else { core.int_trunc<u8>(result) }
+};
+
+i32(i32, i32, i32, i32) store_exterior_edit = fn(x, y, z, material) {
+	i32 slot = find_exterior_edit(x, y, z, exterior_home(x, y, z), 24, -1);
+	if (slot < 0) { -7 } else {
+		u64 page = index_of(slot / 256);
+		u64 row = index_of((slot / 16) % 16);
+		u64 col = index_of(slot % 16);
+		bool occupied = terrain_edits[page][row][col].epoch == edit_epoch && terrain_edits[page][row][col].y >= 0;
+		u8 next = core.int_trunc<u8>(material);
+		if (next == sampled_material(x, y, z)) {
+			if (occupied) {
+				terrain_edits[page][row][col].y = -1;
+				exterior_edits = exterior_edits - 1;
+			};
+		} else {
+			terrain_edits[page][row][col].x = x;
+			terrain_edits[page][row][col].y = y;
+			terrain_edits[page][row][col].z = z;
+			terrain_edits[page][row][col].material = next;
+			terrain_edits[page][row][col].epoch = edit_epoch;
+			i32 hint = exterior_hint(x, z);
+			edit_hints[index_of(hint / 16)][index_of(hint % 16)] = edit_epoch;
+			if (!occupied) { exterior_edits = exterior_edits + 1; };
+		};
+		target_dirty = true;
+		ground_contact_dirty = true;
+		rebuild_near(x, z);
+		1
+	}
+};
+
+i32(i32, i32, i32, i32) edit_exterior = fn(x, y, z, material) {
+	if (beacon_phase != BeaconPhase::active || material < 0 || material > 6) { -4 } else {
+		u8 current = exterior_cell(x, y, z);
+		if ((material == 0 && current != 0) || (material > 0 && current == 0)) {
+			store_exterior_edit(x, y, z, material)
+		} else { 0 }
+	}
+};
+
 u8(i32, i32, i32) cell = fn(x, y, z) {
 	if (y < 0 || y >= 16) { 0 } else {
 		if (inside(x, y, z)) { world[index_of(y)][index_of(z)][index_of(x)] } else {
-			if (adventure_column(x, z)) { sampled_material(x, y, z) } else { 0 }
+			if (adventure_column(x, z)) { exterior_cell(x, y, z) } else { 0 }
 		}
 	}
 };
@@ -744,12 +871,22 @@ unit(u64, u64, u64, i32, i32) fill_halo_regular = fn(lx, lz, y, x, z) {
 	};
 };
 
+unit(u64, u64, u64, i32, i32) overlay_halo_column = fn(lx, lz, y, x, z) {
+	if (y < 16) {
+		i32 altitude = core.int_trunc<i32>(y);
+		i32 override_material = read_exterior_edit(x, altitude, z);
+		if (override_material >= 0) { mesh_halo[y][lz][lx] = core.int_trunc<u8>(override_material); };
+		overlay_halo_column(lx, lz, y + 1, x, z);
+	};
+};
+
 unit(i32, i32, i32, i32) fill_halo_row = fn(lx, lz, start_x, z) {
 	if (lx < 14) {
 		i32 x = start_x + lx - 1;
 		if (adventure_column(x, z) && !inside(x, 0, z)) {
 			i32 height = archipelago_height(x, z);
 			fill_halo_procedural(index_of(lx), index_of(lz), 0, height, archipelago_passage(x, z, height));
+			if (exterior_maybe_edited(x, z)) { overlay_halo_column(index_of(lx), index_of(lz), 0, x, z); };
 		} else {
 			fill_halo_regular(index_of(lx), index_of(lz), 0, x, z);
 		};
@@ -1159,6 +1296,15 @@ i32() start_beacon = fn {
 		sandbox_material = selected_material;
 	};
 	beacon_phase = BeaconPhase::active;
+	if (edit_epoch == 2147483647) {
+		terrain_edits = empty_terrain_edits;
+		edit_hints = [blank_edit_hint, blank_edit_hint, blank_edit_hint, blank_edit_hint,
+			blank_edit_hint, blank_edit_hint, blank_edit_hint, blank_edit_hint,
+			blank_edit_hint, blank_edit_hint, blank_edit_hint, blank_edit_hint,
+			blank_edit_hint, blank_edit_hint, blank_edit_hint, blank_edit_hint];
+		edit_epoch = 1;
+	} else { edit_epoch = edit_epoch + 1; };
+	exterior_edits = 0;
 	beacon_elapsed = 0.0;
 	lamp_wet = 0.0;
 	tide_progress = 0.0;
@@ -1241,7 +1387,11 @@ i32(i32, i32, i32, i32) write_cell = fn(x, y, z, material) {
 };
 
 i32(i32, i32, i32, i32) edit = fn(x, y, z, material) {
-	if (beacon_phase == BeaconPhase::sandbox) { write_cell(x, y, z, material) } else { -4 }
+	if (beacon_phase == BeaconPhase::sandbox) { write_cell(x, y, z, material) } else {
+		if (editable_exterior(x, y, z)) {
+			if (material > 0 && overlaps_player(x, y, z)) { -3 } else { edit_exterior(x, y, z, material) }
+		} else { -4 }
+	}
 };
 
 i32(f32) floor_i = fn(value) {
@@ -2367,7 +2517,7 @@ i32(i32) edit_view = fn(material) {
 	RayHit hit = current_view_target();
 	if (hit.face < 0) { -1 } else {
 		CellPosition key = if (material > 0) { adjacent_cell(hit) } else { hit.position };
-		if (material > 0 && !inside(key.x, key.y, key.z)) { -2 } else {
+		if (material > 0 && !inside(key.x, key.y, key.z) && !editable_exterior(key.x, key.y, key.z)) { -2 } else {
 			i32 x = key.x;
 			i32 y = key.y;
 			i32 z = key.z;
@@ -2376,7 +2526,9 @@ i32(i32) edit_view = fn(material) {
 					i32 changed = write_cell(x, y, z, material);
 					if (changed == 1) { rebuild_near(x, z); };
 					changed
-				} else { edit_beacon(x, y, z, material) }
+				} else {
+					if (editable_exterior(x, y, z)) { edit_exterior(x, y, z, material) } else { edit_beacon(x, y, z, material) }
+				}
 			}
 		}
 	}
