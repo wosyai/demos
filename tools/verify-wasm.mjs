@@ -1006,3 +1006,82 @@ const seededAdventure = survey(726);
 assert(terrain_material(24, 0, -13) > 0, 'new adventure resets the previous overlay');
 assert.deepEqual(survey(726), seededAdventure, 'same seed reproduces the same terrain beyond the authored world');
 assert.notDeepEqual(survey(726 + 16381), seededAdventure, 'old modulo aliases no longer alias in the adventure terrain');
+
+
+{
+  const reachNorthBank = () => {
+    moveOn(0, 2, 33.32, -1, 'go north from the harbor');
+    moveOn(3, 0, 38.45, 1, 'reach the east ridge');
+    moveUntil(0, 2, 26.8, -1, 70);
+    jumpNorth(26.48, 'jump the first ridge rise');
+    moveUntil(0, 2, 23.9, -1, 40);
+    jumpNorth(23.52, 'jump the second ridge rise');
+    moveOn(0, 2, 16.40, -1, 'reach the north bank');
+  };
+
+  generate(726);
+  start_beacon();
+  assert.equal(cycle_camera(), 0);
+  tick(0, 1, 1);
+  reachNorthBank();
+  moveOn(2, 0, 28.55, -1, 'align with the open coast east of the lighthouse');
+  assert(Math.floor(coords()[0]) === 28);
+  moveOn(0, 2, 3.32, -1, 'approach the edge of the authored coast');
+  for (const z of [-1, -2, -3]) {
+    assert.equal(terrain_material(28, 4, z), 0);
+    assert.equal(edit(28, 4, z, 5), 1, 'install a short test pier in exterior water');
+  }
+  control(6, 1);
+  control(4, 1);
+  moveOn(0, 2, -.35, -1, 'jump from dry ground onto the exterior test pier', 55);
+  control(4, 0);
+  control(6, 0);
+  steps(16);
+  assert.equal(phase(), 1);
+  assert(Math.floor(coords()[0]) === 28 && Math.floor(coords()[2]) === -1);
+  assert(Math.abs(coords()[1] - 6.62) < .05, 'the placed exterior floor is solid to the actual player');
+  assert.equal(edit(28, 5, -1, 5), -3, 'placement inside the occupied player cell is rejected');
+  assert.equal(terrain_material(28, 5, -1), 0);
+  aimNorthAt(4.99, -1.5);
+  assert.equal(frame.hit, 1, 'the ordinary reticle reports a genuine signed hit');
+  assert.equal(edit_view(5), 1, 'ordinary aimed placement uses the exterior overlay');
+  assert.equal(terrain_material(28, 5, -2), 5);
+  aimNorthAt(5.55, -1.5);
+  assert.equal(edit_view(0), 1, 'ordinary aim breaks the placed exterior block');
+  assert.equal(terrain_material(28, 5, -2), 0);
+  assert.equal(terrain_material(28, 4, -2), 5, 'breaking the placed block leaves its solid support');
+
+  // Deliberately exercise a single real probe neighborhood far from the renderer.
+  const byBucket = new Map();
+  let colliding;
+  const y = 15;
+  for (let x = -369; x < -160 && !colliding; x++) {
+    for (let z = -369; z < -160 && !colliding; z++) {
+      if (terrain_material(x, y, z) !== 0) continue;
+      const bucket = (Math.imul(x, 2531011) ^ Math.imul(z, 1752193) ^ Math.imul(y, 2654439) ^ (x >> 5) ^ (z >> 2)) & 2047;
+      const list = byBucket.get(bucket) ?? [];
+      byBucket.set(bucket, list);
+      list.push([x, y, z]);
+      if (list.length === 28) colliding = list;
+    }
+  }
+  assert.equal(colliding.length, 28, 'the fixture finds a real same-home neighborhood');
+  const accepted = [];
+  let refused;
+  for (const pos of colliding) {
+    const result = edit(...pos, 5);
+    if (result === -7) { refused = pos; break; }
+    assert.equal(result, 1);
+    accepted.push(pos);
+  }
+  assert(refused && accepted.length >= 21 && accepted.length <= 24, 'a full local probe budget rejects a new edit cleanly');
+  assert.equal(terrain_material(...refused), 0);
+  assert(accepted.every((pos) => terrain_material(...pos) === 5), 'capacity rejection preserves previous edits');
+  const deleted = accepted[Math.floor(accepted.length / 2)];
+  assert.equal(edit(...deleted, 0), 1, 'restoring the baseline frees a middle tombstone');
+  assert.equal(terrain_material(...deleted), 0);
+  assert.equal(terrain_material(...accepted.at(-1)), 5, 'lookups cross the middle tombstone');
+  assert.equal(edit(...refused, 5), 1, 'a new edit safely reuses the tombstone');
+  assert.equal(terrain_material(...refused), 5);
+  assert.equal(terrain_material(...deleted), 0);
+}
