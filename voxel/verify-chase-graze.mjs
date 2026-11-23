@@ -52,9 +52,29 @@ for (const aspect of [1, .53]) {
   }
 
   assert.equal(engine.cycle_camera(), 1);
-  tick(0);
   const distance = () => Math.hypot(frame[16] - frame[37], frame[18] - frame[38]);
+  const easedTravel = (sign) => {
+    const before = distance();
+    tick(0);
+    assert.equal(distance(), before, label('requesting a mode does not snap at zero elapsed time'));
+    let last = before, firstStep;
+    for (let i = 0; i < 20; i++) {
+      tick(1 / 60);
+      const now = distance(), travel = (now - last) * sign;
+      assert(travel >= -.00001 && travel < .5, label('the unobstructed camera travels smoothly'));
+      if (i === 0) firstStep = travel;
+      assert.equal(hit, -1, label('changing presentation does not retarget the player ray'));
+      last = now;
+    }
+    assert(firstStep > 0 && firstStep < .1, label('switching eases away from rest'));
+  };
+  easedTravel(1);
   const open = distance();
+  assert.equal(engine.cycle_camera(), 0);
+  easedTravel(-1);
+  assert.equal(distance(), 0, label('the return settles at the exact player eye'));
+  assert.equal(engine.cycle_camera(), 1);
+  easedTravel(1);
   const openDx = frame[16] - frame[37], openDz = frame[18] - frame[38];
   const nearPlane = .16;
   const upScale = Math.hypot(frame[1], frame[5], frame[9]);
