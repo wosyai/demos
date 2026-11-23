@@ -106,10 +106,19 @@ void main() {
       haze=max(haze,radial);
     }
     if (rgb.z > 1.0) {
-      if (abs(rgb.z-1.31)<0.02) col=vec3(0.23,0.94,1.0);
-      else if (abs(rgb.z-1.45)<0.02) col=vec3(1.0,0.79,0.21);
-      else if (abs(rgb.z-1.64)<0.02) col=vec3(1.0,0.43,0.73);
-      else col=rgb.z>1.5?vec3(1.0,0.83,0.30):vec3(0.88,0.39,0.09);
+      vec3 material;
+      if (abs(rgb.z-1.31)<0.02) material=vec3(0.23,0.94,1.0);
+      else if (abs(rgb.z-1.45)<0.02) material=vec3(1.0,0.79,0.21);
+      else if (abs(rgb.z-1.64)<0.02) material=vec3(1.0,0.43,0.73);
+      else material=vec3(0.0);
+      if (material.r>0.0) {
+        vec3 normal=normalize(cross(dFdx(point),dFdy(point))) * (gl_FrontFacing ? 1.0 : -1.0);
+        vec3 key=normalize(vec3(-.48,.78,.39));
+        vec3 view=normalize(eye-point);
+        float diffuse=0.5+0.5*dot(normal,key);
+        float glint=pow(max(dot(normal,normalize(key+view)),0.0),14.0);
+        col=material*(0.58+0.37*diffuse)+vec3(.76,.9,1.0)*(.16*glint);
+      } else col=rgb.z>1.5?vec3(1.0,0.83,0.30):vec3(0.88,0.39,0.09);
     } else {
       vec3 texel=texture(terrainAtlas,rgb.xy).rgb;
       float macro=sin(point.x*.33+sin(point.z*.44))*sin(point.z*.29-point.y*.41);
