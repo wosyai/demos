@@ -165,6 +165,23 @@ function assertNonOverlappingParisPanels(values) {
 reset(1);
 assert.equal(worldUploads, 2, "changing course publishes new terrain");
 assert.notDeepEqual(world, farmWorld, "courses draw different scenery");
+if (!comparisonBaseline) {
+    const yard = [];
+    for(let i=0;i<world.length;i+=6) {
+        const x=world[i], y=world[i+1], z=world[i+2];
+        if(x>=-92.86 && x<=-81.81 && y>=.143 && y<=.173 && z>=-27.11 && z<=4.81)
+            yard.push(Array.from(world.subarray(i,i+6)));
+    }
+    const ofColor = (r,g,b) => yard.filter(v => Math.abs(v[3]-r)<.001 && Math.abs(v[4]-g)<.001 && Math.abs(v[5]-b)<.001);
+    const stone = ofColor(.67,.60,.51);
+    assert.equal(stone.length,6,"a single stone court links the real stop line to the post room");
+    assert(stone.every(([x])=>x>-93),"the yard does not paint across the usable runway");
+    assert.equal(ofColor(.51,.39,.34).length,18,"the post court has three complete working bays");
+    assert.equal(ofColor(.78,.46,.29).length,12,"a short connector near the stop and the entry threshold share terracotta");
+    const thresholdZ = ofColor(.78,.46,.29).map(v=>v[2]);
+    assert(thresholdZ.some(z=>z>3.23 && z<4),"the connector is beside the real stop, not the touchdown beacon");
+    assert(thresholdZ.some(z=>z>-27 && z<-26),"the path meets the post room facade");
+}
 assert.notDeepEqual(aircraft, farmAircraft, "courses draw different airplanes");
 assertNonOverlappingParisPanels(aircraft);
 const parisPose = [frame, aircraft];

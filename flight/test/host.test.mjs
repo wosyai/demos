@@ -349,10 +349,10 @@ test("the light shell and its flight engine share the same release token", async
   const sim = mock();
   await sim.ready;
   const html = await readFile(new URL("../index.html", import.meta.url), "utf8");
-  assert.match(html, /href="\.\/style\.css\?v=wright-working-farm-flight-v8"/);
-  assert.match(html, /src="\.\/host\.mjs\?v=wright-working-farm-flight-v8"/);
+  assert.match(html, /href="\.\/style\.css\?v=paris-loading-court-flight-v9"/);
+  assert.match(html, /src="\.\/host\.mjs\?v=paris-loading-court-flight-v9"/);
   assert.deepEqual(sim.called.requests.map((url) => [url.pathname.split("/").at(-1), url.search]),
-    [["flight.wasm", "?v=wright-working-farm-flight-v8"]]);
+    [["flight.wasm", "?v=paris-loading-court-flight-v9"]]);
 });
 
 test("view button and V toggle the engine camera without resetting a route", async () => {
