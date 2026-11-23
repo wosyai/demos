@@ -313,6 +313,12 @@ unit(f32,f32,f32) mail_yard = fn(x,z,stop_z) {
 	tri(x+1.84,2.89,z-0.028,x+5.16,2.89,z-0.028,x+3.5,2.40,z-0.028,0.60,0.33,0.23);
 };
 
+unit(f32,f32) postal_runway_stencil = fn(x,z) {
+	ground_patch(x+2.2,z+48.0,2.4,10.0,0.238,0.63,0.39,0.29);
+	ground_patch(x+2.47,z+50.5,1.86,4.6,0.241,0.91,0.78,0.56);
+	tri(x+4.21,0.244,z+50.74,x+4.21,0.244,z+54.86,x+2.66,0.244,z+52.8,0.66,0.45,0.32);
+};
+
 unit(f32,f32,i32,i32) furrows = fn(x,z,j,k) {
 	if (k < 15) {
 		f32 offset = 5.0 + float_i(k)*8.2;
@@ -942,6 +948,7 @@ unit() render_land = fn {
 	};
 	if (course == 1) {
 		mail_yard(sx,sz,stop_z);
+		postal_runway_stencil(pickup_x(),pickup_z());
 		box(sx+1.0,4.34,sz+3.0,5.0,2.2,3.8,0.83,0.31,0.15);
 		quad(sx+1.5,4.76,sz+2.97,sx+5.5,4.76,sz+2.97,sx+5.5,6.15,sz+2.97,sx+1.5,6.15,sz+2.97,0.97,0.92,0.76);
 		tri(sx+1.5,6.15,sz+2.94,sx+5.5,6.15,sz+2.94,sx+3.5,5.26,sz+2.94,0.73,0.39,0.22);

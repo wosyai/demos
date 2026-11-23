@@ -79,6 +79,7 @@ function reset(course) {
 
 reset(0);
 const farmWorld = world;
+const postalStencil = [];
 if (!comparisonBaseline) {
     const countWorld = (x0,x1,y0,y1,z0,z1) => {
         let found = 0;
@@ -181,6 +182,19 @@ if (!comparisonBaseline) {
     const thresholdZ = ofColor(.78,.46,.29).map(v=>v[2]);
     assert(thresholdZ.some(z=>z>3.23 && z<4),"the connector is beside the real stop, not the touchdown beacon");
     assert(thresholdZ.some(z=>z>-27 && z<-26),"the path meets the post room facade");
+    for(let i=0;i<world.length;i+=6) {
+        const [x,y,z,r,g,b]=world.subarray(i,i+6);
+        if(x>-109 && x< -106 && z>=-23.001 && z<=-12.999 && y>.237 && y<.245)
+            postalStencil.push([x,y,z,r,g,b]);
+    }
+    assert.equal(postalStencil.length,15,"the painted postal stencil has a base, inset and flap");
+    const paint=postalStencil.filter(([,y])=>Math.abs(y-.238)<.0001);
+    assert.equal(paint.length,6,"the base has two triangles at a single paint height");
+    assert(paint.every(([,, ,r,g,b])=>Math.abs(r-.63)<.001 && Math.abs(g-.39)<.001 && Math.abs(b-.29)<.001));
+    const bounds=axis=>[Math.min(...paint.map(v=>v[axis])),Math.max(...paint.map(v=>v[axis]))];
+    for(const [axis,expected] of [[0,[-108.8,-106.4]],[2,[-23,-13]]])
+        assert(bounds(axis).every((value,index)=>Math.abs(value-expected[index])<.001),
+            "the stencil keeps its exact offset beside, not across, the runway centerline");
 }
 assert.notDeepEqual(aircraft, farmAircraft, "courses draw different airplanes");
 assertNonOverlappingParisPanels(aircraft);
@@ -249,7 +263,7 @@ function marker(color, minY = -Infinity) {
     }
     return result;
 }
-function verifyCueProjection(label, cue, minimumWidth, minimumHeight) {
+function verifyCueProjection(label, cue, minimumWidth, minimumHeight, screenHeight = null) {
     const before = frame.slice();
     for (const view of [0, 1]) for (const aspect of [1.65, .45]) {
         engine.select_view(view);
@@ -268,7 +282,9 @@ function verifyCueProjection(label, cue, minimumWidth, minimumHeight) {
         });
         for (const [axis, minimum] of [[0, minimumWidth], [1, minimumHeight]]) {
             const values = ndc.map(point => point[axis]);
-            assert(Math.max(...values)-Math.min(...values) > minimum, label + " is legible on screen");
+            const span = Math.max(...values)-Math.min(...values);
+            const size = screenHeight === null ? span : span*screenHeight*.5*(axis === 0 ? aspect : 1);
+            assert(screenHeight === null ? size > minimum : size >= minimum, label + " is legible on screen in view " + view + " at aspect " + aspect);
         }
     }
     engine.select_view(0);
@@ -585,6 +601,8 @@ function sortie(course, mode = "normal") {
                         assert.equal(label.length,view ? 84 : 87,"only chase view points to the stopped plane");
                         return label.concat(marker([.045,.17,.16]));
                     }, .20, .09);
+                    if (course === 1)
+                        verifyCueProjection("stopped postal stencil", () => postalStencil, 32, 15, 600);
                 }
                 const ink = marker([.42,.97,.84]);
                 assert.equal(ink.length,87,"the phase-owned sign pays only for a pointer and fourteen strokes");
