@@ -727,7 +727,7 @@ horizon.frame();
 const drawHorizon = horizon.counters.draws.findLastIndex(([pass]) => pass === 3);
 assert(drawHorizon >= 0, 'the active expedition draws the donated coarse world layer');
 assert.deepEqual(horizon.counters.draws[drawHorizon], [3, 3, false]);
-assert.equal(horizon.counters.draws[drawHorizon + 1][0], 0, 'near terrain composites over the coarse layer');
+assert.equal(horizon.counters.draws[drawHorizon - 1][0], 0, 'the coarse pass fills only after drawing near terrain');
 horizon.lostEvent();
 horizon.restoredEvent();
 assert(horizon.counters.uploads.some((v) => v.length === 18 && v.every((n) => n === .5)),

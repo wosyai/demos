@@ -30,7 +30,7 @@ const viewButtons = [get("camera-view"), get("view-touch")];
 const moveStick = get("move-stick");
 const materials = Array.from(document.querySelectorAll("[data-material]"));
 
-const gl = canvas.getContext("webgl2", { alpha: false, antialias: true });
+const gl = canvas.getContext("webgl2", { alpha: false, antialias: true, stencil: true });
 const fogColor = [0.66, 0.78, 0.83];
 const keyActions = new Map([
   ["KeyW",0], ["ArrowUp",0], ["KeyS",1], ["ArrowDown",1],
@@ -107,9 +107,9 @@ void main() {
       if (pass==3) {
         vec3 normal=normalize(cross(dFdx(point),dFdy(point))) * (gl_FrontFacing ? 1.0 : -1.0);
         float lit=max(dot(normal,${sunVector}),0.0);
-        if (radial<=lattice || smoothstep(62.0,82.0,range)>lattice) discard;
+        if (range<18.5 || range>82.0) discard;
         col=rgb*(.75+.44*lit);
-        haze=max(haze,.1+.45*smoothstep(22.0,82.0,range));
+        haze=max(haze,.12+.88*smoothstep(29.0,82.0,range));
       } else {
         if (radial>lattice) discard;
         if (adventure==1) haze=max(haze,radial);
@@ -603,7 +603,9 @@ function present(pointer, hit) {
 
   gl.disable(gl.DEPTH_TEST);
   gl.disable(gl.CULL_FACE);
-  gl.clear(gl.DEPTH_BUFFER_BIT);
+  const adventure = data[25] > 0 ? (layers.horizon.count > 0 ? 2 : 1) : 0;
+  if (adventure === 2) gl.stencilMask(1);
+  gl.clear(adventure === 2 ? gl.DEPTH_BUFFER_BIT | gl.STENCIL_BUFFER_BIT : gl.DEPTH_BUFFER_BIT);
   gl.useProgram(gpu.sky);
   const projection = data.subarray(0, 16);
   gl.uniformMatrix4fv(gpu.background.skyProjection, false, projection);
@@ -619,18 +621,25 @@ function present(pointer, hit) {
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, gpu.terrainAtlas);
   gl.uniform1i(gpu.main.terrainAtlas, 0);
-  const adventure = data[25] > 0 ? (layers.horizon.count > 0 ? 2 : 1) : 0;
   gl.uniform1i(gpu.main.adventure, adventure);
   gl.uniform3f(gpu.main.streamOwner, data[37], 0, data[38]);
   if (adventure === 2) {
-    gl.uniform1i(gpu.main.pass, 3);
-    gl.bindVertexArray(gpu.horizon.vao);
-    gl.drawArrays(gl.TRIANGLES, 0, layers.horizon.count);
+    gl.enable(gl.STENCIL_TEST);
+    gl.stencilFunc(gl.ALWAYS, 1, 1);
+    gl.stencilOp(gl.KEEP, gl.KEEP, gl.REPLACE);
   }
   gl.uniform1i(gpu.main.pass, 0);
   for (const [id, { count }] of terrainChunks) {
     gl.bindVertexArray(gpu.terrain.get(id).vao);
     gl.drawArrays(gl.TRIANGLES, 0, count);
+  }
+  if (adventure === 2) {
+    gl.stencilFunc(gl.EQUAL, 0, 1);
+    gl.stencilOp(gl.KEEP, gl.KEEP, gl.KEEP);
+    gl.uniform1i(gpu.main.pass, 3);
+    gl.bindVertexArray(gpu.horizon.vao);
+    gl.drawArrays(gl.TRIANGLES, 0, layers.horizon.count);
+    gl.disable(gl.STENCIL_TEST);
   }
   if (layers.player.count > 0) {
     gl.uniform1i(gpu.main.pass, 2);

@@ -1160,9 +1160,11 @@ i32(i32, i32, i32) top_solid = fn(x, z, y) {
 };
 
 i32(i32, i32) horizon_height = fn(x, z) {
-	if (inside(x, 0, z) || cave_shelf_column(x, z) || summit_column(x, z) || wreck_column(x, z) || exterior_maybe_edited(x, z)) {
-		top_solid(x, z, 15)
-	} else { archipelago_height(x, z) }
+	if (inside(x, 0, z)) { beacon_ground(x, z) } else {
+		if (cave_shelf_column(x, z) || summit_column(x, z)) { top_solid(x, z, 15) } else {
+			if (wreck_column(x, z)) { top_solid(x, z, 6) } else { archipelago_height(x, z) }
+		}
+	}
 };
 
 i32(i32, i32) horizon_axis = fn(origin, i) { min_i(adventure_max(), origin + i * 6) };
@@ -2645,11 +2647,11 @@ unit(RayHit, f32, f32, f32) publish_play_frame = fn(hit, dt, advance_x, advance_
 			f32 ahead_x = clamp_f(advance_x * (0.22 / dt), -0.70, 0.70);
 			f32 ahead_z = clamp_f(advance_z * (0.22 / dt), -0.70, 0.70);
 			f32 next_limit = chase_terrain_limit(camera_pose.x + ahead_x, camera_pose.y, camera_pose.z + ahead_z, dx, dy, dz, fx, fy, fz);
-			clamp_f(next_limit, limit - 1.20, limit)
+			clamp_f(next_limit, limit - 2.0, limit)
 		} else { limit };
 		f32 pace = if (predicted < boom_distance) { 11.0 } else { 5.0 };
 		f32 time = dt * pace;
-		f32 blended = if (!boom_initialized || limit <= boom_distance) { limit } else {
+		f32 blended = if (!boom_initialized || limit < boom_distance) { limit } else {
 			clamp_f(boom_distance + (predicted - boom_distance) * time / (1.0 + time * 0.5), 0.0, limit)
 		};
 		f32 distance = if (hit.face < 0 || blended == limit || camera_sees_target(hit.position.x, hit.position.y, hit.position.z, camera_pose.x + dx * blended,

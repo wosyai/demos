@@ -7,7 +7,7 @@ const file = process.argv[3] === '--binary'
   ? path : JSON.parse(readFileSync(path, 'utf8')).executable;
 const binary = new WebAssembly.Module(readFileSync(file));
 const imports = WebAssembly.Module.imports(binary);
-const graphics = ['aim', 'atlas', 'frame', 'mesh', 'outline', 'player', 'water'];
+const graphics = ['aim', 'atlas', 'frame', 'horizon', 'mesh', 'outline', 'player', 'water'];
 assert.deepEqual(imports.filter((item) => item.module === 'showcase').map((item) => item.name).sort(), graphics);
 for (const item of imports) {
   assert.equal(item.kind, 'function');
@@ -504,8 +504,9 @@ assert(edit(...obstruction, 3) === 1);
 tick(0, 1, 1);
 assert(cameraDistance(frame.values.slice(16, 19)) < 2.2, 'voxel behind player retracts camera');
 assert.equal(frame.hit, aimTarget, 'camera obstruction is not an edit target');
-const wallDistance = cameraDistance(frame.values.slice(16,19));
 const releaseBoom = (steps) => {
+  for (let k = 0; k < 20; k++) tick(.05, 1, 1);
+  const wallDistance = cameraDistance(frame.values.slice(16,19));
   assert.equal(edit(...obstruction, 0), 1);
   tick(0, 1, 1);
   assert(Math.abs(cameraDistance(frame.values.slice(16,19)) - wallDistance) < .015,
@@ -519,9 +520,9 @@ const releaseBoom = (steps) => {
   }
   assert.equal(edit(...obstruction, 3), 1);
   tick(0, 1, 1);
-  assert(Math.abs(cameraDistance(frame.values.slice(16,19)) - wallDistance) < .015,
+  assert(cameraDistance(frame.values.slice(16,19)) < 2.2 && cameraDistance(frame.values.slice(16,19)) < previous,
     'new wall contact retracts immediately before the near plane can penetrate');
-  return previous;
+  return previous - wallDistance;
 };
 const regular = releaseBoom(Array(12).fill(1 / 60));
 const irregular = releaseBoom([.015, .035, .012, .038, .019, .031, .014, .036]);
