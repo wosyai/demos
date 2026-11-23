@@ -283,9 +283,17 @@ checkPierView();
 tick(0,0,4,step,1.65);
 for(let i=0;i<32;i++) tick();
 checkPierView();
+function wakeVertices() {
+  const mesh=rawMoving(), wake=[];
+  for(let i=0;i<mesh.length;i+=6) {
+    if(Math.floor(mesh[i+3]/2)===6) wake.push([mesh[i],mesh[i+2],mesh[i+4]]);
+  }
+  return wake;
+}
 const boardingTimeLeft = {};
 function boardAndCross(route) {
   assert.equal(frame[20],4,"the pier offers a boarding action on foot");
+  assert.equal(wakeVertices().length,0,"a ferry at its berth has no wake");
   const pier=spot(), departureTime=frame[18];
   tick(0,0,2);
   assert.equal(frame[17],5,"boarding starts the playable crossing rather than immediately winning");
@@ -296,13 +304,22 @@ function boardAndCross(route) {
   run(60);
   assert.equal(frame[17],5);
   assert(frame[27]>pier[1]+2&&frame[27]<88,"the player moves along the ramp");
+  assert.equal(wakeVertices().length,0,"walking onto a stationary ferry does not create foam");
   run(180,0,-1,2);
   assert.equal(frame[17],5,"steering and action cannot leave the ferry in transit");
   assert(frame[27]>93&&frame[27]<116,"the passenger moves across open water with the ferry");
+  const movingWake=wakeVertices();
+  assert.equal(movingWake.length,24,"two real tapered ribbons follow the ferry");
+  assert(movingWake.some(([x])=>x<8)&&movingWake.some(([x])=>x>14));
+  assert(movingWake.every(([,z])=>z<frame[27])&&movingWake.map(([,z])=>z).every(Number.isFinite));
+  assert(movingWake.some(([, ,opacity])=>opacity>.3)&&movingWake.some(([, ,opacity])=>opacity===0));
+  run(30);
+  assert(wakeVertices()[0][1]>movingWake[0][1]+1,"foam follows ferry displacement rather than being fixed to the harbor");
   assert.equal(frame[18],departureTime);
   run(300);
   assert.equal(frame[17],6,"arrival waits for a separate disembark action");
   assert.equal(frame[20],5);
+  assert.equal(wakeVertices().length,0,"arrived ferry makes no fresh wake");
   assert(frame[27]>114&&frame[27]<116&&Math.abs(frame[26]-10.1)<.1);
   const stopped=spot();
   run(120,0,1);
