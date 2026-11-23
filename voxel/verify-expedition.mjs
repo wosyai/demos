@@ -5,14 +5,27 @@ import { createHash } from 'node:crypto';
 const wasm = new WebAssembly.Module(readFileSync(process.argv[2]));
 let engine, frame;
 const resident = new Map();
+const visibleParts = new Map();
+const emission = [1.31, 1.45, 1.64];
 engine = new WebAssembly.Instance(wasm, {
   showcase: {
     aim() {}, atlas() {}, outline() {}, player() {}, water() {},
     mesh(pointer, count, x, z) {
       const key = `${x},${z}`;
+      visibleParts.delete(key);
       if (!count) resident.delete(key);
-      else resident.set(key, createHash('sha256')
-        .update(new Uint8Array(engine.memory.buffer, pointer, count * 24)).digest('hex'));
+      else {
+        resident.set(key, createHash('sha256')
+          .update(new Uint8Array(engine.memory.buffer, pointer, count * 24)).digest('hex'));
+        const vertices = new Float32Array(engine.memory.buffer, pointer, count * 6);
+        const parts = [];
+        for (let i = 0; i < vertices.length; i += 6) {
+          if (vertices[i + 5] <= 1) continue;
+          const part = emission.findIndex((light) => Math.abs(vertices[i + 5] - light) < .005);
+          if (part >= 0) parts.push([part, vertices[i], vertices[i + 1], vertices[i + 2]]);
+        }
+        if (parts.length) visibleParts.set(key, parts);
+      }
     },
     frame(pointer) { frame = Array.from(new Float32Array(engine.memory.buffer, pointer, 44)); },
   },
@@ -47,6 +60,17 @@ const aimNorth = (y, z) => {
   const pitch = Math.atan2(y - frame[17], frame[18] - z);
   engine.look(0, (frame[19] - pitch) / .0034);
   tick(0);
+};
+
+const expectPart = (part, x, surface, z, count) => {
+  const key = `${Math.floor(x / 12)},${Math.floor(z / 12)}`;
+  const found = (visibleParts.get(key) ?? []).filter(([kind]) => kind === part);
+  assert.equal(found.length, count, 'the renderer receives exactly the visible vertices for part ' + part);
+  for (const [kind, vx, vy, vz] of found) {
+    assert.equal(kind, part);
+    assert(Math.abs(vx - x) < .45 && vy > surface && vy < surface + .9 && Math.abs(vz - z) < .45,
+      'the emitted geometry is supported at the exact Wosy pickup location');
+  }
 };
 
 const start = (seed) => {
@@ -85,8 +109,12 @@ const recoverLens = (site, verifyEdit) => {
   east(28.55);
   north(3.32);
   jump(0, 18, -.35, true);
+  north(site + 2.35);
+  assert.equal(frame[39] & 1, 0);
+  expectPart(0, 28.5, 5, site + .5, 36);
   north(site + .55);
   assert.equal(frame[39] & 1, 1);
+  expectPart(0, 28.5, 5, site + .5, 0);
   assert(Math.abs(frame[17] - 6.62) < .06);
   if (verifyEdit) {
     const owner = `2,${Math.floor(site / 12)}`;
@@ -102,6 +130,7 @@ const recoverLens = (site, verifyEdit) => {
     north(site + .55);
     assert.equal(resident.get(owner), edited, 'the actual streamed mesh recovers the prior edit');
     assert.equal(frame[39] & 1, 1);
+    expectPart(0, 28.5, 5, site + .5, 0);
   }
   south(-.38);
   jump(1, 18, 3.55, true);
@@ -118,9 +147,13 @@ const recoverRegulator = (site) => {
   for (const landing of [50.15, 55.15, 60.15, 64.15]) jump(3, 16, landing, true);
   east(66.05);
   south(15.38);
+  east(site - 1.7, true);
+  assert.equal(frame[39] & 2, 0);
+  expectPart(1, site + .5, 13, 15.5, 108);
   east(site + .55, true);
   settle();
   assert.equal(frame[39] & 2, 2);
+  expectPart(1, site + .5, 13, 15.5, 0);
   assert(Math.abs(frame[17] - 14.62) < .06);
   const stepsFromSea = [88, 87, 86, 85, 84].map((x) => {
     for (let y = 5; y >= 0; y--) if (engine.terrain_material(x, y, 15)) return y;
@@ -139,9 +172,13 @@ const recoverRegulator = (site) => {
 };
 const recoverIgniter = (site) => {
   west(8.50);
+  west(site + 2.35, true);
+  assert.equal(frame[39] & 4, 0);
+  expectPart(2, site + .5, 6, 33.5, 144);
   west(site + .48, true);
   settle();
   assert.equal(frame[39] & 4, 4);
+  expectPart(2, site + .5, 6, 33.5, 0);
   assert(Math.abs(frame[17] - 7.62) < .06);
   east(24.47, true);
 };

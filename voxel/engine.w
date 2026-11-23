@@ -845,7 +845,13 @@ unit(f32, f32, f32, f32, i32, u8) box_face = fn(x, y, z, size, side, material) {
 	f32 v1 = 0.96875;
 	f32 light = if (material == 7) { 1.18 } else {
 		if (material == 8) { 1.85 } else {
-			if (side == 3) { 1.00 } else { if (side == 2) { 0.57 } else { if (side < 2) { 0.79 } else { 0.89 } } }
+			if (material == 9) { 1.31 } else {
+				if (material == 10) { 1.45 } else {
+					if (material == 11) { 1.64 } else {
+						if (side == 3) { 1.00 } else { if (side == 2) { 0.57 } else { if (side < 2) { 0.79 } else { 0.89 } } }
+					}
+				}
+			}
 		}
 	};
 	if (side == 0) {
@@ -1074,11 +1080,63 @@ unit(i32, i32, i32) mesh_cells = fn(y, start_x, start_z) {
 	};
 };
 
+f32(i32) lighthouse_part_surface = fn(part) {
+	if (part == 1) { 13.0 } else { if (part == 2) { 6.0 } else { 5.0 } }
+};
+
+unit(f32, f32, f32, f32, i32, u8) collectible_cube_faces = fn(x, y, z, size, side, material) {
+	if (side < 6) {
+		box_face(x, y, z, size, side, material);
+		collectible_cube_faces(x, y, z, size, side + 1, material);
+	};
+};
+
+unit(f32, f32, f32, f32, u8) collectible_cube = fn(x, y, z, size, material) {
+	f32 half = size * 0.5;
+	collectible_cube_faces(x - half, y, z - half, size, 0, material);
+};
+
+unit(i32, f32, f32, f32) mesh_lighthouse_part = fn(part, x, y, z) {
+	if (part == 0) {
+		collectible_cube(x, y + 0.02, z, 0.36, 3);
+		collectible_cube(x, y + 0.32, z, 0.46, 9);
+		collectible_cube(x - 0.29, y + 0.43, z, 0.17, 3);
+		collectible_cube(x + 0.29, y + 0.43, z, 0.17, 3);
+	} else {
+		if (part == 1) {
+			collectible_cube(x, y + 0.02, z, 0.43, 5);
+			collectible_cube(x, y + 0.30, z, 0.38, 10);
+			collectible_cube(x, y + 0.47, z - 0.29, 0.25, 10);
+			collectible_cube(x, y + 0.47, z + 0.29, 0.25, 10);
+		} else {
+			collectible_cube(x, y + 0.02, z, 0.32, 5);
+			collectible_cube(x, y + 0.23, z, 0.26, 11);
+			collectible_cube(x, y + 0.43, z, 0.33, 11);
+			collectible_cube(x - 0.19, y + 0.67, z, 0.15, 11);
+			collectible_cube(x + 0.19, y + 0.67, z, 0.15, 11);
+		};
+	};
+};
+
+unit(i32, i32, i32) mesh_lighthouse_parts = fn(part, chunk_x, chunk_z) {
+	if (part < 3) {
+		if ((lighthouse_parts & (1 << part)) == 0) {
+			f32 x = lighthouse_part_x(part);
+			f32 z = lighthouse_part_z(part);
+			if (chunk_axis(floor_i(x)) == chunk_x && chunk_axis(floor_i(z)) == chunk_z) {
+				mesh_lighthouse_part(part, x, lighthouse_part_surface(part), z);
+			};
+		};
+		mesh_lighthouse_parts(part + 1, chunk_x, chunk_z);
+	};
+};
+
 i32(i32, i32) rebuild_chunk = fn(chunk_x, chunk_z) {
 	write_position = 0;
 	fill_halo(0, chunk_x * 12, chunk_z * 12);
 	mesh_cells(0, chunk_x * 12, chunk_z * 12);
 	if (loose_count > 0) { mesh_loose(0, chunk_x, chunk_z); };
+	if (archipelago_hunt) { mesh_lighthouse_parts(0, chunk_x, chunk_z); };
 	i32 count = write_position;
 	unsafe { host.mesh(core.pointer_cast<*?u8>(&?vertices[0][0][0][0][0]), count, chunk_x, chunk_z); };
 	count
@@ -1497,9 +1555,9 @@ i32(bool) start_harbor = fn(expedition) {
 i32() start_beacon = fn { start_harbor(false) };
 
 i32(bool) start_lighthouse_run = fn(expedition) {
+	lighthouse_parts = 0;
 	i32 geometry = start_harbor(expedition);
 	lighthouse_hunt = true;
-	lighthouse_parts = 0;
 	lens_x = 15.5 + 3.0 * core.sint_to_float<f32>(seeded_lattice(1, 0, 17)) / 255.0;
 	regulator_z = 30.75 + 1.5 * core.sint_to_float<f32>(seeded_lattice(2, 0, 23)) / 255.0;
 	igniter_z = 12.5 + 1.5 * core.sint_to_float<f32>(seeded_lattice(3, 0, 29)) / 255.0;
@@ -2530,6 +2588,7 @@ unit(i32) collect_lighthouse_parts = fn(part) {
 		};
 		if ((lighthouse_parts & bit) == 0 && right_height && part_distance(part) <= 0.81) {
 			lighthouse_parts = lighthouse_parts | bit;
+			if (archipelago_hunt) { refresh_cell_owner(floor_i(lighthouse_part_x(part)), floor_i(lighthouse_part_z(part))); };
 		};
 		collect_lighthouse_parts(part + 1);
 	};

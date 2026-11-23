@@ -106,7 +106,10 @@ void main() {
       haze=max(haze,radial);
     }
     if (rgb.z > 1.0) {
-      col = rgb.z > 1.5 ? vec3(1.0,0.83,0.30) : vec3(0.88,0.39,0.09);
+      if (abs(rgb.z-1.31)<0.02) col=vec3(0.23,0.94,1.0);
+      else if (abs(rgb.z-1.45)<0.02) col=vec3(1.0,0.79,0.21);
+      else if (abs(rgb.z-1.64)<0.02) col=vec3(1.0,0.43,0.73);
+      else col=rgb.z>1.5?vec3(1.0,0.83,0.30):vec3(0.88,0.39,0.09);
     } else {
       vec3 texel=texture(terrainAtlas,rgb.xy).rgb;
       float macro=sin(point.x*.33+sin(point.z*.44))*sin(point.z*.29-point.y*.41);
@@ -420,7 +423,7 @@ async function boot() {
   }
   try {
     prepareGraphics();
-    const response = await fetch(new URL("./engine.wasm?v=beacon-expedition-art-v1", import.meta.url));
+    const response = await fetch(new URL("./engine.wasm?v=beacon-expedition-parts-art-v1", import.meta.url));
     if (!response.ok) throw new Error(`Engine not found (HTTP ${response.status}).`);
     const bytes = await response.arrayBuffer();
     const api = {
