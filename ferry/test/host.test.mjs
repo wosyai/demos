@@ -30,9 +30,9 @@ test("pedals and one-shot action coexist with analog steering; keyboard axis pre
 test("loader agrees with shell version, WebAssembly triangle shape, and 30-float engine frame",async()=>{
   const html=await readFile(new URL("../index.html",import.meta.url),"utf8");
   const version=html.match(/host\.mjs\?v=([^"]+)/)?.[1];
-  assert.equal(version,"ferry-pier-signal-v1-navigation-v2");
+  assert.equal(version,"ferry-wide-lens-v1-navigation-v2");
   assert(html.includes('style.css?v=ferry-navigation-v2"'));
-  assert.equal(ENGINE_PATH,"./ferry.wasm?v=ferry-pier-signal-v1");
+  assert.equal(ENGINE_PATH,"./ferry.wasm?v=ferry-wide-lens-v1");
   assert.match(html,/<div id="play-hud" class="play-hud" hidden>[\s\S]*?<header[^>]*>[\s\S]*?id="objective"[\s\S]*?id="status"[\s\S]*?id="camera-view"[\s\S]*?id="city-map"[\s\S]*?id="hint"[\s\S]*?<\/header>/);
   assert.match(html,/id="action-icon"[\s\S]*?<span id="action-caption">Interact<\/span>/);
   assert.match(html,/<button id="reverse"[^>]*>[\s\S]*?Reverse<\/button>/);
