@@ -1,6 +1,6 @@
 const $ = id => document.getElementById(id);
 const canvas = $("view");
-const nativeQuality=new URLSearchParams(location.search).get("quality")==="full";
+let nativeQuality=new URLSearchParams(location.search).get("quality")==="full";
 const gl = canvas.getContext("webgl2", {alpha:false, antialias:false, preserveDrawingBuffer:false});
 const view = `
 uniform vec3 eye;
@@ -229,7 +229,7 @@ function program(a,b) {
 const shadowSize=matchMedia("(pointer:coarse)").matches ? 1024 : 1536;
 let shadowDirty=true;
 let renderLoad=1, slowFrames=0, fastFrames=0, stillFrames=0;
-let balanced=false;
+let balanced=false, software=false;
 let previous=null;
 let worldVersion=0,renderVersion=-1,renderYaw=NaN,renderPitch=NaN,renderW=0,renderH=0,renderX=NaN,renderY=NaN,renderZ=NaN,renderGrip=NaN;
 let scene,space,skyCopy,depth,shadowFbo,shadowTexture,earthTexture,surfaceTexture,earthReady=0,engine,active=false, frame=null, grabbed=null, dx=0, dy=0, last=0, remainder=0, pulse=false;
@@ -243,7 +243,25 @@ function batch() {
 }
 function update(b,ptr,n,usage){
  if(n<0 || n%24!==0 || n/8>16384)throw Error("Invalid orbital mesh");
- if(usage===gl.STATIC_DRAW)shadowDirty=true;worldVersion++;gl.bindBuffer(gl.ARRAY_BUFFER,b.buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(engine.memory.buffer,ptr,n),usage);b.num=n/8;
+ const payload=new Float32Array(engine.memory.buffer,ptr,n);
+ worldVersion++;
+ gl.bindVertexArray(b.vao);gl.bindBuffer(gl.ARRAY_BUFFER,b.buffer);
+ if(usage===gl.STATIC_DRAW){
+  shadowDirty=true;
+  const seen=new Map(), packed=[],index=new Uint16Array(n/8);
+  for(let at=0;at<n;at+=8){
+    const v=payload.subarray(at,at+8);
+    const token=v.join(",");
+    let found=seen.get(token);
+    if(found===undefined){found=packed.length/8;seen.set(token,found);packed.push(...v);}
+    index[at/8]=found;
+  }
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(packed),usage);
+  b.indices??=gl.createBuffer();
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,b.indices);
+  gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,index,usage);
+ }else gl.bufferData(gl.ARRAY_BUFFER,payload,usage);
+ b.num=n/8;
 }
 let importedArm=null;
 function uploadArm(bytes){
@@ -261,7 +279,9 @@ function uploadArm(bytes){
 }
 function meshes(program,eva,pose,onlyStatic=false){
  gl.uniform4f(program.armPose,0,0,0,-1);
- gl.bindVertexArray(room.vao);gl.drawArrays(gl.TRIANGLES,0,room.num);
+ gl.bindVertexArray(room.vao);
+ if(room.indices)gl.drawElements(gl.TRIANGLES,room.num,gl.UNSIGNED_SHORT,0);
+ else gl.drawArrays(gl.TRIANGLES,0,room.num);
  if(onlyStatic)return;
  if(eva&&importedArm){
    gl.uniform4f(program.armPose,pose[12],pose[13],pose[14],pose[8]);
@@ -288,7 +308,7 @@ function bakeBackdrop(bind,w,h,eva,heading,pitch){
 function render(alpha) {
  if(!frame)return;
  const fraction=nativeQuality||stillFrames>14?1:renderLoad;
- const scale=nativeQuality?Math.min(devicePixelRatio,1.65,Math.sqrt(2750000/(canvas.clientWidth*canvas.clientHeight))):Math.min(devicePixelRatio,1.55,Math.sqrt(1100000/(canvas.clientWidth*canvas.clientHeight)))*fraction;
+ const scale=nativeQuality?Math.min(devicePixelRatio,1.65,Math.sqrt(2750000/(canvas.clientWidth*canvas.clientHeight))):Math.min(devicePixelRatio,1.55,Math.sqrt((software?1100000:2100000)/(canvas.clientWidth*canvas.clientHeight)))*fraction;
  const w=Math.max(1,Math.round(canvas.clientWidth*scale)), h=Math.max(1,Math.round(canvas.clientHeight*scale));
  if(w!==canvas.width || h!==canvas.height){canvas.width=w;canvas.height=h;}
  gl.viewport(0,0,w,h);
@@ -366,17 +386,19 @@ function animate(t){
  if(!last)last=t;
  const period=t-last;
  remainder+=Math.min(period/1000,.20);last=t;
- if(!nativeQuality&&active&&frame&&frame[15]===1&&period>0){
+ if(active&&frame&&frame[15]===1&&period>0){
    if(!balanced){
      // Common software implementations report ANGLE / SwiftShader or llvmpipe.
      // Seed their moving resolution lower; normal GPUs start at full budget.
      const debug=gl.getExtension("WEBGL_debug_renderer_info");
      const name=debug?String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL)):"";
-     if(/swiftshader|llvmpipe|software/i.test(name))renderLoad=.65;
+     software=/swiftshader|llvmpipe|software/i.test(name);
+     if(software)renderLoad=.65;
      balanced=true;
    }
    // Adapt only during movement/camera updates, not while the renderer is idle.
-   if(Math.abs(frame[5])+Math.abs(frame[6])+Math.abs(frame[7])>.025||frame[9]===1||frame[9]===3||dx||dy){
+   if(nativeQuality){stillFrames=0;}
+   else if(Math.abs(frame[5])+Math.abs(frame[6])+Math.abs(frame[7])>.025||frame[9]===1||frame[9]===3||dx||dy){
      stillFrames=0;
      if(period>90){slowFrames+=4;fastFrames=0;}else if(period>28){slowFrames++;fastFrames=0;}else if(period<19){fastFrames++;slowFrames=Math.max(0,slowFrames-1);}
      if(slowFrames>=7){renderLoad=Math.max(.45,renderLoad*.79);slowFrames=0;}
@@ -415,6 +437,15 @@ window.addEventListener("blur",clear);
 document.addEventListener("visibilitychange",()=>{if(document.hidden)clear();});
 window.addEventListener("keydown",e=>{if(active&&bits[e.code] && !e.altKey && !e.ctrlKey && !e.metaKey){e.preventDefault();held.add(e.code);}});
 window.addEventListener("keyup",e=>held.delete(e.code));
+const quality=$("render-quality");
+quality.value=nativeQuality?"full":"auto";
+quality.addEventListener("change",()=>{
+ nativeQuality=quality.value==="full";
+ const url=new URL(location.href);
+ if(nativeQuality)url.searchParams.set("quality","full");else url.searchParams.delete("quality");
+ history.replaceState(null,"",url);
+ worldVersion++;
+});
 $("action").onclick=()=>{pulse=true;};
 function enter(which){
  clear();previous=null;engine.select_deck(which);engine.tick(0,0,0,0);
