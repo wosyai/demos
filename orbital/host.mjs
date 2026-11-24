@@ -46,12 +46,19 @@ vec3 lightClip(vec3 p){
              dot(q,vec3(-.4378,.7920,-.4262))/6.4,
             -dot(q,sunDir)/14.);
 }
+vec3 lightClose(vec3 p){
+ vec3 q=p-vec3(-.12,-.13,-3.19);
+ return vec3(dot(q,vec3(.6976,0.,-.7165))/2.66,
+             dot(q,vec3(-.4378,.7920,-.4262))/2.18,
+            -dot(q,sunDir)/14.);
+}
 `;
 const depthVS=`#version 300 es
 layout(location=0) in vec3 pos;
 ${sun}
 ${skinVertex}
-void main(){gl_Position=vec4(lightClip(assetPoint(pos)),1.);}
+uniform int localShadow;
+void main(){vec3 a=assetPoint(pos);gl_Position=vec4(localShadow==1?lightClose(a):lightClip(a),1.);}
 `;
 const depthFS=`#version 300 es
 precision mediump float;
@@ -60,10 +67,12 @@ void main(){}
 const exteriorMaterial=`
 uniform int eva;
 uniform highp sampler2DShadow sunMap;
+uniform highp sampler2DShadow closeMap;
+uniform vec2 closeTexel;
 uniform float renderFraction;
 uniform sampler2D surfaceTile;
 ${sun}
-float shadowAt(vec3 p,vec3 n){
+float farShadow(vec3 p,vec3 n){
  vec3 u=lightClip(p+n*.012)*.5+.5;
  if(any(greaterThan(u,vec3(1.)))||any(lessThan(u,vec3(0.))))return 1.;
  float shade=texture(sunMap,vec3(u.xy,u.z-.00112));
@@ -73,29 +82,45 @@ float shadowAt(vec3 p,vec3 n){
  }
  return shade;
 }
+float shadowAt(vec3 p,vec3 n){
+ float incline=1.-clamp(dot(n,sunDir),0.,1.);
+ vec3 u=lightClose(p+n*(.0034+.0039*incline))*.5+.5;
+ vec2 edge1=min(u.xy,1.-u.xy);
+ float edge=min(edge1.x,edge1.y);
+ if(edge<.015||u.z<0.||u.z>1.)return farShadow(p,n);
+ float depth=u.z-(.00017+.00027*incline);
+ float shade=texture(closeMap,vec3(u.xy,depth))*.32;
+ shade+=.17*texture(closeMap,vec3(u.xy+closeTexel*vec2(1.62,.73),depth));
+ shade+=.17*texture(closeMap,vec3(u.xy+closeTexel*vec2(-1.62,-.73),depth));
+ shade+=.17*texture(closeMap,vec3(u.xy+closeTexel*vec2(-.63,1.54),depth));
+ shade+=.17*texture(closeMap,vec3(u.xy+closeTexel*vec2(.63,-1.54),depth));
+ if(edge>=.063)return shade;
+ return mix(farShadow(p,n),shade,smoothstep(.015,.063,edge));
+}
 vec3 sunColor(vec3 n){
  bool steel=material.y>.56 && material.y<.69;
  bool emitter=material.y>.8;
  bool foil=material.y>.165 && material.y<.188 && surface.r>.52 && abs(n.x)>.86 && world.x<-1.3;
+ bool suit=dot(fittedNormal,fittedNormal)>.25;
  bool armor=material.y>.705 && material.y<.735;
  bool solar=surface.b>2.*surface.r && material.y>.4 && material.y<.52;
  vec3 lamp=vec3(1.00,.91,.78);
- vec3 viewDir=normalize(eye-world);
- float shadow=shadowAt(world,n);
  float direct=max(dot(n,sunDir),0.);
- vec3 halfV=normalize(sunDir+viewDir);
- float spec=pow(max(dot(n,halfV),0.),steel?72.:24.);
+ float shadow=direct>0. ? shadowAt(world,n):0.;
+ float spec=shadow>0. ? pow(max(dot(n,normalize(sunDir+normalize(eye-world))),0.),steel?66.:28.):0.;
  float metal=steel?.45:solar?.18:.075;
  vec3 wall=abs(n);
  vec2 tex=wall.x>max(wall.y,wall.z)?world.zy:wall.y>wall.z?world.xz:world.xy;
- vec3 sheet=texture(surfaceTile,tex*vec2(.56,.82)).rgb;
+ vec2 grain=steel?vec2(world.x*.76,(world.y*.85+world.z*.43)*1.95):suit?tex*vec2(3.2,4.1):tex*vec2(.89,1.12);
+ vec3 sheet=texture(surfaceTile,grain).rgb;
  vec3 col=surface*(.84+.26*sheet.r);
- if(steel) col=surface*(.91+.16*sheet.b);
- if(armor){col*=.92+.14*sheet.g;spec+=.14*direct*sheet.r;}
+ if(steel) col=surface*(.85+.24*sheet.b);
+ if(suit) col=surface*(.88+.19*sheet.r+.07*sheet.g);
+ if(armor){col*=.89+.22*sheet.g;spec+=.15*direct*sheet.r;}
  if(foil){
     vec2 uv=vec2(world.z*.88,world.y*1.16);
     vec2 lines=abs(fract(uv)-.5)*2.;
-    float seam=smoothstep(.88,.984,max(lines.x,lines.y));
+    float seam=smoothstep(.89-max(fwidth(uv.x),fwidth(uv.y)),.98,max(lines.x,lines.y));
     col*=.91+.22*sheet.g-.17*seam;
     spec+=.13*sheet.g*direct;
  }
@@ -107,6 +132,10 @@ vec3 sunColor(vec3 n){
     col=mix(col*(.78+sheet.r*.40),vec3(.42,.33,.21),thin*.89);
  }
  vec3 ambient=mix(vec3(.09,.12,.18),vec3(.23,.39,.51),max(0.,-n.y)*.75+max(0.,n.x)*.19);
+ if(steel){
+   float skyReflect=smoothstep(-.5,.6,n.y);
+   ambient+=mix(vec3(.06,.125,.20),vec3(.026,.028,.022),skyReflect)*(.40+.60*sheet.b);
+ }
  vec3 energy=col*(ambient+lamp*direct*shadow*1.44)+metal*spec*shadow*lamp;
  if(emitter) energy+=col*.53;
  return pow(max(vec3(0.),energy/(energy*.48+vec3(.85))),vec3(.79));
@@ -224,15 +253,17 @@ function program(a,b) {
  }
  gl.linkProgram(p);
  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(p));
- return {p, eye:gl.getUniformLocation(p,"eye"), basis:gl.getUniformLocation(p,"basis"), optics:gl.getUniformLocation(p,"optics"), roll:gl.getUniformLocation(p,"roll"), eva:gl.getUniformLocation(p,"eva"), photo:gl.getUniformLocation(p,"photo"), earth:gl.getUniformLocation(p,"earthMap"), backdrop:gl.getUniformLocation(p,"backdrop"), sunMap:gl.getUniformLocation(p,"sunMap"),armPose:gl.getUniformLocation(p,"armPose"), renderFraction:gl.getUniformLocation(p,"renderFraction"),surfaceTile:gl.getUniformLocation(p,"surfaceTile")};
+ return {p, eye:gl.getUniformLocation(p,"eye"), basis:gl.getUniformLocation(p,"basis"), optics:gl.getUniformLocation(p,"optics"), roll:gl.getUniformLocation(p,"roll"), eva:gl.getUniformLocation(p,"eva"), photo:gl.getUniformLocation(p,"photo"), earth:gl.getUniformLocation(p,"earthMap"), backdrop:gl.getUniformLocation(p,"backdrop"), sunMap:gl.getUniformLocation(p,"sunMap"),armPose:gl.getUniformLocation(p,"armPose"), renderFraction:gl.getUniformLocation(p,"renderFraction"),surfaceTile:gl.getUniformLocation(p,"surfaceTile"), localShadow:gl.getUniformLocation(p,"localShadow"), closeMap:gl.getUniformLocation(p,"closeMap"),closeTexel:gl.getUniformLocation(p,"closeTexel")};
 }
-const shadowSize=matchMedia("(pointer:coarse)").matches ? 1024 : 1536;
+const coarseShadow=matchMedia("(pointer:coarse)").matches;
+const shadowSize=coarseShadow?1024:1536;
+const closeSize=coarseShadow?1536:2048;
 let shadowDirty=true;
 let renderLoad=1, slowFrames=0, fastFrames=0, stillFrames=0;
 let balanced=false, software=false;
 let previous=null;
 let worldVersion=0,renderVersion=-1,renderYaw=NaN,renderPitch=NaN,renderW=0,renderH=0,renderX=NaN,renderY=NaN,renderZ=NaN,renderGrip=NaN;
-let scene,space,skyCopy,depth,shadowFbo,shadowTexture,earthTexture,surfaceTexture,earthReady=0,engine,active=false, frame=null, grabbed=null, dx=0, dy=0, last=0, remainder=0, pulse=false;
+let scene,space,skyCopy,depth,shadowFbo,shadowTexture,closeFbo,closeTexture,earthTexture,surfaceTexture,earthReady=0,engine,active=false, frame=null, grabbed=null, dx=0, dy=0, last=0, remainder=0, pulse=false;
 const held=new Set(),touch=new Map();
 const bits={KeyA:1,ArrowLeft:1,KeyD:2,ArrowRight:2,KeyW:4,ArrowUp:4,KeyS:8,ArrowDown:8,Space:16,KeyC:32,KeyE:64,ShiftLeft:128,ShiftRight:128};
 function batch() {
@@ -318,11 +349,15 @@ function render(alpha) {
  renderVersion=worldVersion;renderYaw=heading;renderPitch=pitch;renderW=w;renderH=h;renderX=x;renderY=y;renderZ=z;renderGrip=pose[8];
  const eva=frame[15]===1;
  if(eva&&shadowDirty){
-   shadowDirty=false;gl.bindFramebuffer(gl.FRAMEBUFFER,shadowFbo);
-   gl.viewport(0,0,shadowSize,shadowSize);gl.enable(gl.DEPTH_TEST);
-   gl.clear(gl.DEPTH_BUFFER_BIT);gl.useProgram(depth.p);
-   gl.enable(gl.POLYGON_OFFSET_FILL);gl.polygonOffset(1.25,1.8);
-   meshes(depth,eva,pose,true);
+   shadowDirty=false;
+   gl.enable(gl.DEPTH_TEST);gl.useProgram(depth.p);
+   for(const [target,dims,detail] of [[shadowFbo,shadowSize,0],[closeFbo,closeSize,1]]){
+     gl.bindFramebuffer(gl.FRAMEBUFFER,target);
+     gl.viewport(0,0,dims,dims);
+     gl.clear(gl.DEPTH_BUFFER_BIT);gl.uniform1i(depth.localShadow,detail);
+     gl.enable(gl.POLYGON_OFFSET_FILL);gl.polygonOffset(detail?1.05:1.25,detail?1.1:1.8);
+     meshes(depth,eva,pose,true);
+   }
    gl.disable(gl.POLYGON_OFFSET_FILL);gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,w,h);
  }
  function bind(o){
@@ -342,6 +377,8 @@ function render(alpha) {
  gl.enable(gl.DEPTH_TEST);bind(scene);
  gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,shadowTexture);gl.uniform1i(scene.sunMap,2);
  gl.activeTexture(gl.TEXTURE4);gl.bindTexture(gl.TEXTURE_2D,surfaceTexture);gl.uniform1i(scene.surfaceTile,4);
+ gl.activeTexture(gl.TEXTURE5);gl.bindTexture(gl.TEXTURE_2D,closeTexture);gl.uniform1i(scene.closeMap,5);
+ gl.uniform2f(scene.closeTexel,1/closeSize,1/closeSize);
  meshes(scene,eva,pose);
  // The background lies behind the mesh; early depth rejects the sky and globe
  // across the station rather than shading those pixels and drawing over them.
@@ -515,17 +552,22 @@ try{
  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,skyTexture,0);
  if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw Error("Orbit backdrop buffer is unavailable.");
  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
- shadowTexture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,shadowTexture);
- gl.texStorage2D(gl.TEXTURE_2D,1,gl.DEPTH_COMPONENT24,shadowSize,shadowSize);
- for(const mode of [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER])gl.texParameteri(gl.TEXTURE_2D,mode,gl.LINEAR);
- for(const axis of [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T])gl.texParameteri(gl.TEXTURE_2D,axis,gl.CLAMP_TO_EDGE);
- gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_COMPARE_MODE,gl.COMPARE_REF_TO_TEXTURE);
- gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_COMPARE_FUNC,gl.LEQUAL);
- shadowFbo=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,shadowFbo);
- gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.TEXTURE_2D,shadowTexture,0);
- gl.drawBuffers([gl.NONE]);gl.readBuffer(gl.NONE);
- if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw Error("Sun shadow buffer is unavailable.");
- gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+ function shadowBuffer(size){
+   const tex=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,tex);
+   gl.texStorage2D(gl.TEXTURE_2D,1,gl.DEPTH_COMPONENT24,size,size);
+   for(const mode of [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER])gl.texParameteri(gl.TEXTURE_2D,mode,gl.LINEAR);
+   for(const axis of [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T])gl.texParameteri(gl.TEXTURE_2D,axis,gl.CLAMP_TO_EDGE);
+   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_COMPARE_MODE,gl.COMPARE_REF_TO_TEXTURE);
+   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_COMPARE_FUNC,gl.LEQUAL);
+   const fbo=gl.createFramebuffer();gl.bindFramebuffer(gl.FRAMEBUFFER,fbo);
+   gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.DEPTH_ATTACHMENT,gl.TEXTURE_2D,tex,0);
+   gl.drawBuffers([gl.NONE]);gl.readBuffer(gl.NONE);
+   if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw Error("Sun shadow buffer is unavailable.");
+   gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+   return [tex,fbo];
+ }
+ [shadowTexture,shadowFbo]=shadowBuffer(shadowSize);
+ [closeTexture,closeFbo]=shadowBuffer(closeSize);
  surfaceTexture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,surfaceTexture);
  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,1,1,0,gl.RGB,gl.UNSIGNED_BYTE,new Uint8Array([132,132,132]));
  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
@@ -535,7 +577,7 @@ try{
   gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,gl.RGB,gl.UNSIGNED_BYTE,surfaces);
   gl.generateMipmap(gl.TEXTURE_2D);gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);worldVersion++;
  };
- surfaces.src=new URL("./surfaces.png?v=1",import.meta.url).href;
+ surfaces.src=new URL("./surfaces.png?v=2",import.meta.url).href;
  earthTexture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,earthTexture);
  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,1,1,0,gl.RGB,gl.UNSIGNED_BYTE,new Uint8Array([0,0,0]));
  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
@@ -547,7 +589,7 @@ try{
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);earthReady=1;worldVersion++;
  };
  earth.src=new URL("./earth.jpg",import.meta.url).href;
- const response=await fetch(new URL("./orbital.wasm?v=6",import.meta.url));
+ const response=await fetch(new URL("./orbital.wasm?v=7",import.meta.url));
  if(!response.ok)throw Error("The station engine could not be downloaded.");
  const {instance}=await WebAssembly.instantiate(await response.arrayBuffer(),{
   orbital:{
