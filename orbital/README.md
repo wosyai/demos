@@ -86,7 +86,6 @@ timestamps. rAF measures the browser's update opportunities, not screen
 presentation or encoder cadence. Keep the tab foregrounded and note the
 device/browser and observed issue separately, only if you choose to share it.
 
-The exterior keeps separate cached sun depth for the station and the working
-area around the handrails. Higher contact-shadow precision, mipmapped surface
-textures and smoother round hardware preserve detail without a screen-wide
-blur or a lower canvas resolution.
+The exterior uses one higher-precision cached sun depth map with
+slope-aware contact bias. Mipmapped surfaces and smoother round hardware
+preserve detail without a screen-wide blur or lower canvas resolution.
