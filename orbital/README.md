@@ -86,6 +86,7 @@ timestamps. rAF measures the browser's update opportunities, not screen
 presentation or encoder cadence. Keep the tab foregrounded and note the
 device/browser and observed issue separately, only if you choose to share it.
 
-The exterior uses one higher-precision cached sun depth map with
-slope-aware contact bias. Mipmapped surfaces and smoother round hardware
-preserve detail without a screen-wide blur or lower canvas resolution.
+The exterior preserves the existing cached shadow budget in Auto and on
+software graphics. Full detail on a detected hardware renderer enables
+higher-precision contact shadows. Mipmapped surfaces and smoother round
+hardware are available at both settings without a screen-wide blur.
