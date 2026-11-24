@@ -400,8 +400,8 @@ function hud(){
   tip=["Drift along the hull to the silver rail.","Follow the blue collars along the scaffold.","Reach the gold brace ahead of the cargo." ][leg];
   if(locked){
    const cue=frame[18];
-   if(align===3){objective="Cargo aligned";tip="Green sync light. Cargo is ready for transfer.";action="Cargo ready";}
-   else if(align===2){objective="Alignment handle secured";tip="Seat the handle to set the transfer guides.";action="Set alignment";}
+   if(align===3){objective="Cargo aligned";tip="Cargo seated in its shoes. Green sync confirms transfer readiness.";action="Cargo ready";}
+   else if(align===2){objective="Alignment handle secured";tip="Set the handle to lower the load into its shoes.";action="Set alignment";}
    else if(mode===3){objective="Clearing the lock";tip="Drift right to the blue alignment console.";action="Clearing lock";}
    else if(align===1&&mode===1){objective="Taking the alignment handle";tip="Holding station.";action="Gripping handle";}
    else if(align===1&&near){objective="Alignment handle in reach";tip="Your drift is stopped. Grip the blue handle.";action="Grip handle";}
@@ -625,7 +625,7 @@ try{
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);earthReady=1;worldVersion++;
  };
  earth.src=new URL("./earth.jpg",import.meta.url).href;
- const response=await fetch(new URL("./orbital.wasm?v=9",import.meta.url));
+ const response=await fetch(new URL("./orbital.wasm?v=10",import.meta.url));
  if(!response.ok)throw Error("The station engine could not be downloaded.");
  const {instance}=await WebAssembly.instantiate(await response.arrayBuffer(),{
   orbital:{

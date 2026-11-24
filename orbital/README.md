@@ -44,8 +44,10 @@ into its upper detent, and the recessed status light turns green. Then choose
 **Drift to align** and move right to the blue console. Hold the brake until
 you are stationary, then aim at the blue light. The reticle indicates which
 way to turn if you stop while looking off-axis. Grip the console handle and
-seat it to set the transfer guides. The status lights on the console and
-robotic wrist turn green. Flying through the capture zone or
+seat it to lower the cartridge into the transfer cradle. The truss guides
+carry the load while the connected wrist stays fitted, and the console and
+wrist lights turn green. The two mechanical poses are currently fixed
+endpoints, not a timed animation. Flying through the capture zone or
 braking while looking elsewhere does not arm the grip. There is no timer.
 Choose **Indoor training** to repeat the original single-rail exercise. Menu and reset remain
 available in both exercises. These are bounded training spaces, not a model of orbital
