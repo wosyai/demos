@@ -70,3 +70,23 @@ engine.select_deck(0);step(0,0,0,0);
 assert.deepEqual(capture(),initial,'indoor mode round-trips without exterior state');
 assert.equal(roomLoads,3,'each transition publishes just its own static scene');
 console.log('EVA WASM: geometry, distinct grip, eligibility and release, exterior bulkhead, reset and indoor round-trip passed.');
+
+const raw=readFileSync(new URL('./apollo-arm.bin',import.meta.url));
+assert.equal(raw.toString('ascii',0,4),'KAV2');
+const vn=raw.readUInt32LE(4), ni=raw.readUInt32LE(8);
+assert.ok(vn<=40000 && ni%3===0 && ni>=45000 && ni<=90000 && raw.length<600000);
+assert.equal(raw.length,12+vn*24+ni*2);
+const phase=(i,o)=>raw.readInt16LE(12+i*24+o)/10000;
+let wrapped=0,intersect=0,fittedNormals=0;
+for(let i=0;i<vn;i++){
+ const y=phase(i,8),z=phase(i,10);
+ const radius=Math.hypot(y,z);
+ if(z<-.023 && radius>.082 && radius<.119)wrapped++;
+ if(radius<.08)intersect++;
+ if(Math.hypot(...[16,17,18].map(c=>raw.readInt8(12+i*24+c)))>110)fittedNormals++;
+}
+assert.ok(wrapped>0.08*vn && intersect<0.02*vn,'baked fingers wrap the rear rail without material collision');
+assert.ok(fittedNormals>vn*.98,'export carries authored normals');
+for(let i=0;i<ni;i++)assert.ok(raw.readUInt16LE(12+vn*24+i*2)<vn);
+assert.deepEqual(evaContact.slice(12,15).map(x=>x.toFixed(2)),['-0.43','-0.57','-1.59']);
+console.log('Apollo forearm: two indexed authored poses, contact fit, normals, index bounds and compact asset passed.');

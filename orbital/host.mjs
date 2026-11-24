@@ -13,18 +13,29 @@ vec3 toEye(vec3 p) {
  return vec3(roll.x*a.x+roll.y*a.y,-roll.y*a.x+roll.x*a.y,a.z);
 }
 `;
+const skinVertex=`
+layout(location=3) in vec3 posClosed;
+uniform vec4 armPose;
+vec3 assetPoint(vec3 p){return armPose.w<0.?p:mix(p,posClosed,armPose.w)*.0001+armPose.xyz;}
+`;
 const vs = `#version 300 es
 layout(location=0) in vec3 pos;
 layout(location=1) in vec3 color;
 layout(location=2) in vec2 mat;
+layout(location=4) in vec3 openNormal;
+layout(location=5) in vec3 closedNormal;
 out vec3 surface;
 out vec3 world;
 out vec2 material;
+out vec3 fittedNormal;
 ${view}
+${skinVertex}
 void main(){
- vec3 p=toEye(pos);
+ vec3 actual=assetPoint(pos);
+ vec3 p=toEye(actual);
  gl_Position=vec4(p.x*optics.x,p.y*optics.y,-1.002*p.z-.10,-p.z);
- surface=color;world=pos;material=mat;
+ surface=color;world=actual;material=armPose.w<0.?mat:vec2(.92,.181);
+ fittedNormal=armPose.w<0.?vec3(0.):mix(openNormal,closedNormal,armPose.w);
 }`;
 const sun = `
 const vec3 sunDir=vec3(.5674,.6110,.5521);
@@ -38,7 +49,8 @@ vec3 lightClip(vec3 p){
 const depthVS=`#version 300 es
 layout(location=0) in vec3 pos;
 ${sun}
-void main(){gl_Position=vec4(lightClip(pos),1.);}
+${skinVertex}
+void main(){gl_Position=vec4(lightClip(assetPoint(pos)),1.);}
 `;
 const depthFS=`#version 300 es
 precision mediump float;
@@ -104,12 +116,14 @@ precision highp float;
 in vec3 surface;
 in vec3 world;
 in vec2 material;
+in vec3 fittedNormal;
 out vec4 pix;
 ${view}
 ${exteriorMaterial}
 void main(){
  vec3 normal=normalize(cross(dFdx(world),dFdy(world)));
  if(eva==1){
+   if(dot(fittedNormal,fittedNormal)>.2)normal=normalize(fittedNormal);
    if(dot(normal,eye-world)<0.)normal=-normal;
    if(material.y>.56 && material.y<.69 && abs(world.y+.57)<.095 && abs(world.z+1.59)<.095)
       normal=normalize(vec3(0.,world.y+.57,world.z+1.59));
@@ -198,7 +212,7 @@ function program(a,b) {
  }
  gl.linkProgram(p);
  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(p));
- return {p, eye:gl.getUniformLocation(p,"eye"), basis:gl.getUniformLocation(p,"basis"), optics:gl.getUniformLocation(p,"optics"), roll:gl.getUniformLocation(p,"roll"), eva:gl.getUniformLocation(p,"eva"), photo:gl.getUniformLocation(p,"photo"), earth:gl.getUniformLocation(p,"earthMap"), sunMap:gl.getUniformLocation(p,"sunMap")};
+ return {p, eye:gl.getUniformLocation(p,"eye"), basis:gl.getUniformLocation(p,"basis"), optics:gl.getUniformLocation(p,"optics"), roll:gl.getUniformLocation(p,"roll"), eva:gl.getUniformLocation(p,"eva"), photo:gl.getUniformLocation(p,"photo"), earth:gl.getUniformLocation(p,"earthMap"), sunMap:gl.getUniformLocation(p,"sunMap"),armPose:gl.getUniformLocation(p,"armPose")};
 }
 const shadowSize=matchMedia("(pointer:coarse)").matches ? 1024 : 1536;
 let shadowDirty=true;
@@ -216,6 +230,30 @@ function update(b,ptr,n,usage){
  if(n<0 || n%24!==0 || n/8>16384)throw Error("Invalid orbital mesh");
  shadowDirty=true;worldVersion++;gl.bindBuffer(gl.ARRAY_BUFFER,b.buffer);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(engine.memory.buffer,ptr,n),usage);b.num=n/8;
 }
+let importedArm=null;
+function uploadArm(bytes){
+ const dv=new DataView(bytes);const n=dv.getUint32(4,true),elements=dv.getUint32(8,true);
+ if(dv.getUint32(0,true)!==0x3256414b || n>40000 || elements>90000 || elements%3 || 12+n*24+elements*2!==bytes.byteLength)throw Error("Unexpected Apollo arm mesh");
+ const vao=gl.createVertexArray();gl.bindVertexArray(vao);
+ const verts=gl.createBuffer();gl.bindBuffer(gl.ARRAY_BUFFER,verts);
+ gl.bufferData(gl.ARRAY_BUFFER,new Uint8Array(bytes,12,n*24),gl.STATIC_DRAW);
+ for(const [location,type,offset,normalized] of [[0,gl.SHORT,0,false],[3,gl.SHORT,6,false],[1,gl.UNSIGNED_BYTE,12,true],[4,gl.BYTE,16,true],[5,gl.BYTE,19,true]]){
+   gl.enableVertexAttribArray(location);gl.vertexAttribPointer(location,3,type,normalized,24,offset);
+ }
+ const indices=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,indices);
+ gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint8Array(bytes,12+n*24),gl.STATIC_DRAW);
+ importedArm={vao,elements};worldVersion++;shadowDirty=true;
+}
+function meshes(program,eva){
+ gl.uniform4f(program.armPose,0,0,0,-1);
+ gl.bindVertexArray(room.vao);gl.drawArrays(gl.TRIANGLES,0,room.num);
+ if(eva&&importedArm){
+   gl.uniform4f(program.armPose,frame[12],frame[13],frame[14],frame[8]);
+   gl.bindVertexArray(importedArm.vao);gl.drawElements(gl.TRIANGLES,importedArm.elements,gl.UNSIGNED_SHORT,0);
+ }else{
+   gl.bindVertexArray(hand.vao);gl.drawArrays(gl.TRIANGLES,0,hand.num);
+ }
+}
 function render() {
  if(!frame)return;
  const scale=Math.min(devicePixelRatio,1.65,Math.sqrt(1600000/(canvas.clientWidth*canvas.clientHeight)));
@@ -231,7 +269,7 @@ function render() {
    gl.viewport(0,0,shadowSize,shadowSize);gl.enable(gl.DEPTH_TEST);
    gl.clear(gl.DEPTH_BUFFER_BIT);gl.useProgram(depth.p);
    gl.enable(gl.POLYGON_OFFSET_FILL);gl.polygonOffset(1.25,1.8);
-   for(const b of [room,hand]){gl.bindVertexArray(b.vao);gl.drawArrays(gl.TRIANGLES,0,b.num);}
+   meshes(depth,eva);
    gl.disable(gl.POLYGON_OFFSET_FILL);gl.bindFramebuffer(gl.FRAMEBUFFER,null);gl.viewport(0,0,w,h);
  }
  function bind(o){
@@ -247,7 +285,7 @@ function render() {
  gl.bindVertexArray(null);gl.drawArrays(gl.TRIANGLES,0,3);
  gl.enable(gl.DEPTH_TEST);bind(scene);
  gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,shadowTexture);gl.uniform1i(scene.sunMap,2);
- for(const b of [room,hand]){gl.bindVertexArray(b.vao);gl.drawArrays(gl.TRIANGLES,0,b.num);}
+ meshes(scene,eva);
 }
 function hud(){
  const [, , , , , , , , ,mode,near,mark]=frame;
@@ -332,7 +370,7 @@ try{
   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);earthReady=1;worldVersion++;
  };
  earth.src=new URL("./earth.jpg",import.meta.url).href;
- const response=await fetch(new URL("./orbital.wasm?v=2",import.meta.url));
+ const response=await fetch(new URL("./orbital.wasm?v=3",import.meta.url));
  if(!response.ok)throw Error("The station engine could not be downloaded.");
  const {instance}=await WebAssembly.instantiate(await response.arrayBuffer(),{
   orbital:{
@@ -342,5 +380,9 @@ try{
   wasi_snapshot_preview1:{proc_exit(n){throw Error("Station exited: "+n);}}
  });
  engine=instance.exports;engine._start();engine.select_deck(1);engine.tick(0,0,0,0);
+ fetch(new URL("./apollo-arm.bin?v=2",import.meta.url)).then(async r=>{
+  if(!r.ok)throw Error("Apollo arm unavailable.");
+  uploadArm(await r.arrayBuffer());
+ }).catch(e=>console.warn(e.message));
  $("start").disabled=false;$("training").disabled=false;requestAnimationFrame(animate);
 }catch(e){$("error").textContent=String(e.message);console.error(e);}

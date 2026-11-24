@@ -185,11 +185,23 @@ unit(i32) radiator = fn(n){
         radiator(n+1);
     };
 };
+unit(i32) station_fasteners = fn(k) {
+    if(k<10){
+        f32 index=core.sint_to_float<f32>(k);
+        f32 zz=-10.82+index*1.19;
+        paint(0.25,0.28,0.26,0.105);
+        sweep(-1.492,-1.14,zz,-1.462,-1.14,zz,0.044,0.039,0,0,8);
+        sweep(-1.492,0.74,zz,-1.462,0.74,zz,0.044,0.039,0,0,8);
+        paint(0.45,0.42,0.32,0.095);
+        box(-1.456,0.70,zz+0.13,0.021,0.16,0.11);
+        station_fasteners(k+1);
+    };
+};
 unit() eva_room = fn {
     count=0;
     paint(0.32,0.36,0.40,0.11);
     box(-3.33,-1.83,-13.0,1.74,3.70,14.8);
-    blanket(0);
+    blanket(0);station_fasteners(0);
     paint(0.51,0.53,0.52,0.11);
     box(-1.48,-1.74,-12.2,0.24,0.18,13.9);
     box(-1.56,1.02,-12.2,0.16,0.24,13.9);
@@ -208,6 +220,11 @@ unit() eva_room = fn {
     sweep(-1.86,0.20,-6.82,-0.93,0.20,-6.82,1.20,1.07,0,0,16);
     paint(0.06,0.08,0.10,0.09);
     box(-1.05,-0.61,-7.17,0.24,1.52,0.11);
+    paint(0.53,0.52,0.49,0.105);
+    sweep(-1.68,-0.85,-5.5,-0.30,-0.85,-5.5,0.09,0.09,0,0,12);
+    paint(0.72,0.54,0.27,0.17);
+    sweep(-1.59,-0.88,-5.38,-0.28,-0.88,-5.38,0.03,0.03,0,0,10);
+    sweep(-1.59,-0.82,-5.38,-0.27,-0.82,-5.38,0.025,0.025,0,0,10);
     paint(0.70,0.70,0.65,0.08);
     box(-6.2,1.63,-9.97,9.6,0.125,0.31);
     box(-6.2,2.69,-9.97,9.6,0.125,0.31);
@@ -419,7 +436,9 @@ unit(f32,i32,f32,f32) tick = fn(dt,keys,look_x,look_y) {
         grip=limit(grip-d*3.5,0.0,1.0);
         if(grip==0.0){mode=0;};
     };
-    state[0]=pilot_x; state[1]=pilot_y; state[2]=pilot_z; state[3]=yaw; state[4]=pitch; state[5]=vx; state[6]=vy; state[7]=vz; state[8]=grip; state[9]=core.sint_to_float<f32>(mode); state[10]=reach; state[11]=core.sint_to_float<f32>(mark); state[12]=0.745; state[13]=-0.21; state[14]=-1.94; state[15]=core.sint_to_float<f32>(deck);
+    state[0]=pilot_x; state[1]=pilot_y; state[2]=pilot_z; state[3]=yaw; state[4]=pitch; state[5]=vx; state[6]=vy; state[7]=vz; state[8]=grip; state[9]=core.sint_to_float<f32>(mode); state[10]=reach; state[11]=core.sint_to_float<f32>(mark); state[12]=if(deck==0){0.745}else{pilot_x-0.46+(-0.43-pilot_x+0.46)*grip};
+    state[13]=if(deck==0){-0.21}else{pilot_y-0.51+(-0.57-pilot_y+0.51)*grip};
+    state[14]=if(deck==0){-1.94}else{pilot_z-0.80+(-1.59-pilot_z+0.80)*grip}; state[15]=core.sint_to_float<f32>(deck);
     if(mesh_x!=pilot_x || mesh_y!=pilot_y || mesh_z!=pilot_z || mesh_grip!=grip || mesh_deck!=deck){
         if(deck==0){glove();}else{eva_glove();};
         mesh_x=pilot_x;mesh_y=pilot_y;mesh_z=pilot_z;mesh_grip=grip;mesh_deck=deck;

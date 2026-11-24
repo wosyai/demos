@@ -47,3 +47,7 @@ poses, WebGL sun shadows, and a spherical Earth backdrop. Earth imagery:
 [NASA Goddard Space Flight Center, Blue Marble 2015](https://svs.gsfc.nasa.gov/30763/),
 Amy Moran and Jesse Allen, from Suomi NPP VIIRS. The image is presented in a
 fictional orbit and does not imply NASA endorsement.
+
+The exterior first-person arm uses a compact, indexed export of the Apollo
+astronaut asset. The authored Wosy arm is the loading/fallback mesh.
+[Art sources, credit, and two-pose export](art/README.md).
