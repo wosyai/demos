@@ -46,6 +46,16 @@ engine.select_deck(1);step(0,0,0,0);
 const evaStart=capture(),evaRoom=room;
 assert.equal(state[15],1);assert.ok(evaRoom.length>=5400*8 && evaRoom.length<=16100*8 && evaRoom.length%24===0);
 assert.ok(evaRoom.every(Number.isFinite) && hand.every(Number.isFinite));
+const unpackStationNormal=(code)=>{
+ const n=-code-1,u=Math.floor(n/255)/127-1,v=(n%255)/127-1,z=1-Math.abs(u)-Math.abs(v);
+ return z<0?[(1-Math.abs(v))*Math.sign(u+1e-6),(1-Math.abs(u))*Math.sign(v+1e-6),z]:[u,v,z];
+};
+const encodedStationNormals=evaRoom.filter((_,i)=>i%8===6).filter(x=>x<0);
+assert.ok(encodedStationNormals.length>1100&&encodedStationNormals.length<evaRoom.length/16,'only curved station skins carry authored normals');
+assert.ok(encodedStationNormals.every(n=>Number.isInteger(n)&&n>=-65025));
+const railNormal=evaRoom.findIndex((x,i)=>i%8===0&&Math.abs(x+1.55)<.001&&Math.abs(evaRoom[i+1]+.57)<.001&&Math.abs(evaRoom[i+2]+3.343)<.001);
+assert.ok(railNormal>=0 && unpackStationNormal(evaRoom[railNormal+6])[2]>.98,'rail skin normal follows the outside cylinder; caps remain separate');
+
 assert.notDeepEqual(initial.slice(20),evaStart.slice(20),'EVA uses a separately authored pressurized glove');
 assert.ok(evaRoom.some((x,i)=>i%8===4 && x<.14),'station includes the dark solar cell trim');
 step(64);assert.equal(state[9],0);step();

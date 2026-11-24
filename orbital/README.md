@@ -59,7 +59,8 @@ manipulator braces its end fitting. The latch has its own mount; the close-up
 grip and seating endpoints have not moved.
 
 The visual design uses authored Wosy geometry, separate open and closed glove
-poses, WebGL sun shadows, and a spherical Earth backdrop. Earth imagery:
+poses, six material finishes in a texture array, WebGL sun shadows, and a
+spherical photographic Earth backdrop. Earth imagery:
 [NASA Goddard Space Flight Center, Blue Marble 2015](https://svs.gsfc.nasa.gov/30763/),
 Amy Moran and Jesse Allen, from Suomi NPP VIIRS. The image is presented in a
 fictional orbit and does not imply NASA endorsement.

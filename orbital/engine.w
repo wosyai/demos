@@ -146,13 +146,56 @@ unit(f32,f32,f32,f32,f32,f32,f32,f32,i32,i32,i32) sweep = fn(px,py,pz,ax,ay,az,r
         sweep(px,py,pz,ax,ay,az,r0,r1,ring_axis,n+1,t);
     };
 };
+f32(f32) abs_cell = fn(a){if(a<0.0){-a}else{a}};
+f32(f32) neg_sign = fn(a){if(a<0.0){-1.0}else{1.0}};
+f32(f32,f32,f32) packed_normal = fn(x,y,z){
+    f32 sum=abs_cell(x)+abs_cell(y)+abs_cell(z);
+    f32 u=x/sum;f32 v=y/sum;
+    if(z<0.0){
+        f32 old=u;u=(1.0-abs_cell(v))*neg_sign(u);v=(1.0-abs_cell(old))*neg_sign(v);
+    };
+    i32 xi=core.float_to_sint_trunc<i32>(u*127.0+127.5);
+    i32 yi=core.float_to_sint_trunc<i32>(v*127.0+127.5);
+    -core.sint_to_float<f32>(1+xi*255+yi)
+};
+unit(f32,f32,f32,f32,f32,f32,f32,i32) shell_point = fn(cx,cy,cz,radius,sn,cs,axial,ring_axis){
+    if(ring_axis==0){pt(cx,cy+sn*radius,cz+cs*radius,packed_normal(axial,sn,cs));}
+    else{pt(cx+cs*radius,cy+sn*radius,cz,packed_normal(cs,sn,axial));};
+};
+unit(f32,f32,f32,f32,f32,f32,f32,f32,i32,i32,i32) round_shell = fn(px,py,pz,ax,ay,az,r0,r1,ring_axis,n,t){
+    if(n<t){
+        f32 a=6.28318531*core.sint_to_float<f32>(n)/core.sint_to_float<f32>(t);
+        f32 ang_b=6.28318531*core.sint_to_float<f32>(n+1)/core.sint_to_float<f32>(t);
+        if(a>4.6){a=a-6.28318531;};if(ang_b>4.6){ang_b=ang_b-6.28318531;};
+        f32 sa=wave(a);f32 ca=cw(a);f32 sb=wave(ang_b);f32 cb=cw(ang_b);
+        f32 run=if(ring_axis==0){ax-px}else{az-pz};
+        f32 tilt=(r0-r1)/run;
+        shell_point(px,py,pz,r0,sa,ca,tilt,ring_axis);shell_point(px,py,pz,r0,sb,cb,tilt,ring_axis);
+        shell_point(ax,ay,az,r1,sb,cb,tilt,ring_axis);shell_point(px,py,pz,r0,sa,ca,tilt,ring_axis);
+        shell_point(ax,ay,az,r1,sb,cb,tilt,ring_axis);shell_point(ax,ay,az,r1,sa,ca,tilt,ring_axis);
+        round_shell(px,py,pz,ax,ay,az,r0,r1,ring_axis,n+1,t);
+    };
+};
+unit(f32,f32,f32) quilt_panel = fn(y,z,billow){
+    f32 skin=-1.500; f32 loft=skin+billow;
+    f32 h=y+0.81; f32 far=z+2.42;
+    f32 lip0=z+0.09;f32 lip1=far-0.11;
+    f32 low=y+0.074; f32 high=h-0.083;
+    f32 line=y+0.33; f32 ridge=loft-0.010;
+    quad(skin,y,z,skin,y,far,loft,low,lip1,loft,low,lip0,0.86);
+    quad(skin,y,z,loft,low,lip0,loft,high,lip0,skin,h,z,0.78);
+    quad(skin,y,far,skin,h,far,loft,high,lip1,loft,low,lip1,0.81);
+    quad(skin,h,z,loft,high,lip0,loft,high,lip1,skin,h,far,0.86);
+    quad(loft,low,lip0,loft,low,lip1,ridge,line+0.018,lip1,ridge,line,lip0,0.86);
+    quad(ridge,line,lip0,ridge,line+0.018,lip1,loft,high,lip1,loft,high,lip0,0.93);
+};
 unit(i32) blanket = fn(n) {
     if(n<10) {
         f32 yy=core.sint_to_float<f32>(n%3)*0.86-1.62;
         f32 zz=-11.6+core.sint_to_float<f32>(n/3)*2.48;
-        f32 tint=0.69+0.025*core.sint_to_float<f32>(n%4);
+        f32 tint=0.77+0.027*core.sint_to_float<f32>(n%4);
         paint(tint,tint*0.97,tint*0.90,0.18);
-        box(-1.58,yy,zz,0.08,0.81,2.42);
+        quilt_panel(yy,zz,0.031+core.sint_to_float<f32>(n%3)*0.014);
         paint(0.24,0.26,0.27,0.04);
         quad(-1.475,yy,zz,-1.475,yy+0.81,zz,-1.475,yy+0.81,zz+0.042,-1.475,yy,zz+0.042,0.69);
         quad(-1.475,yy+0.76,zz+0.04,-1.475,yy+0.794,zz+0.04,-1.475,yy+0.794,zz+2.38,-1.475,yy+0.76,zz+2.38,0.69);
@@ -205,12 +248,12 @@ unit(i32) traversal_rail = fn(leg) {
     f32 z=rail_depth(leg);
     paint(0.53,0.54,0.54,0.62);
     if(leg==2){
-        sweep(-1.55,-0.57,z,-0.55,-0.57,z,0.087,0.087,0,0,36);
-        sweep(0.30,-0.57,z,0.95,-0.57,z,0.087,0.087,0,0,24);
-    }else{sweep(-1.55,-0.57,z,1.13,-0.57,z,0.087,0.087,0,0,48);};
+        round_shell(-1.55,-0.57,z,-0.55,-0.57,z,0.087,0.087,0,0,36);
+        round_shell(0.30,-0.57,z,0.95,-0.57,z,0.087,0.087,0,0,24);
+    }else{round_shell(-1.55,-0.57,z,1.13,-0.57,z,0.087,0.087,0,0,48);};
     if(leg==0){paint(0.95,0.51,0.125,0.30);}else{if(leg==1){paint(0.39,0.73,0.82,0.30);}else{paint(0.96,0.67,0.25,0.30);};};
-    sweep(-1.41,-0.57,z,-1.19,-0.57,z,0.12,0.12,0,0,32);
-    sweep(0.67,-0.57,z,0.84,-0.57,z,0.115,0.115,0,0,32);
+    round_shell(-1.41,-0.57,z,-1.19,-0.57,z,0.12,0.12,0,0,32);
+    round_shell(0.67,-0.57,z,0.84,-0.57,z,0.115,0.115,0,0,32);
     paint(0.19,0.21,0.22,0.08);
     box(-1.41,-0.88,z-0.03,0.22,0.25,0.061);
     box(0.70,-1.10,z-0.03,0.17,0.48,0.061);
@@ -222,13 +265,13 @@ unit(f32,f32,f32) shoulder_bolt = fn(x,y,z){
 };
 unit(f32,f32,f32,f32) pin_z = fn(x,y,z,radius){
     paint(0.22,0.34,0.40,0.29);
-    sweep(x,y,z-0.14,x,y,z,radius*0.91,radius,1,0,20);
+    round_shell(x,y,z-0.14,x,y,z,radius*0.91,radius,1,0,20);
 
     paint(0.74,0.74,0.72,0.62);
-    sweep(x,y,z,x,y,z+0.050,radius,radius*0.89,1,0,20);
+    round_shell(x,y,z,x,y,z+0.050,radius,radius*0.89,1,0,20);
     sweep(x,y,z+0.050,x,y,z+0.050,radius*0.89,0.0,1,0,20);
     paint(0.15,0.20,0.23,0.40);
-    sweep(x,y,z+0.054,x,y,z+0.075,radius*0.62,radius*0.54,1,0,12);
+    round_shell(x,y,z+0.054,x,y,z+0.075,radius*0.62,radius*0.54,1,0,12);
     sweep(x,y,z+0.075,x,y,z+0.075,radius*0.54,0.0,1,0,12);
     paint(0.71,0.43,0.13,0.63);
     sweep(x,y,z+0.080,x,y,z+0.097,radius*0.30,radius*0.26,1,0,10);
@@ -255,32 +298,42 @@ unit(i32) boom_bays = fn(k){
 f32() load_drop = fn {if(alignment_stage==3){-0.40}else{0.0}};
 unit(f32,f32) cargo_band = fn(x,dy){
     paint(0.24,0.28,0.33,0.62);
-    sweep(x,0.53+dy,-7.13,x+0.11,0.53+dy,-7.13,0.523,0.523,0,0,16);
+    round_shell(x,0.53+dy,-7.13,x+0.11,0.53+dy,-7.13,0.523,0.523,0,0,16);
     paint(0.75,0.55,0.24,0.34);
-    sweep(x+0.007,0.53+dy,-7.13,x+0.024,0.53+dy,-7.13,0.535,0.535,0,0,26);
-    sweep(x+0.088,0.53+dy,-7.13,x+0.107,0.53+dy,-7.13,0.535,0.535,0,0,26);
+    round_shell(x+0.007,0.53+dy,-7.13,x+0.024,0.53+dy,-7.13,0.535,0.535,0,0,26);
+    round_shell(x+0.088,0.53+dy,-7.13,x+0.107,0.53+dy,-7.13,0.535,0.535,0,0,26);
     paint(0.23,0.26,0.25,0.67);
     box(x-0.02,0.92+dy,-6.89,0.15,0.18,0.19);
+};
+unit(f32,f32,f32,f32) cargo_mark = fn(x,y,w,h){
+    quad(x,y,-6.546,x+w,y,-6.546,x+w,y+h,-6.546,x,y+h,-6.546,0.93);
 };
 unit() suspended_cargo = fn {
     boom_bays(0);
     f32 dy=load_drop();
     paint(0.69,0.68,0.63,0.71);
-    sweep(0.20,0.53+dy,-7.13,0.47,0.53+dy,-7.13,0.27,0.49,0,0,36);
-    sweep(0.47,0.53+dy,-7.13,1.95,0.53+dy,-7.13,0.49,0.49,0,0,36);
-    sweep(1.95,0.53+dy,-7.13,2.17,0.53+dy,-7.13,0.49,0.30,0,0,36);
+    round_shell(0.20,0.53+dy,-7.13,0.47,0.53+dy,-7.13,0.27,0.49,0,0,36);
+    round_shell(0.47,0.53+dy,-7.13,1.95,0.53+dy,-7.13,0.49,0.49,0,0,36);
+    round_shell(1.95,0.53+dy,-7.13,2.17,0.53+dy,-7.13,0.49,0.30,0,0,36);
     sweep(2.17,0.53+dy,-7.13,2.17,0.53+dy,-7.13,0.30,0.0,0,0,36);
     sweep(0.20,0.53+dy,-7.13,0.20,0.53+dy,-7.13,0.27,0.0,0,0,36);
     cargo_band(0.54,dy);cargo_band(1.73,dy);
     paint(0.76,0.50,0.24,0.34);
-    sweep(0.20,0.53+dy,-7.13,0.32,0.53+dy,-7.13,0.289,0.38,0,0,28);
+    round_shell(0.20,0.53+dy,-7.13,0.32,0.53+dy,-7.13,0.289,0.38,0,0,28);
     paint(0.41,0.47,0.50,0.67);
     box(0.83,0.30+dy,-6.668,0.76,0.42,0.099);
     paint(0.82,0.81,0.71,0.62);
     box(0.89,0.35+dy,-6.566,0.61,0.32,0.017);
     paint(0.18,0.24,0.24,0.66);
-    box(0.97,0.44+dy,-6.547,0.37,0.047,0.018);
-    box(0.97,0.54+dy,-6.547,0.43,0.023,0.019);
+    cargo_mark(0.97,0.443+dy,0.015,0.144);
+    cargo_mark(0.985,0.443+dy,0.095,0.015);
+    cargo_mark(0.985,0.572+dy,0.095,0.015);
+    cargo_mark(1.111,0.443+dy,0.015,0.144);
+    cargo_mark(1.126,0.443+dy,0.073,0.015);
+    cargo_mark(1.126,0.572+dy,0.073,0.015);
+    cargo_mark(1.199,0.443+dy,0.015,0.144);
+    cargo_mark(1.242,0.572+dy,0.116,0.015);
+    quad(1.276,0.443+dy,-6.546,1.294,0.443+dy,-6.546,1.358,0.573+dy,-6.546,1.340,0.573+dy,-6.546,0.93);
     paint(0.88,0.56,0.26,0.76);
     box(1.41,0.42+dy,-6.545,0.043,0.15,0.019);
     shoulder_bolt(0.918,0.378+dy,-6.542);shoulder_bolt(1.475,0.620+dy,-6.542);
@@ -394,10 +447,10 @@ unit() cargo_fixture = fn {
     sweep(-0.465,pin,-4.973,-0.438,pin,z,0.052,0.048,1,0,12);
     sweep(0.165,pin,-4.973,0.166,pin,z,0.052,0.050,1,0,12);
     paint(0.91,0.55,0.16,0.30);
-    sweep(-0.442,pin,z,-0.304,pin,z,0.075,0.074,0,0,30);
-    sweep(0.052,pin,z,0.166,pin,z,0.074,0.075,0,0,30);
+    round_shell(-0.442,pin,z,-0.304,pin,z,0.075,0.074,0,0,30);
+    round_shell(0.052,pin,z,0.166,pin,z,0.074,0.075,0,0,30);
     paint(0.51,0.54,0.54,0.62);
-    sweep(-0.307,pin,z,0.055,pin,z,0.087,0.087,0,0,36);
+    round_shell(-0.307,pin,z,0.055,pin,z,0.087,0.087,0,0,36);
     paint(0.10,0.13,0.14,0.09);
     box(-0.37,-0.288,-5.105,0.46,0.075,0.035);
     if(cargo_locked){paint(0.29,0.96,0.55,0.99);}else{paint(1.0,0.59,0.16,0.99);};
@@ -413,9 +466,9 @@ unit() alignment_console = fn {
     box(1.45,-0.68,-4.95,0.085,0.43,0.12);
     box(1.00,-0.32,-4.97,0.53,0.12,0.10);
     paint(0.58,0.65,0.66,0.62);
-    sweep(0.90,pin,-4.81,1.48,pin,-4.81,0.087,0.087,0,0,26);
+    round_shell(0.90,pin,-4.81,1.48,pin,-4.81,0.087,0.087,0,0,26);
     paint(0.29,0.71,0.72,0.61);
-    sweep(1.36,pin,-4.81,1.47,pin,-4.81,0.106,0.106,0,0,20);
+    round_shell(1.36,pin,-4.81,1.47,pin,-4.81,0.106,0.106,0,0,20);
     if(alignment_stage==3){paint(0.27,0.98,0.60,0.99);}else{paint(0.34,0.80,1.0,0.99);};
     box(1.11,-0.274,-4.864,0.29,0.030,0.010);
 };
