@@ -62,3 +62,7 @@ GPUs while keeping still scenes sharp.
 The planet is reprojected into a reusable backdrop only when the view direction
 or render size changes. Single-sample WebGL keeps slow-device movement from
 paying a multisample resolve every frame.
+
+Add `?quality=full` to the page URL to prefer native framebuffer resolution
+in live play. This disables adaptive resolution; on software graphics it can
+drop frames, so the default continues to adapt to the graphics device.
