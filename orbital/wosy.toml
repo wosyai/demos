@@ -51,6 +51,9 @@ input_pointer = "input_pointer"
 input_stick = "input_stick"
 input_status = "input_status"
 input_advance = "input_advance"
+quality_adapt = "quality_adapt"
+quality_plan = "quality_plan"
+quality_shadow = "quality_shadow"
 
 [targets.app.profiles.dev]
 main_artifact = "main"

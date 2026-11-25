@@ -5,6 +5,7 @@ projection = namespace orbital "presentation.w";
 globe = namespace orbital "globe-tiles.w";
 entry_view = namespace orbital "entry-presentation.w";
 control = namespace orbital "controls.w";
+render_policy = namespace orbital "render-budget.w";
 host = extern wasm "orbital" {
     unsafe unit(*?u8,i32) scenery;
     unsafe unit(*?u8,i32) hull;
@@ -1971,4 +1972,14 @@ f64(f64,i32) input_advance=fn(period,active){
     };
     projection.clamp(pending_time*60.0,0.0,1.0)
 };
+unit(f64,i32,i32,i32) quality_adapt=fn(period,live,full,software){
+    if(live==1&&state[15]==1.0){
+        f64 vx0=core.float_extend<f64>(state[5]);f64 vy0=core.float_extend<f64>(state[6]);f64 vz0=core.float_extend<f64>(state[7]);
+        bool moving=projection.abs(vx0)+projection.abs(vy0)+projection.abs(vz0)>0.025||
+            state[9]==1.0||state[9]==3.0||(control.status()&4)!=0||presentation[53]==1.0;
+        render_policy.adapt(period,full==1,software==1,moving);
+    };
+};
+unit(f64,f64,f64,i32,i32) quality_plan=fn(w,h,dpr,full,software){render_policy.plan(w,h,dpr,full==1,software==1);};
+i32(i32,i32,i32,i32) quality_shadow=fn(full,hardware,coarse,maximum){render_policy.shadow(full==1,hardware==1,coarse==1,maximum)};
 %%end

@@ -465,9 +465,8 @@ const coarseShadow=matchMedia("(pointer:coarse)").matches;
 const maxShadow=gl?gl.getParameter(gl.MAX_TEXTURE_SIZE):1024;
 let shadowSize=0, detailed=false;
 function configureShadow(){
- const chooseDetail=nativeQuality&&detailHardware;
- const standard=coarseShadow?1024:1536;
- const desired=Math.min(maxShadow,chooseDetail?(coarseShadow?2048:3584):standard);
+ const profile=engine.quality_shadow(Number(nativeQuality),Number(detailHardware),Number(coarseShadow),maxShadow);
+ const desired=profile>>>1,chooseDetail=Boolean(profile&1);
  if(shadowSize===desired&&detailed===chooseDetail)return;
  const oldTexture=shadowTexture, oldFbo=shadowFbo;
  [shadowTexture,shadowFbo]=shadowBuffer(desired);
@@ -476,9 +475,7 @@ function configureShadow(){
  shadowSize=desired;detailed=chooseDetail;shadowDirty=true;worldVersion++;
 }
 let shadowDirty=true;
-let renderLoad=1, slowFrames=0, fastFrames=0, stillFrames=0;
-let balanced=false, software=rasterSoftware;
-let visual=null,tileRow=null,entryMesh=null,entrySample=null;
+let visual=null,tileRow=null,entryMesh=null,entrySample=null,renderPlan=null;
 let worldVersion=0,renderVersion=-1,renderYaw=NaN,renderPitch=NaN,renderW=0,renderH=0,renderX=NaN,renderY=NaN,renderZ=NaN,renderGrip=NaN,renderRoute=-1,renderReach=-1;
 let scene,space,skyCopy,depth,shadowFbo,shadowTexture,earthTexture,starTexture,moonTexture,surfaceTexture,earthReady=0,starReady=0,moonReady=0,engine,active=false, frame=null, grabbed=null, last=0;
 let apolloBody=null,apolloModelActive=false;
@@ -620,9 +617,8 @@ function bakeBackdrop(bind,w,h,eva,heading,pitch,roll,orbit){
 let glow=null;
 function render(alpha) {
  if(!frame)return;
- const fraction=nativeQuality||stillFrames>14?1:renderLoad;
- const scale=nativeQuality?Math.min(devicePixelRatio,1.65,Math.sqrt(2750000/(canvas.clientWidth*canvas.clientHeight))):Math.min(devicePixelRatio,1.55,Math.sqrt((software?1100000:2100000)/(canvas.clientWidth*canvas.clientHeight)))*fraction;
- const w=Math.max(1,Math.round(canvas.clientWidth*scale)), h=Math.max(1,Math.round(canvas.clientHeight*scale));
+ engine.quality_plan(canvas.clientWidth,canvas.clientHeight,devicePixelRatio,Number(nativeQuality),Number(rasterSoftware));
+ const [w,h,fraction]=renderPlan;
  if(w!==canvas.width || h!==canvas.height){canvas.width=w;canvas.height=h;}
  gl.viewport(0,0,w,h);
  // Synchronous Wosy presentation packet; GL consumes the borrowed row before its next write.
@@ -789,22 +785,7 @@ function animate(t){
  if(!last)last=t;
  const period=t-last;
  last=t;
- if(active&&frame&&frame[15]===1&&period>0){
-   if(!balanced){
-     // Common software implementations report ANGLE / SwiftShader or llvmpipe.
-     // Seed their moving resolution lower; normal GPUs start at full budget.
-     if(software)renderLoad=.65;
-     balanced=true;
-   }
-   // Adapt only during movement/camera updates, not while the renderer is idle.
-   if(nativeQuality){stillFrames=0;}
-   else if(Math.abs(frame[5])+Math.abs(frame[6])+Math.abs(frame[7])>.025||frame[9]===1||frame[9]===3||(engine.input_status()&4)!==0||visual?.[53]===1){
-     stillFrames=0;
-     if(period>90){slowFrames+=4;fastFrames=0;}else if(period>28){slowFrames++;fastFrames=0;}else if(period<19){fastFrames++;slowFrames=Math.max(0,slowFrames-1);}
-     if(slowFrames>=7){renderLoad=Math.max(.45,renderLoad*.79);slowFrames=0;}
-     if(fastFrames>=120){renderLoad=Math.min(1,renderLoad*1.08);fastFrames=0;}
-   }else{stillFrames++;}
- }
+ engine.quality_adapt(period,Number(active),Number(nativeQuality),Number(rasterSoftware));
  const alpha=engine.input_advance(period,Number(active));
  if(engine.input_status()&8)hud();
  render(alpha);
@@ -855,7 +836,7 @@ quality.addEventListener("change",()=>{
  const url=new URL(location.href);
  if(nativeQuality)url.searchParams.set("quality","full");else url.searchParams.delete("quality");
  history.replaceState(null,"",url);
- if(gl)configureShadow();
+ if(engine)configureShadow();
  worldVersion++;
 });
 const actionButton=$("action");
@@ -916,7 +897,6 @@ try{
  gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,skyTexture,0);
  if(gl.checkFramebufferStatus(gl.FRAMEBUFFER)!==gl.FRAMEBUFFER_COMPLETE)throw Error("Orbit backdrop buffer is unavailable.");
  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
- configureShadow();
  surfaceTexture=gl.createTexture();
  gl.activeTexture(gl.TEXTURE4);gl.bindTexture(gl.TEXTURE_2D_ARRAY,surfaceTexture);
  gl.texImage3D(gl.TEXTURE_2D_ARRAY,0,gl.RGBA8,1,1,11,0,gl.RGBA,gl.UNSIGNED_BYTE,
@@ -1039,12 +1019,13 @@ try{
   };
   moon.src=new URL("./moon-relief.webp?v=1",import.meta.url).href;
  }
- const response=await fetch(new URL("./orbital.wasm?v=50",import.meta.url));
+ const response=await fetch(new URL("./orbital.wasm?v=51",import.meta.url));
  if(!response.ok)throw Error("The station engine could not be downloaded.");
  const {instance}=await WebAssembly.instantiate(await response.arrayBuffer(),{
   orbital:{
    hull(p,n){update(hull,p,n,gl.STATIC_DRAW);},
    scenery:updateRoom,hands(p,n){update(hand,p,n,gl.DYNAMIC_DRAW);},
+   render_budget(p,n){if(n!==3)throw Error("Unexpected renderer plan");renderPlan=new Float64Array(engine.memory.buffer,p,n);},
    earth_tiles(p,n){if(n!==19)throw Error("Unexpected globe tile projection");tileRow=new Float64Array(engine.memory.buffer,p,n);},
    entry_shell(p,n){if(n!==6144)throw Error("Unexpected entry shell");entryMesh=new Float32Array(engine.memory.buffer,p,n);},
    entry_visual(p,n){if(n!==14)throw Error("Unexpected entry projection");entrySample=new Float64Array(engine.memory.buffer,p,n);},
@@ -1053,7 +1034,7 @@ try{
   },
   wasi_snapshot_preview1:{proc_exit(n){throw Error("Station exited: "+n);}}
  });
- engine=instance.exports;engine._start();engine.select_deck(1);engine.tick(0,0,0,0);
+ engine=instance.exports;configureShadow();engine._start();engine.select_deck(1);engine.tick(0,0,0,0);
  const loadBakedArm=()=>fetch(new URL("./apollo-arm.bin?v=4",import.meta.url)).then(async r=>{
   if(!r.ok)throw Error("Apollo arm unavailable.");
   uploadArm(await r.arrayBuffer());
