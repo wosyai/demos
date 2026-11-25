@@ -4,6 +4,7 @@ hud = namespace orbital "hud.w";
 projection = namespace orbital "presentation.w";
 globe = namespace orbital "globe-tiles.w";
 entry_view = namespace orbital "entry-presentation.w";
+control = namespace orbital "controls.w";
 host = extern wasm "orbital" {
     unsafe unit(*?u8,i32) scenery;
     unsafe unit(*?u8,i32) hull;
@@ -1936,5 +1937,38 @@ unit(f64) reentry_visual=fn(clock){
         entry_view.frame(presentation[0]-presentation[38],presentation[1]-presentation[39],presentation[2]-presentation[40],
             core.float_extend<f64>(flow_x),core.float_extend<f64>(flow_y),core.float_extend<f64>(flow_z),presentation[58],phase);
     };
+};
+f64 pending_time=0.0;
+bool did_tick=false;
+unit(i32,i32) input_key=fn(slot,held){control.key(slot,held);};
+unit(i32) input_action=fn(command){control.action(command);};
+unit() input_clear=fn{control.clear();};
+unit(i32) input_release=fn(zone){control.release(zone);};
+unit(f64,f64,i32) input_pointer=fn(dx,dy,touch){control.pointer(dx,dy,touch);};
+unit(i32,f64,f64,f64) input_stick=fn(zone,width,x,y){control.stick(zone,width,x,y);};
+i32() input_status=fn{control.status()|(if(did_tick){8}else{0})};
+unit(i32) advance_fixed=fn(mask){
+    if(pending_time>=0.016666666666666666){
+        i32 pulse=control.contact_pulse();
+        set_rotator(core.float_trunc<f32>(control.axis(2)),core.float_trunc<f32>(control.axis(3)));
+        tick(0.016666666666666666,mask|pulse,core.float_trunc<f32>(control.axis(4)),core.float_trunc<f32>(control.axis(5)));
+        control.consume_pointer();
+        pending_time=pending_time-0.016666666666666666;
+        advance_fixed(mask);
+    };
+};
+f64(f64,i32) input_advance=fn(period,active){
+    f64 elapsed=period/1000.0;
+    pending_time=pending_time+(if(elapsed<0.20){elapsed}else{0.20});
+    did_tick=false;
+    if(active==0){pending_time=0.0;}else{
+        if(pending_time>=0.016666666666666666){
+            did_tick=true;
+            i32 mask=control.command_mask();
+            set_thrust(core.float_trunc<f32>(control.axis(0)),core.float_trunc<f32>(control.axis(1)));
+            advance_fixed(mask);
+        };
+    };
+    projection.clamp(pending_time*60.0,0.0,1.0)
 };
 %%end

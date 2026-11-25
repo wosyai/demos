@@ -777,3 +777,19 @@ assert.equal(earthTiles[0],10430/(845*globeView[45]),'update the sample footprin
 assert.deepEqual(earthTiles.slice(1),geographicPlan);
 assert.equal(engine.globe_tiles(380,845),1,'the next eligible view sample regenerates the plan');
 console.log('Wosy globe detail: camera geography, exact tile slots and scores, and scan cadence passed.');
+
+engine.select_deck(1);engine.tick(0,0,0,0);
+engine.input_clear();assert.equal(engine.input_advance(100,0),0);
+engine.input_key(0,1);engine.input_key(1,1);engine.input_key(0,0);
+engine.input_advance(17,1);
+assert.ok(state[23]<-.1,'one key alias remains active when another is released');
+engine.input_key(1,0);engine.input_advance(17,1);
+assert.equal(Math.hypot(...state.slice(23,26)),0,'releasing the second alias removes drive');
+engine.input_stick(0,390,0,-20);engine.input_stick(1,390,32,-16);
+engine.input_advance(17,1);
+assert.ok(state[34]>0&&state[35]>0&&state[36]>0&&Math.hypot(...state.slice(23,26))>.1);
+assert.equal(engine.input_status()&13,13,'look used, active gesture and a fixed tick may coexist');
+engine.input_clear();engine.input_advance(17,1);
+assert.deepEqual([...state.slice(33,37)],[0,0,0,0]);
+assert.equal(engine.input_status()&1,1,'input clearing does not erase the learned HUD interaction');
+console.log('Wosy input: fixed pacing, keyboard alias lifetime, dual touch, release, and learned HUD state passed.');

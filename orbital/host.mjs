@@ -480,17 +480,16 @@ let renderLoad=1, slowFrames=0, fastFrames=0, stillFrames=0;
 let balanced=false, software=rasterSoftware;
 let visual=null,tileRow=null,entryMesh=null,entrySample=null;
 let worldVersion=0,renderVersion=-1,renderYaw=NaN,renderPitch=NaN,renderW=0,renderH=0,renderX=NaN,renderY=NaN,renderZ=NaN,renderGrip=NaN,renderRoute=-1,renderReach=-1;
-let scene,space,skyCopy,depth,shadowFbo,shadowTexture,earthTexture,starTexture,moonTexture,surfaceTexture,earthReady=0,starReady=0,moonReady=0,engine,active=false, frame=null, grabbed=null, dx=0, dy=0, last=0, remainder=0, pulse=false, pulseDown=false;
-const held=new Set();
-let coast=false,apolloBody=null,apolloModelActive=false;
+let scene,space,skyCopy,depth,shadowFbo,shadowTexture,earthTexture,starTexture,moonTexture,surfaceTexture,earthReady=0,starReady=0,moonReady=0,engine,active=false, frame=null, grabbed=null, last=0;
+let apolloBody=null,apolloModelActive=false;
 let avatarMotion="",renderSkySpin=NaN;
 // Wosy frame: [0..4] eye/aim, [5..7] velocity, [8..20] mission/contact;
 // [21..22] body aim, [23..25] applied acceleration, [26] contact,
 // [27] pre-grip speed², [28..32] altitude/entry/time/fuel/scenario,
 // [33..36] translational and rotational controller commands, [37] simulated orbital seconds.
-const sticks={move:{id:null,x:0,y:0},look:{id:null,x:0,y:0}};
+const sticks={move:{id:null,zone:0},look:{id:null,zone:1}};
 let actionTouch=null,suppressTouchClick=false;
-const bits={KeyA:1,ArrowLeft:1,KeyD:2,ArrowRight:2,KeyW:4,ArrowUp:4,KeyS:8,ArrowDown:8,Space:16,KeyC:32,ShiftLeft:256,ShiftRight:256};
+const browserKeys=new Map(["KeyA","ArrowLeft","KeyD","ArrowRight","KeyW","ArrowUp","KeyS","ArrowDown","Space","KeyC","ShiftLeft","ShiftRight"].map((code,slot)=>[code,slot]));
 function batch() {
  const vao=gl.createVertexArray(), buffer=gl.createBuffer();
  gl.bindVertexArray(vao); gl.bindBuffer(gl.ARRAY_BUFFER,buffer);
@@ -691,7 +690,6 @@ function render(alpha) {
   glow(entrySample,visual.subarray(54,58),optics,roll);
  }
 }
-let touchLookSeen=false;
 function hud(){
  const [vx,vy,vz]=frame.slice(5,8);
  const [,,,heading,pitch]=frame;
@@ -700,11 +698,11 @@ function hud(){
  const speed=Math.hypot(vx,vy,vz);
  const eva=frame[15]===1, contact=frame[26]===1;
  const hudCode=engine.hud_code();
- const view=hudText(hudCode,frame[16],touchLookSeen);
+ const view=hudText(hudCode,frame[16],Boolean(engine.input_status()&1));
  const coastButton=$("coast");
  coastButton.hidden=!active||!view.coast;
- if(coastButton.hidden)coast=false;
- coastButton.setAttribute("aria-pressed",String(coast));
+ if(coastButton.hidden)engine.input_action(2);
+ coastButton.setAttribute("aria-pressed",String(Boolean(engine.input_status()&2)));
  const cameraButton=$("camera");
  cameraButton.hidden=!apolloBody||!eva;
  cameraButton.disabled=!active||cameraButton.hidden;
@@ -790,7 +788,7 @@ function animate(t){
  requestAnimationFrame(animate);
  if(!last)last=t;
  const period=t-last;
- remainder+=Math.min(period/1000,.20);last=t;
+ last=t;
  if(active&&frame&&frame[15]===1&&period>0){
    if(!balanced){
      // Common software implementations report ANGLE / SwiftShader or llvmpipe.
@@ -800,57 +798,36 @@ function animate(t){
    }
    // Adapt only during movement/camera updates, not while the renderer is idle.
    if(nativeQuality){stillFrames=0;}
-   else if(Math.abs(frame[5])+Math.abs(frame[6])+Math.abs(frame[7])>.025||frame[9]===1||frame[9]===3||dx||dy||sticks.look.x||sticks.look.y||visual?.[53]===1){
+   else if(Math.abs(frame[5])+Math.abs(frame[6])+Math.abs(frame[7])>.025||frame[9]===1||frame[9]===3||(engine.input_status()&4)!==0||visual?.[53]===1){
      stillFrames=0;
      if(period>90){slowFrames+=4;fastFrames=0;}else if(period>28){slowFrames++;fastFrames=0;}else if(period<19){fastFrames++;slowFrames=Math.max(0,slowFrames-1);}
      if(slowFrames>=7){renderLoad=Math.max(.45,renderLoad*.79);slowFrames=0;}
      if(fastFrames>=120){renderLoad=Math.min(1,renderLoad*1.08);fastFrames=0;}
    }else{stillFrames++;}
  }
- if(active && remainder>=1/60) {
-  let mask=0;for(const k of held)mask|=bits[k];
-  if((mask&63)||Math.hypot(sticks.move.x,sticks.move.y)>.01)coast=false;
-  if(coast)mask|=512;
-  let lookX=dx,lookY=dy;dx=0;dy=0;
-  engine.set_thrust(sticks.move.x,-sticks.move.y);
-  while(remainder>=1/60){
-   // Preserve a release tick between distinct taps, even at one render per tick.
-   const press=pulse&&!pulseDown;
-   engine.set_rotator(Math.max(-1,Math.min(1,lookX/.045+sticks.look.x)),Math.max(-1,Math.min(1,lookY/.045-sticks.look.y)));
-   engine.tick(1/60,mask|(press?64:0),lookX+sticks.look.x*.033,lookY-sticks.look.y*.027);
-   if(press)pulse=false;
-   pulseDown=press;lookX=0;lookY=0;remainder-=1/60;
-  }
-  hud();
- }else if(!active)remainder=0;
- render(Math.max(0,Math.min(1,remainder*60)));
+ const alpha=engine.input_advance(period,Number(active));
+ if(engine.input_status()&8)hud();
+ render(alpha);
  if(timing)timing(t);
 }
-function clear(){coast=false;held.clear();for(const stick of Object.values(sticks))releaseStick(stick);grabbed=null;actionTouch=null;dx=0;dy=0;pulse=false;pulseDown=false;}
+function clear(){engine?.input_clear();for(const stick of Object.values(sticks))stick.id=null;grabbed=null;actionTouch=null;}
 canvas.addEventListener("pointerdown",e=>{
  if(!active||grabbed!==null)return;grabbed={id:e.pointerId,x:e.clientX,y:e.clientY};canvas.setPointerCapture(e.pointerId);
 });
 canvas.addEventListener("pointermove",e=>{
  if(grabbed?.id!==e.pointerId)return;
- if(e.pointerType==="touch"&&(Math.abs(e.clientX-grabbed.x)+Math.abs(e.clientY-grabbed.y)>3))touchLookSeen=true;
- dx+=(e.clientX-grabbed.x)*.0033;dy-=(e.clientY-grabbed.y)*.0033;
+ engine.input_pointer(e.clientX-grabbed.x,e.clientY-grabbed.y,Number(e.pointerType==="touch"));
  grabbed={id:e.pointerId,x:e.clientX,y:e.clientY};
 });
 for(const event of ["pointerup","pointercancel","lostpointercapture"]){
  canvas.addEventListener(event,e=>{if(grabbed?.id===e.pointerId)grabbed=null;});
 }
 function releaseStick(stick){
- stick.id=null;stick.x=stick.y=0;
+ stick.id=null;engine.input_release(stick.zone);
 }
 for(const [name,stick] of Object.entries(sticks)){
  const node=stick.node=$(`${name}-stick`);
- const locate=e=>{
-  const radius=Math.max(32,Math.min(48,innerWidth*.105));
-  const x=(e.clientX-stick.startX)/radius,y=(e.clientY-stick.startY)/radius;
-  const len=Math.hypot(x,y), amount=Math.min(1,Math.max(0,(len-.10)/.90));
-  stick.x=len?x/len*amount:0;stick.y=len?y/len*amount:0;
-  if(name==="look"&&amount>.08)touchLookSeen=true;
- };
+ const locate=e=>engine.input_stick(stick.zone,innerWidth,e.clientX-stick.startX,e.clientY-stick.startY);
  node.addEventListener("pointerdown",e=>{
   if(!active||stick.id!==null||e.pointerType!=="touch")return;
   stick.id=e.pointerId;stick.startX=e.clientX;stick.startY=e.clientY;node.setPointerCapture(e.pointerId);
@@ -865,12 +842,12 @@ window.addEventListener("keydown",e=>{
  if(e.code==="KeyE"){
    e.preventDefault();
    // Like the action button, preserve a press until the next fixed tick.
-   if(!e.repeat)pulse=true;
+   if(!e.repeat)engine.input_action(0);
    return;
  }
- if(bits[e.code]){e.preventDefault();held.add(e.code);}
+ const slot=browserKeys.get(e.code);if(slot!==undefined){e.preventDefault();engine.input_key(slot,1);}
 });
-window.addEventListener("keyup",e=>held.delete(e.code));
+window.addEventListener("keyup",e=>{const slot=browserKeys.get(e.code);if(slot!==undefined)engine?.input_key(slot,0);});
 const quality=$("render-quality");
 quality.value=nativeQuality?"full":"auto";
 quality.addEventListener("change",()=>{
@@ -894,20 +871,20 @@ actionButton.addEventListener("pointerup",e=>{
  // Queue a bounded touch release itself, without double-firing a later click.
  const hit=actionButton.getBoundingClientRect();
  if(active&&!actionButton.disabled&&Math.hypot(e.clientX-start.x,e.clientY-start.y)<14&&
-    e.clientX>=hit.left&&e.clientX<=hit.right&&e.clientY>=hit.top&&e.clientY<=hit.bottom)pulse=true;
+    e.clientX>=hit.left&&e.clientX<=hit.right&&e.clientY>=hit.top&&e.clientY<=hit.bottom)engine.input_action(0);
 });
 for(const type of ["pointercancel","lostpointercapture"])actionButton.addEventListener(type,e=>{
  if(actionTouch?.id===e.pointerId)actionTouch=null;
 });
 actionButton.onclick=e=>{
- if(active&&!actionButton.disabled&&!(suppressTouchClick&&e.detail>0))pulse=true;
+ if(active&&!actionButton.disabled&&!(suppressTouchClick&&e.detail>0))engine.input_action(0);
 };
 function enter(which){
  clear();if(which===2)engine.select_reentry();else engine.select_deck(which);engine.tick(0,0,0,0);
  active=true;$("intro").hidden=true;hud();
 }
 $("camera").onclick=()=>{if(active&&apolloBody&&frame[15]===1){engine.camera_mode(1);worldVersion++;hud();}};
-$("coast").onclick=()=>{if(active&&!$("coast").hidden)coast=!coast;};
+$("coast").onclick=()=>{if(active&&!$("coast").hidden)engine.input_action(1);};
 $("reset").onclick=()=>{if(engine)enter(frame[32]===1?2:frame[15]);};
 $("menu").onclick=()=>{clear();active=false;$("intro").hidden=false;};
 $("start").onclick=()=>enter(1);
@@ -1062,7 +1039,7 @@ try{
   };
   moon.src=new URL("./moon-relief.webp?v=1",import.meta.url).href;
  }
- const response=await fetch(new URL("./orbital.wasm?v=49",import.meta.url));
+ const response=await fetch(new URL("./orbital.wasm?v=50",import.meta.url));
  if(!response.ok)throw Error("The station engine could not be downloaded.");
  const {instance}=await WebAssembly.instantiate(await response.arrayBuffer(),{
   orbital:{
