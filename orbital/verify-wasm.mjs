@@ -7,11 +7,11 @@ const path=process.argv[2] ?? new URL('./orbital.wasm',import.meta.url);
 const wasm=new WebAssembly.Module(readFileSync(path));
 const imports=WebAssembly.Module.imports(wasm);
 const actual=imports.map(({module,name,kind})=>`${module}.${name}:${kind}`).sort();
-const orbitalImports=['orbital.earth_tiles:function','orbital.entry_shell:function','orbital.entry_visual:function','orbital.frame:function','orbital.hands:function','orbital.hull:function','orbital.render_budget:function','orbital.scenery:function','orbital.visual:function'];
+const orbitalImports=['orbital.earth_tiles:function','orbital.entry_shell:function','orbital.entry_visual:function','orbital.frame:function','orbital.hands:function','orbital.hud_view:function','orbital.hull:function','orbital.render_budget:function','orbital.scenery:function','orbital.visual:function'];
 const procExit='wasi_snapshot_preview1.proc_exit:function';
 assert.deepEqual(actual,actual.includes(procExit)?[...orbitalImports,procExit]:orbitalImports,
  'expected the exact browser import contract (Orbital callbacks and optional WASI proc_exit)');
-let rendererPlan,entryMesh,entrySample,earthTiles,visual,hull,hullLoads=0,room,hand,state,engine,roomLoads=0,handLoads=0,roomSpan,stagedRoom;
+let hudView,rendererPlan,entryMesh,entrySample,earthTiles,visual,hull,hullLoads=0,room,hand,state,engine,roomLoads=0,handLoads=0,roomSpan,stagedRoom;
 const roomPatches=[];
 function read(p,n){assert.equal(p%4,0);return new Float32Array(engine.memory.buffer,p,n).slice();}
 engine=new WebAssembly.Instance(wasm,{orbital:{
@@ -37,6 +37,7 @@ engine=new WebAssembly.Instance(wasm,{orbital:{
     room=read(p,n);roomLoads++;
   }
  },hands(p,n){hand=read(p,n);handLoads++;},
+ hud_view(p,n){assert.equal(n,7);assert.equal(p%8,0);hudView=new Float64Array(engine.memory.buffer,p,n).slice();},
  render_budget(p,n){assert.equal(n,3);assert.equal(p%8,0);rendererPlan=new Float64Array(engine.memory.buffer,p,n).slice();},
  earth_tiles(p,n){assert.equal(n,19);assert.equal(p%8,0);earthTiles=new Float64Array(engine.memory.buffer,p,n).slice();},
  entry_shell(p,n){assert.equal(n,6144);entryMesh=read(p,n);},
@@ -56,7 +57,7 @@ function visualOf(alpha,aspect,hasAvatar=1){
  return visual;
 }
 const captureFrames=[];
-const hint=()=>hudText(engine.hud_code(),state[16],false);
+const hint=()=>{const code=engine.hud_view();assert.equal(code,engine.hud_code());return hudText(code,state[16],Boolean(hudView[5]),hudView[6]);};
 function hudIs(objective,interact,marker="+"){
  const view=hint();
  assert.equal(view.objective,objective);assert.equal(view.interact,interact);assert.equal(view.marker,marker);
@@ -807,3 +808,10 @@ assert.deepEqual([...rendererPlan],[657,370,.65*.79]);
 engine.quality_plan(1280,720,1,1,1);
 assert.deepEqual([...rendererPlan],[1280,720,1],'Full masks adaptive scaling without modifying the motion policy');
 console.log('Wosy rendering budget: capability-clamped shadows, software seed, motion degradation and Full mode passed.');
+
+const instrumentCode=engine.hud_view();
+assert.equal(instrumentCode,engine.hud_code());
+assert.ok(Math.abs(hudView[0]-Math.hypot(...state.slice(5,8)))<1e-10);
+assert.equal(hudView[5],0,'observed touch look survives later task copy projection');
+assert.equal(hudView[4],0);
+console.log('Wosy HUD projection: telemetry vector, learned hint, terminal signal and copy intent passed.');

@@ -12,6 +12,7 @@ host = extern wasm "orbital" {
     unsafe unit(*?u8,i32) hands;
     unsafe unit(*?u8,i32) frame;
     unsafe unit(*?u8,i32) visual;
+    unsafe unit(*?u8,i32) hud_view;
 };
 f32[8] vertex = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
 f32[8][16] page0 = [vertex, vertex, vertex, vertex, vertex, vertex, vertex, vertex, vertex, vertex, vertex, vertex, vertex, vertex, vertex, vertex];
@@ -1982,4 +1983,24 @@ unit(f64,i32,i32,i32) quality_adapt=fn(period,live,full,software){
 };
 unit(f64,f64,f64,i32,i32) quality_plan=fn(w,h,dpr,full,software){render_policy.plan(w,h,dpr,full==1,software==1);};
 i32(i32,i32,i32,i32) quality_shadow=fn(full,hardware,coarse,maximum){render_policy.shadow(full==1,hardware==1,coarse==1,maximum)};
+f64[7] hud_view_row=[0.0,0.0,0.0,0.0,0.0,0.0,0.0];
+i32() hud_view=fn{
+    f64 hx=core.float_extend<f64>(state[3]);f64 hp=core.float_extend<f64>(state[4]);
+    f64 vx1=core.float_extend<f64>(state[5]);f64 vy1=core.float_extend<f64>(state[6]);f64 vz1=core.float_extend<f64>(state[7]);
+    f64 sy=projection.sin(hx);f64 cy=projection.cos(hx);f64 sp=projection.sin(hp);f64 cp=projection.cos(hp);
+    f64 along=(vx1*sy-vz1*cy)*cp+vy1*sp;
+    f64 side=vx1*cy+vz1*sy;
+    f64 speed=projection.norm(vx1,vy1,vz1);
+    bool entry=state[32]==1.0&&state[29]==1.0;
+    i32 code=hud_code();
+    hud_view_row[0]=speed;
+    hud_view_row[1]=projection.atan2(side,along);
+    hud_view_row[2]=if(speed>0.08&&!entry){1.0}else{0.0};
+    hud_view_row[3]=if(entry){1.0}else{0.0};
+    hud_view_row[4]=if((code&63)==43){1.0}else{0.0};
+    hud_view_row[5]=if(station_leg==0&&(control.status()&1)==0){1.0}else{0.0};
+    hud_view_row[6]=core.sint_to_float<f64>(hud.copy_intent(code));
+    unsafe {host.hud_view(core.pointer_cast<*?u8>(&?hud_view_row[0]),7);};
+    code
+};
 %%end

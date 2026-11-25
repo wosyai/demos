@@ -1,4 +1,4 @@
-import {hudText} from "./hud-text.mjs?v=5";
+import {hudText} from "./hud-text.mjs?v=6";
 import {reentryGlow} from "./reentry-glow.mjs?v=2";
 import {earthDetail} from "./earth-detail.mjs?v=2";
 import {exteriorSky} from "./exterior-sky.mjs?v=5";
@@ -475,7 +475,7 @@ function configureShadow(){
  shadowSize=desired;detailed=chooseDetail;shadowDirty=true;worldVersion++;
 }
 let shadowDirty=true;
-let visual=null,tileRow=null,entryMesh=null,entrySample=null,renderPlan=null;
+let visual=null,tileRow=null,entryMesh=null,entrySample=null,renderPlan=null,hudRow=null;
 let worldVersion=0,renderVersion=-1,renderYaw=NaN,renderPitch=NaN,renderW=0,renderH=0,renderX=NaN,renderY=NaN,renderZ=NaN,renderGrip=NaN,renderRoute=-1,renderReach=-1;
 let scene,space,skyCopy,depth,shadowFbo,shadowTexture,earthTexture,starTexture,moonTexture,surfaceTexture,earthReady=0,starReady=0,moonReady=0,engine,active=false, frame=null, grabbed=null, last=0;
 let apolloBody=null,apolloModelActive=false;
@@ -687,14 +687,10 @@ function render(alpha) {
  }
 }
 function hud(){
- const [vx,vy,vz]=frame.slice(5,8);
- const [,,,heading,pitch]=frame;
- const driftRight=vx*Math.cos(heading)+vz*Math.sin(heading);
- const driftAhead=(vx*Math.sin(heading)-vz*Math.cos(heading))*Math.cos(pitch)+vy*Math.sin(pitch);
- const speed=Math.hypot(vx,vy,vz);
- const eva=frame[15]===1, contact=frame[26]===1;
- const hudCode=engine.hud_code();
- const view=hudText(hudCode,frame[16],Boolean(engine.input_status()&1));
+ const eva=frame[15]===1,contact=frame[26]===1;
+ const hudCode=engine.hud_view();
+ const [speed,driftAngle,showDrift,isEntry,lost,firstLookHint,copyIntent]=hudRow;
+ const view=hudText(hudCode,frame[16],Boolean(firstLookHint),copyIntent);
  const coastButton=$("coast");
  coastButton.hidden=!active||!view.coast;
  if(coastButton.hidden)engine.input_action(2);
@@ -710,17 +706,17 @@ function hud(){
  instrument.classList.toggle("burn",view.burn);
  instrument.classList.toggle("contact",contact);
  const clock=frame[30]>1?"×"+frame[30]+" · ":"";
- const entry=frame[32]===1&&frame[29]===1;
+ const entry=isEntry===1;
  $("flight-keys").hidden=entry;$("entry-keys").hidden=!entry;
- const signalLost=(hudCode&63)===43;
+ const signalLost=lost===1;
  text("systems",signalLost?"SIGNAL LOST":"SYSTEMS ONLINE");
  main.classList.toggle("signal-lost",signalLost);
  const readout=entry?clock+(frame[28]/1000).toFixed(1)+" km · "+(engine.entry_flow(5)/1000).toFixed(2)+" km/s":
    clock+(contact?"HULL CONTACT · ":view.burn?"THRUST · ":"DRIFT · ")+speed.toFixed(1)+" m/s"+(eva?" · Δv "+frame[31].toFixed(1)+" m/s":"")+(view.far?" · "+(frame[28]/1000).toFixed(0)+" km":"");
  text("flight-speed",readout);
  const vector=$("drift-vector");
- vector.style.opacity=String(speed>.08&&!entry?1:0);
- vector.style.transform="rotate("+Math.atan2(driftRight,driftAhead)+"rad)";
+ vector.style.opacity=String(showDrift);
+ vector.style.transform="rotate("+driftAngle+"rad)";
  main.classList.toggle("console-hud",view.console);
  const reticle=$("reticle");
  text("reticle",view.marker);
@@ -1019,12 +1015,13 @@ try{
   };
   moon.src=new URL("./moon-relief.webp?v=1",import.meta.url).href;
  }
- const response=await fetch(new URL("./orbital.wasm?v=51",import.meta.url));
+ const response=await fetch(new URL("./orbital.wasm?v=52",import.meta.url));
  if(!response.ok)throw Error("The station engine could not be downloaded.");
  const {instance}=await WebAssembly.instantiate(await response.arrayBuffer(),{
   orbital:{
    hull(p,n){update(hull,p,n,gl.STATIC_DRAW);},
    scenery:updateRoom,hands(p,n){update(hand,p,n,gl.DYNAMIC_DRAW);},
+   hud_view(p,n){if(n!==7)throw Error("Unexpected HUD projection");hudRow=new Float64Array(engine.memory.buffer,p,n);},
    render_budget(p,n){if(n!==3)throw Error("Unexpected renderer plan");renderPlan=new Float64Array(engine.memory.buffer,p,n);},
    earth_tiles(p,n){if(n!==19)throw Error("Unexpected globe tile projection");tileRow=new Float64Array(engine.memory.buffer,p,n);},
    entry_shell(p,n){if(n!==6144)throw Error("Unexpected entry shell");entryMesh=new Float32Array(engine.memory.buffer,p,n);},
