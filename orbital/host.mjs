@@ -139,9 +139,13 @@ vec2 practicalSource(vec3 P, vec3 N, vec3 V, vec3 source, vec3 axis, float power
   float beam=smoothstep(-.23,.58,cosine);
   float range=1.-smoothstep(.29,.77,rr);
   float a=power*beam*range/(rr+.026);
-  vec3 H=normalize(L+V);
-  float soft=pow(max(dot(N,H),0.),mix(54.,12.,roughness));
-  return vec2(receive+.11,receive*soft)*a;
+  float spec=0.;
+  if(receive>0.){
+    float h=dot(N,normalize(L+V));
+    // Below this lobe bound the summed lamp error is below one code value.
+    if(h>.57)spec=receive*pow(h,mix(54.,12.,roughness));
+  }
+  return vec2(receive+.11,spec)*a;
 }
 vec2 servicePractical(vec3 p,vec3 n,vec3 viewDir,float roughness,out bool inPort) {
   inPort=false;
@@ -152,9 +156,10 @@ vec2 servicePractical(vec3 p,vec3 n,vec3 viewDir,float roughness,out bool inPort
   float radius2=dot(P.xy,P.xy);
   if(P.z<-.67||P.z>.32||radius2>1.248)return vec2(0.);
   inPort=true;
+  float mask=(1.-smoothstep(.80,1.19,radius2))*smoothstep(-.672,-.629,P.z)*(1.-smoothstep(.17,.32,P.z));
+  if(mask<=0.)return vec2(0.);
   vec3 N=vec3(dot(n,xAxis),n.y,dot(n,zAxis));
   vec3 V=normalize(vec3(dot(viewDir,xAxis),viewDir.y,dot(viewDir,zAxis)));
-  float mask=(1.-smoothstep(.80,1.19,radius2))*smoothstep(-.672,-.629,P.z)*(1.-smoothstep(.17,.32,P.z));
   vec2 C=practicalSource(P,N,V,vec3(-.001,.646,.177),vec3(0.,-.77,-.64),.108,roughness);
   C+=practicalSource(P,N,V,vec3(-.001,-.643,.177),vec3(0.,.77,-.64),.116,roughness);
   C+=practicalSource(P,N,V,vec3(-.3695,-.239,-.473),vec3(.34,.29,.89),.082,roughness);
