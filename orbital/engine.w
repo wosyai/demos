@@ -6,6 +6,7 @@ globe = namespace orbital "globe-tiles.w";
 entry_view = namespace orbital "entry-presentation.w";
 control = namespace orbital "controls.w";
 render_policy = namespace orbital "render-budget.w";
+sky_art = namespace orbital "sky-art.w";
 host = extern wasm "orbital" {
     unsafe unit(*?u8,i32) scenery;
     unsafe unit(*?u8,i32) hull;
@@ -2003,4 +2004,5 @@ i32() hud_view=fn{
     unsafe {host.hud_view(core.pointer_cast<*?u8>(&?hud_view_row[0]),7);};
     code
 };
+unit() celestial_profile=fn{sky_art.publish();};
 %%end

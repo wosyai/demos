@@ -1,7 +1,7 @@
 import {hudText} from "./hud-text.mjs?v=6";
 import {reentryGlow} from "./reentry-glow.mjs?v=2";
 import {earthDetail} from "./earth-detail.mjs?v=2";
-import {exteriorSky} from "./exterior-sky.mjs?v=5";
+import {exteriorSky} from "./exterior-sky.mjs?v=6";
 import {loadApolloBody,loadProceduralSuit,stationGrip} from "./apollo-body.mjs?v=15";
 const $ = id => document.getElementById(id);
 const canvas = $("view");
@@ -63,24 +63,20 @@ void main(){
  uint uvHigh=uint(round(color.a*255.));
  armUV=armPose.w<0.?vec2(0.):(vec2(uvHigh%16u,uvHigh/16u)*256.+armUVLow)/4095.;
 }`;
-// One physical Sun for the station, fitted suit, shadow basis and sky.
-const normalize3=v=>v.map(n=>n/Math.hypot(...v));
-const cross3=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
-const orbitalSun=normalize3([.48,.35,.80]);
-const shadowX=normalize3(cross3([0,1,0],orbitalSun));
-const shadowY=cross3(orbitalSun,shadowX);
-const glslVec=v=>"vec3("+v.map(x=>x.toFixed(7)).join(",")+")";
-const sun = `
-const vec3 sunDir=${glslVec(orbitalSun)};
+// Wosy's one Sun drives the station, fitted suit, depth pass and sky.
+let orbitalSun, skyArt;
+const glslVec=v=>"vec3("+Array.from(v,x=>x.toFixed(7)).join(",")+")";
+const sunShader = profile => `
+const vec3 sunDir=${glslVec(profile.subarray(0,3))};
 vec3 lightClip(vec3 p){
- vec3 q=p-vec3(0.,.3,-5.);
- return vec3(dot(q,${glslVec(shadowX)})/6.4,
-             dot(q,${glslVec(shadowY)})/6.4,
-            -dot(q,sunDir)/14.);
+ vec3 q=p-${glslVec(profile.subarray(9,12))};
+ return vec3(dot(q,${glslVec(profile.subarray(3,6))})/${profile[12].toFixed(7)},
+             dot(q,${glslVec(profile.subarray(6,9))})/${profile[12].toFixed(7)},
+            -dot(q,sunDir)/${profile[13].toFixed(7)});
 }
 
 `;
-const depthVS=`#version 300 es
+const depthVS=sun=>`#version 300 es
 layout(location=0) in vec3 pos;
 ${sun}
 ${skinVertex}
@@ -90,7 +86,7 @@ const depthFS=`#version 300 es
 precision mediump float;
 void main(){}
 `;
-const exteriorMaterial=`
+const exteriorMaterial=sun=>`
 uniform int eva;
 uniform highp sampler2DShadow sunMap;
 uniform int detailedShadow;
@@ -316,7 +312,7 @@ vec3 sunColor(vec3 n){
  return pow(max(vec3(0.),energy/(energy*.48+vec3(.85))),vec3(.79));
 }
 `;
-const fs = `#version 300 es
+const fs = sun=>`#version 300 es
 precision highp float;
 in vec3 surface;
 in vec3 world;
@@ -325,7 +321,7 @@ in vec3 fittedNormal;
 in vec2 armUV;
 out vec4 pix;
 ${view}
-${exteriorMaterial}
+${exteriorMaterial(sun)}
 void main(){
  vec3 normal=normalize(cross(dFdx(world),dFdy(world)));
  if(eva==1){
@@ -354,7 +350,7 @@ const svs=`#version 300 es
 out vec2 screen;
 void main(){vec2 p=vec2(float((gl_VertexID<<1)&2),float(gl_VertexID&2));screen=p*2.-1.;gl_Position=vec4(screen,.9999,1.);}
 `;
-const sfs=`#version 300 es
+const sfs=(sun,profile)=>`#version 300 es
 precision highp float;
 in vec2 screen;
 out vec4 pix;
@@ -363,7 +359,7 @@ uniform int photo;
 uniform sampler2D earthMap;
 ${view}
 ${sun}
-${exteriorSky}
+${exteriorSky(profile)}
 uniform int upgradedSky;
 uniform vec4 orbitCenter;
 float hash(vec2 p){return fract(sin(dot(p,vec2(157.1,113.7)))*43758.5453);}
@@ -884,7 +880,27 @@ function shadowBuffer(size){
  }
 try{
  if(!gl)throw Error("WebGL 2 is required to render the station.");
- scene=program(vs,fs);space=program(svs,sfs);skyCopy=program(svs,skyCopyFS);depth=program(depthVS,depthFS);room=batch();hand=batch();hull=batch();
+ const response=await fetch(new URL("./orbital.wasm?v=53",import.meta.url));
+ if(!response.ok)throw Error("The station engine could not be downloaded.");
+ const {instance}=await WebAssembly.instantiate(await response.arrayBuffer(),{
+  orbital:{
+   hull(p,n){update(hull,p,n,gl.STATIC_DRAW);},
+   scenery:updateRoom,hands(p,n){update(hand,p,n,gl.DYNAMIC_DRAW);},
+   sky_art(p,n){if(n!==29)throw Error("Unexpected celestial profile");skyArt=new Float64Array(engine.memory.buffer,p,n);},
+   hud_view(p,n){if(n!==7)throw Error("Unexpected HUD projection");hudRow=new Float64Array(engine.memory.buffer,p,n);},
+   render_budget(p,n){if(n!==3)throw Error("Unexpected renderer plan");renderPlan=new Float64Array(engine.memory.buffer,p,n);},
+   earth_tiles(p,n){if(n!==19)throw Error("Unexpected globe tile projection");tileRow=new Float64Array(engine.memory.buffer,p,n);},
+   entry_shell(p,n){if(n!==6144)throw Error("Unexpected entry shell");entryMesh=new Float32Array(engine.memory.buffer,p,n);},
+   entry_visual(p,n){if(n!==14)throw Error("Unexpected entry projection");entrySample=new Float64Array(engine.memory.buffer,p,n);},
+   visual(p,n){if(n!==60)throw Error("Unexpected station projection");visual=new Float64Array(engine.memory.buffer,p,n);},
+   frame(p,n){if(n!==38)throw Error("Unexpected station frame");frame=new Float32Array(engine.memory.buffer,p,n).slice();}
+  },
+  wasi_snapshot_preview1:{proc_exit(n){throw Error("Station exited: "+n);}}
+ });
+ engine=instance.exports;engine._start();engine.celestial_profile();
+ orbitalSun=skyArt.subarray(0,3);
+ const sun=sunShader(skyArt);
+ scene=program(vs,fs(sun));space=program(svs,sfs(sun,skyArt));skyCopy=program(svs,skyCopyFS);depth=program(depthVS(sun),depthFS);room=batch();hand=batch();hull=batch();
  skyTexture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,skyTexture);
  for(const mode of [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER])gl.texParameteri(gl.TEXTURE_2D,mode,gl.LINEAR);
  for(const axis of [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T])gl.texParameteri(gl.TEXTURE_2D,axis,gl.CLAMP_TO_EDGE);
@@ -1015,23 +1031,7 @@ try{
   };
   moon.src=new URL("./moon-relief.webp?v=1",import.meta.url).href;
  }
- const response=await fetch(new URL("./orbital.wasm?v=52",import.meta.url));
- if(!response.ok)throw Error("The station engine could not be downloaded.");
- const {instance}=await WebAssembly.instantiate(await response.arrayBuffer(),{
-  orbital:{
-   hull(p,n){update(hull,p,n,gl.STATIC_DRAW);},
-   scenery:updateRoom,hands(p,n){update(hand,p,n,gl.DYNAMIC_DRAW);},
-   hud_view(p,n){if(n!==7)throw Error("Unexpected HUD projection");hudRow=new Float64Array(engine.memory.buffer,p,n);},
-   render_budget(p,n){if(n!==3)throw Error("Unexpected renderer plan");renderPlan=new Float64Array(engine.memory.buffer,p,n);},
-   earth_tiles(p,n){if(n!==19)throw Error("Unexpected globe tile projection");tileRow=new Float64Array(engine.memory.buffer,p,n);},
-   entry_shell(p,n){if(n!==6144)throw Error("Unexpected entry shell");entryMesh=new Float32Array(engine.memory.buffer,p,n);},
-   entry_visual(p,n){if(n!==14)throw Error("Unexpected entry projection");entrySample=new Float64Array(engine.memory.buffer,p,n);},
-   visual(p,n){if(n!==60)throw Error("Unexpected station projection");visual=new Float64Array(engine.memory.buffer,p,n);},
-   frame(p,n){if(n!==38)throw Error("Unexpected station frame");frame=new Float32Array(engine.memory.buffer,p,n).slice();}
-  },
-  wasi_snapshot_preview1:{proc_exit(n){throw Error("Station exited: "+n);}}
- });
- engine=instance.exports;configureShadow();engine._start();engine.select_deck(1);engine.tick(0,0,0,0);
+ configureShadow();engine.select_deck(1);engine.tick(0,0,0,0);
  const loadBakedArm=()=>fetch(new URL("./apollo-arm.bin?v=4",import.meta.url)).then(async r=>{
   if(!r.ok)throw Error("Apollo arm unavailable.");
   uploadArm(await r.arrayBuffer());

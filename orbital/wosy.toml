@@ -55,6 +55,7 @@ quality_adapt = "quality_adapt"
 quality_plan = "quality_plan"
 quality_shadow = "quality_shadow"
 hud_view = "hud_view"
+celestial_profile = "celestial_profile"
 
 [targets.app.profiles.dev]
 main_artifact = "main"

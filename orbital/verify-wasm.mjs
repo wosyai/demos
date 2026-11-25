@@ -7,11 +7,11 @@ const path=process.argv[2] ?? new URL('./orbital.wasm',import.meta.url);
 const wasm=new WebAssembly.Module(readFileSync(path));
 const imports=WebAssembly.Module.imports(wasm);
 const actual=imports.map(({module,name,kind})=>`${module}.${name}:${kind}`).sort();
-const orbitalImports=['orbital.earth_tiles:function','orbital.entry_shell:function','orbital.entry_visual:function','orbital.frame:function','orbital.hands:function','orbital.hud_view:function','orbital.hull:function','orbital.render_budget:function','orbital.scenery:function','orbital.visual:function'];
+const orbitalImports=['orbital.earth_tiles:function','orbital.entry_shell:function','orbital.entry_visual:function','orbital.frame:function','orbital.hands:function','orbital.hud_view:function','orbital.hull:function','orbital.render_budget:function','orbital.scenery:function','orbital.sky_art:function','orbital.visual:function'];
 const procExit='wasi_snapshot_preview1.proc_exit:function';
 assert.deepEqual(actual,actual.includes(procExit)?[...orbitalImports,procExit]:orbitalImports,
  'expected the exact browser import contract (Orbital callbacks and optional WASI proc_exit)');
-let hudView,rendererPlan,entryMesh,entrySample,earthTiles,visual,hull,hullLoads=0,room,hand,state,engine,roomLoads=0,handLoads=0,roomSpan,stagedRoom;
+let skyArt,hudView,rendererPlan,entryMesh,entrySample,earthTiles,visual,hull,hullLoads=0,room,hand,state,engine,roomLoads=0,handLoads=0,roomSpan,stagedRoom;
 const roomPatches=[];
 function read(p,n){assert.equal(p%4,0);return new Float32Array(engine.memory.buffer,p,n).slice();}
 engine=new WebAssembly.Instance(wasm,{orbital:{
@@ -37,6 +37,7 @@ engine=new WebAssembly.Instance(wasm,{orbital:{
     room=read(p,n);roomLoads++;
   }
  },hands(p,n){hand=read(p,n);handLoads++;},
+ sky_art(p,n){assert.equal(n,29);assert.equal(p%8,0);skyArt=new Float64Array(engine.memory.buffer,p,n).slice();},
  hud_view(p,n){assert.equal(n,7);assert.equal(p%8,0);hudView=new Float64Array(engine.memory.buffer,p,n).slice();},
  render_budget(p,n){assert.equal(n,3);assert.equal(p%8,0);rendererPlan=new Float64Array(engine.memory.buffer,p,n).slice();},
  earth_tiles(p,n){assert.equal(n,19);assert.equal(p%8,0);earthTiles=new Float64Array(engine.memory.buffer,p,n).slice();},
@@ -50,6 +51,14 @@ engine=new WebAssembly.Instance(wasm,{orbital:{
  }
 },wasi_snapshot_preview1:{proc_exit(n){throw Error("Station exited: "+n);}}}).exports;
 engine._start();
+engine.celestial_profile();
+assert.ok(Math.abs(Math.hypot(...skyArt.slice(0,3))-1)<1e-12,'one normalized Sun before drawing');
+assert.deepEqual([...skyArt.slice(9,20)],[0,.3,-5,6.4,14,.76,.57,-.31,.00372906,.06104854,.0009869]);
+assert.deepEqual([...skyArt.slice(0,9)].map(x=>x.toFixed(7)),[
+ '0.4817131','0.3512492','0.8028552','0.8574929','0.0000000','-0.5144958','-0.1807162','0.9362820','-0.3011937'
+],'existing GPU literals for the Sun and shadow basis are preserved');
+assert.equal(hullLoads,0,'the celestial startup packet needs no prematurely built GL buffers');
+
 function visualOf(alpha,aspect,hasAvatar=1){
  visual=undefined;
  engine.project_visual(alpha,aspect,hasAvatar);
