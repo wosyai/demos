@@ -2,6 +2,7 @@
 station = namespace orbital "station.w";
 hud = namespace orbital "hud.w";
 projection = namespace orbital "presentation.w";
+globe = namespace orbital "globe-tiles.w";
 host = extern wasm "orbital" {
     unsafe unit(*?u8,i32) scenery;
     unsafe unit(*?u8,i32) hull;
@@ -1918,5 +1919,11 @@ unit(f64,f64,i32) project_visual=fn(alpha,aspect,avatar){
     presentation[54]=projection.cos(yaw_out);presentation[55]=projection.sin(yaw_out);
     presentation[56]=projection.cos(pitch_out);presentation[57]=projection.sin(pitch_out);
     unsafe {host.visual(core.pointer_cast<*?u8>(&?presentation[0]),58);};
+};
+i32(f64,f64) globe_tiles=fn(now,height){
+    bool scanned=globe.scan(now,height,presentation[49],presentation[50],presentation[51],presentation[52],presentation[48],
+        presentation[54],presentation[55],presentation[56],presentation[57],presentation[44],presentation[45],presentation[46],presentation[47]);
+    globe.publish();
+    if(scanned){1}else{0}
 };
 %%end

@@ -1,6 +1,6 @@
 import {hudText} from "./hud-text.mjs?v=5";
 import {reentryGlow} from "./reentry-glow.mjs?v=1";
-import {earthDetail} from "./earth-detail.mjs";
+import {earthDetail} from "./earth-detail.mjs?v=2";
 import {exteriorSky} from "./exterior-sky.mjs?v=5";
 import {loadApolloBody,loadProceduralSuit,stationGrip} from "./apollo-body.mjs?v=15";
 const $ = id => document.getElementById(id);
@@ -478,7 +478,7 @@ function configureShadow(){
 let shadowDirty=true;
 let renderLoad=1, slowFrames=0, fastFrames=0, stillFrames=0;
 let balanced=false, software=rasterSoftware;
-let visual=null;
+let visual=null,tileRow=null;
 let worldVersion=0,renderVersion=-1,renderYaw=NaN,renderPitch=NaN,renderW=0,renderH=0,renderX=NaN,renderY=NaN,renderZ=NaN,renderGrip=NaN,renderRoute=-1,renderReach=-1;
 let scene,space,skyCopy,depth,shadowFbo,shadowTexture,earthTexture,starTexture,moonTexture,surfaceTexture,earthReady=0,starReady=0,moonReady=0,engine,active=false, frame=null, grabbed=null, dx=0, dy=0, last=0, remainder=0, pulse=false, pulseDown=false;
 const held=new Set();
@@ -635,7 +635,7 @@ function render(alpha) {
  const eva=pose[15]===1,body=eva&&apolloBody,entry=pose[32]===1;
  const heat=entry&&pose[29]===1?engine.entry_flow(3):0;
  const heated=heat>.01, evolving=heated&&engine.entry_flow(4)<1;
- if(eva&&upgradedSky&&earthReady&&$("intro").hidden)fineEarth.update(orbit,heading,pitch,optics,roll,h);
+ if(eva&&upgradedSky&&earthReady&&$("intro").hidden)fineEarth.update(h);
  const skyMoved=eva&&upgradedSky&&!(Math.abs(orbit.spin-renderSkySpin)<.0006);
  const motion=body?[pose[21],pose[22],...pose.slice(23,26),...pose.slice(33,37),drawBody].join(","):"";
  if(renderVersion===worldVersion && renderYaw===heading && renderPitch===pitch && renderW===w && renderH===h && Math.abs(renderX-x)<.00002 && Math.abs(renderY-y)<.00002 && Math.abs(renderZ-z)<.00002 && renderGrip===pose[8] && renderRoute===pose[20] && renderReach===pose[10] && avatarMotion===motion && !skyMoved&&!evolving)return;
@@ -1013,7 +1013,10 @@ try{
  panelStamp.src=new URL("./thermal-panel.jpg?v=2",import.meta.url).href;
  pressureStamp.src=new URL("./pressure-skin.jpg",import.meta.url).href;
  fasciaStamp.src=new URL("./cargo-fascia.jpg?v=1",import.meta.url).href;
- fineEarth=earthDetail(gl,space.p,()=>{worldVersion++;skyPhoto=-1;});
+ fineEarth=earthDetail(gl,space.p,()=>{worldVersion++;skyPhoto=-1;},(now,height)=>{
+  const scanned=engine.globe_tiles(now,height)===1;
+  return {row:tileRow,scanned};
+ });
  earthTexture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,earthTexture);
  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,1,1,0,gl.RGB,gl.UNSIGNED_BYTE,new Uint8Array([0,0,0]));
  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
@@ -1059,12 +1062,13 @@ try{
   };
   moon.src=new URL("./moon-relief.webp?v=1",import.meta.url).href;
  }
- const response=await fetch(new URL("./orbital.wasm?v=47",import.meta.url));
+ const response=await fetch(new URL("./orbital.wasm?v=48",import.meta.url));
  if(!response.ok)throw Error("The station engine could not be downloaded.");
  const {instance}=await WebAssembly.instantiate(await response.arrayBuffer(),{
   orbital:{
    hull(p,n){update(hull,p,n,gl.STATIC_DRAW);},
    scenery:updateRoom,hands(p,n){update(hand,p,n,gl.DYNAMIC_DRAW);},
+   earth_tiles(p,n){if(n!==19)throw Error("Unexpected globe tile projection");tileRow=new Float64Array(engine.memory.buffer,p,n);},
    visual(p,n){if(n!==58)throw Error("Unexpected station projection");visual=new Float64Array(engine.memory.buffer,p,n);},
    frame(p,n){if(n!==38)throw Error("Unexpected station frame");frame=new Float32Array(engine.memory.buffer,p,n).slice();}
   },

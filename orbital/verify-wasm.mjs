@@ -6,11 +6,11 @@ const path=process.argv[2] ?? new URL('./orbital.wasm',import.meta.url);
 const wasm=new WebAssembly.Module(readFileSync(path));
 const imports=WebAssembly.Module.imports(wasm);
 const actual=imports.map(({module,name,kind})=>`${module}.${name}:${kind}`).sort();
-const orbitalImports=['orbital.frame:function','orbital.hands:function','orbital.hull:function','orbital.scenery:function','orbital.visual:function'];
+const orbitalImports=['orbital.earth_tiles:function','orbital.frame:function','orbital.hands:function','orbital.hull:function','orbital.scenery:function','orbital.visual:function'];
 const procExit='wasi_snapshot_preview1.proc_exit:function';
 assert.deepEqual(actual,actual.includes(procExit)?[...orbitalImports,procExit]:orbitalImports,
  'expected the exact browser import contract (Orbital callbacks and optional WASI proc_exit)');
-let visual,hull,hullLoads=0,room,hand,state,engine,roomLoads=0,handLoads=0,roomSpan,stagedRoom;
+let earthTiles,visual,hull,hullLoads=0,room,hand,state,engine,roomLoads=0,handLoads=0,roomSpan,stagedRoom;
 const roomPatches=[];
 function read(p,n){assert.equal(p%4,0);return new Float32Array(engine.memory.buffer,p,n).slice();}
 engine=new WebAssembly.Instance(wasm,{orbital:{
@@ -36,6 +36,7 @@ engine=new WebAssembly.Instance(wasm,{orbital:{
     room=read(p,n);roomLoads++;
   }
  },hands(p,n){hand=read(p,n);handLoads++;},
+ earth_tiles(p,n){assert.equal(n,19);assert.equal(p%8,0);earthTiles=new Float64Array(engine.memory.buffer,p,n).slice();},
  visual(p,n){assert.equal(n,58);assert.equal(p%8,0);visual=new Float64Array(engine.memory.buffer,p,n).slice();},
  frame(p,n){
   assert.equal(n,38);assert.equal(engine.scenery_motion(10),0);
@@ -745,3 +746,15 @@ assert.deepEqual(entry.slice(0,38),Float64Array.from(state),'reentry is a differ
 assert.equal(entry[48],1.35);
 assert.ok(Math.abs(entry[50]+1)<1e-6&&entry[52]>.95,'entry globe uses the orbital center and altitude');
 console.log('Wosy presentation: pointer/width, reset, optical profile, chase/clip, render interpolation, and orbital globe passed.');
+
+engine.select_deck(0);engine.tick(0,0,0,0);engine.select_deck(1);engine.tick(0,0,0,0);
+const globeView=visualOf(1,390/844);
+assert.equal(engine.globe_tiles(200,844),1,'initial view selects tiles');
+assert.equal(earthTiles[0],10430/(844*globeView[45]));
+assert.deepEqual([...earthTiles.slice(1,10)],[294,199,293,-1,-1,229,262,-1,261]);
+const geographicPlan=earthTiles.slice(1);
+assert.equal(engine.globe_tiles(380-.001,845),0,'respect the view-scan cadence');
+assert.equal(earthTiles[0],10430/(845*globeView[45]),'update the sample footprint between scans');
+assert.deepEqual(earthTiles.slice(1),geographicPlan);
+assert.equal(engine.globe_tiles(380,845),1,'the next eligible view sample regenerates the plan');
+console.log('Wosy globe detail: camera geography, exact tile slots and scores, and scan cadence passed.');
