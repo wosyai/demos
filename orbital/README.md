@@ -19,7 +19,8 @@ The browser owns WebGL 2 projection, materials, planet backdrop, and input
 transport. The simulation uses finite expanded collision proxies for the
 primary shell, hatch assembly, major catwalk courses, console and cargo,
 not render-triangle collision for the entire station. The same proxies stop
-the chase-camera boom without changing the astronaut path. The preview loads the full Apollo suit when its gameplay asset is present.
+the chase-camera boom without changing the astronaut path. The preview loads the full Apollo suit for chase view when its gameplay asset
+is present. Helmet view uses the original articulated arms and equipment.
 A source checkout without it uses the original procedural suit. Use
 `?suit=procedural` to force the fallback.
 

@@ -413,7 +413,15 @@ export async function loadApolloBody(gl,url=new URL('./apollo-body.glb',import.m
    meshes.push({name:node.name,vao,first:sleeveParts.has(node.name),elements,nearElements,nearCount,len:indices.length,kind:indices instanceof Uint16Array?gl.UNSIGNED_SHORT:gl.UNSIGNED_INT,tex,color:mat.baseColorFactor??[1,1,1,1]});
   }
  }
- return renderAvatar(gl,pose,meshes);
+ const fullBody=renderAvatar(gl,pose,meshes), helmetView=loadProceduralSuit(gl);
+ let active=helmetView;
+ return {
+  draw(frame,camera){
+   active=camera.thirdPerson?fullBody:helmetView;
+   active.draw(frame,camera);
+  },
+  diagnostics:()=>active.diagnostics(),
+ };
 }
 
 function renderAvatar(gl,pose,meshes,hasEquipment=false){
