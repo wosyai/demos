@@ -1,11 +1,11 @@
 import {exteriorSky} from "./exterior-sky.mjs?v=1";
-import {chaseView,loadApolloBody,loadProceduralSuit,stationGrip} from "./apollo-body.mjs?v=9";
+import {chaseView,loadApolloBody,loadProceduralSuit,stationGrip} from "./apollo-body.mjs?v=10";
 const $ = id => document.getElementById(id);
 const canvas = $("view");
 const main = canvas.parentElement;
 const options=new URLSearchParams(location.search);
 let nativeQuality=options.get("quality")==="full";
-const localApollo=options.get("suit")==="apollo";
+const wantsApollo=options.get("suit")!=="procedural";
 const upgradedSky=options.get("sky")!=="legacy";
 const gl = canvas.getContext("webgl2", {alpha:false, antialias:false, preserveDrawingBuffer:false});
 const rendererInfo=gl?.getExtension("WEBGL_debug_renderer_info");
@@ -381,7 +381,7 @@ let previous=null;
 let worldVersion=0,renderVersion=-1,renderYaw=NaN,renderPitch=NaN,renderW=0,renderH=0,renderX=NaN,renderY=NaN,renderZ=NaN,renderGrip=NaN,renderRoute=-1,renderReach=-1;
 let scene,space,skyCopy,depth,shadowFbo,shadowTexture,earthTexture,starTexture,surfaceTexture,earthReady=0,starReady=0,engine,active=false, frame=null, grabbed=null, dx=0, dy=0, last=0, remainder=0, pulse=false, pulseDown=false;
 const held=new Set();
-let coast=false,apolloBody=null,thirdPerson=false,chaseBlend=0;
+let coast=false,apolloBody=null,apolloModelActive=false,thirdPerson=false,chaseBlend=0;
 let avatarMotion="",renderSkySpin=NaN;
 // Wosy frame: [0..4] eye/aim, [5..7] velocity, [8..20] mission/contact;
 // [21..22] body aim, [23..25] applied acceleration, [26] contact,
@@ -528,7 +528,7 @@ function render(alpha) {
  gl.clear(gl.DEPTH_BUFFER_BIT);
  gl.enable(gl.DEPTH_TEST);bind(scene);
  gl.uniform1i(scene.lightingUpgrade,Number(upgradedSky));gl.uniform3fv(scene.earthBounceDir,orbit.center.slice(0,3));
- const contact=body&&!localApollo?stationGrip(pose):null;
+ const contact=body&&!apolloModelActive?stationGrip(pose):null;
  if(contact){gl.uniform4f(scene.gripContact,...contact.center,contact.progress);gl.uniform1f(scene.gripRadius,contact.radius);}
  else gl.uniform4f(scene.gripContact,0,0,0,0);
  gl.uniform1i(scene.routeLens,pose[20]);gl.uniform1i(scene.routeReach,pose[10]);
@@ -981,14 +981,14 @@ try{
   if(!r.ok)throw Error("Apollo arm unavailable.");
   uploadArm(await r.arrayBuffer());
  }).catch(e=>console.warn(e.message));
- const installSuit=body=>{
-  apolloBody=body;engine.select_arm(1);worldVersion++;hud();
+ const installSuit=(body,isApollo=false)=>{
+  apolloModelActive=isApollo;apolloBody=body;engine.select_arm(1);worldVersion++;hud();
  };
  const useDefaultSuit=()=>{
   try{installSuit(loadProceduralSuit(gl));}
   catch(e){console.warn("EVA equipment fallback: "+e.message);loadBakedArm();}
  };
- if(localApollo)loadApolloBody(gl).then(installSuit).catch(e=>{console.warn("Apollo body fallback: "+e.message);useDefaultSuit();});
+ if(wantsApollo)loadApolloBody(gl,new URL("./apollo-body.glb?v=1",import.meta.url)).then(body=>installSuit(body,true)).catch(e=>{console.warn("Apollo body fallback: "+e.message);useDefaultSuit();});
  else useDefaultSuit();
  $("start").disabled=false;$("training").disabled=false;$("reentry").disabled=false;requestAnimationFrame(animate);
 }catch(e){$("error").textContent=String(e.message);console.error(e);}

@@ -175,7 +175,7 @@ export class ApolloPose {
   const eye=Array.from(frame.slice(0,3));
   const body=facing(frame[21]??frame[3],frame[22]??frame[4]);
   const head=facing(frame[3],frame[4]);
-  const grip=clamp(frame[8],0,1);
+  const grip=clamp(frame[8],0,1), contact=stationGrip(frame);
   // Apollo faces +X, +Y is up and right is +Z in the exported GLB.
   const base=transformBasis(body.forward,body.up,body.right,
       sub(eye,add(mul(body.up,1.623),mul(body.forward,-.095))));
@@ -206,7 +206,7 @@ export class ApolloPose {
    const reach=side==='Left'?grip:0;
    const authoredWrist=Array.from(frame.slice(12,15));
    const published=options.wrist??add(authoredWrist,[.068,.154,.077]);
-   const target=reach?mix(rest,published,reach):rest;
+   const target=reach&&contact?wristApproach(rest,contact,reach,frame[9]===3):reach?mix(rest,published,reach):rest;
    const pole=add(mul(body.right,s*.51),mul(body.up,-1));
    if(reach){
     const collar=index('LeftShoulder'), anchor=origin(joints[collar]);
@@ -226,8 +226,24 @@ export class ApolloPose {
    const afterLower=origin(joints[lower]), afterWrist=origin(joints[wrist]);
    install(lower,align(joints[lower],sub(afterWrist,afterLower),sub(M.wrist,M.elbow)));
    const palm=index(side+'HandPalm');
-   const forward=reach?unit(mix(controllerForward,options.gripForward??head.forward,reach)):controllerForward;
-   const m=align(joints[wrist],sub(origin(joints[palm]),origin(joints[wrist])),forward);
+   const swing=contact?gripSmooth(reach/.69):reach;
+   const forward=reach?unit(mix(controllerForward,contact?.direction??options.gripForward??head.forward,swing)):controllerForward;
+
+   let m=align(joints[wrist],sub(origin(joints[palm]),origin(joints[wrist])),forward);
+   if(reach&&contact){
+    const left=index('LeftHandIndexMetacarpal'), little=index('LeftHandLittleMetacarpal');
+    const wristRest=joints[wrist], spread=sub(origin(joints[little]),origin(joints[left]));
+    const coords=[0,4,8].map(j=>dot(unit(wristRest.slice(j,j+3)),spread));
+    const across=sub(transform(m,coords),origin(m));
+    // Untwist the skin across the rail only after the palm travels around it.
+    const along=unit(sub(across,mul(forward,dot(across,forward))));
+    const normal=unit(sub([-1,0,0],mul(forward,dot([-1,0,0],forward))));
+    if(length(along)>.1&&length(normal)>.1){
+     const radians=Math.atan2(dot(cross(along,normal),forward),dot(along,normal));
+     const p=origin(m); m=product(matrix(p,orbitRotation(forward,radians*swing)),[...m.slice(0,12),0,0,0,1]);
+    }
+   }
+
    install(wrist,m);
    const curl=.72+.28*reach;
    // Mirror the approved closed bake's per-knuckle curls.
