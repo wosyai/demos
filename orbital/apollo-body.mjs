@@ -187,7 +187,7 @@ out vec3 n;
 out vec3 world;
 out vec3 surfacePoint;
 void main(){
- mat4 skin=weights.x*bones[joints.x]+weights.y*bones[joints.y]+weights.z*bones[joints.z]+weights.w*bones[joints.w];
+ mat4 skin=baked?bones[joints.x]:(weights.x*bones[joints.x]+weights.y*bones[joints.y]+weights.z*bones[joints.z]+weights.w*bones[joints.w]);
  world=(skin*vec4(pos,1.)).xyz;
  vec3 p=world-eye;
  vec3 q=vec3(basis.x*p.x+basis.y*p.z,p.y,-basis.y*p.x+basis.x*p.z);
@@ -227,13 +227,15 @@ void main(){
      // Faint weave locked to the stitched piece, not to the world or screen.
      vec3 u=surfacePoint*760.;
      vec3 a=abs(N);
-     float pattern=mix(sin(u.z)*sin(u.y),sin(u.x)*sin(u.y),a.z);
+     float pattern=sin(u.y)*sin(mix(u.z,u.x,step(.52,a.z)));
      float coverage=1.-smoothstep(.8,3.4,length(fwidth(u)));
      lit*=1.+.055*pattern*coverage;
    }
    float metal=smoothstep(.50,.93,surfaceColor.a);
    float facing=max(dot(V,N),0.);
-   float spec=pow(max(dot(N,normalize(sunDirection+V)),0.),mix(13.,53.,metal));
+   float h=max(dot(N,normalize(sunDirection+V)),0.);
+   float h2=h*h,h4=h2*h2,h8=h4*h4,h16=h8*h8,h32=h16*h16;
+   float spec=mix(h8*h4*h,h32*h16*h4*h,metal);
    lit+=mix(vec3(.66,.74,.82),mix(vec3(.60,.71,.78),color,.46),metal)*(max(.0,1.-facing)*.035+spec*mix(.10,.48,metal)*sqrt(direct));
  }
  pix=vec4(pow(max(lit,0.),vec3(.45455)),1.);
@@ -330,7 +332,11 @@ function renderAvatar(gl,pose,meshes,hasEquipment=false){
     gl.uniform1i(U.mapped,Boolean(m.tex));gl.uniform1i(U.baked,Boolean(m.baked));
     if(m.baked){
      gl.vertexAttrib4f(4,1,0,0,0);
-     gl.drawElements(gl.TRIANGLES,thirdPerson?m.len:m.nearCount,gl.UNSIGNED_SHORT,0);
+     const skip=thirdPerson?m.closeCount:0;
+     const cull=thirdPerson&&!gl.isEnabled(gl.CULL_FACE);
+     if(cull)gl.enable(gl.CULL_FACE);
+     gl.drawElements(gl.TRIANGLES,thirdPerson?m.len-skip:m.nearCount,gl.UNSIGNED_SHORT,skip*2);
+     if(cull)gl.disable(gl.CULL_FACE);
     }else{
      gl.uniform4fv(U.baseColor,m.color);
      const near=!thirdPerson&&m.nearElements;
@@ -392,8 +398,8 @@ function rigidMesh(gl,groups){
  // original bone palette supplies transforms without CPU vertex uploads.
  const vao=gl.createVertexArray();gl.bindVertexArray(vao);
  const vertices=[],indices=[],joints=[];
- let nearCount=0;
- for(const {joint,color,buf,first} of [...groups.filter(g=>g.first),...groups.filter(g=>!g.first)]){
+ let nearCount=0,closeCount=0;
+ for(const {joint,color,buf,first} of [...groups.filter(g=>g.first==='close'),...groups.filter(g=>g.first===true),...groups.filter(g=>!g.first)]){
   const seen=new Map();
   for(let i=0;i<buf.length;i+=6){
    const v=buf.slice(i,i+6).map(x=>Math.round(x*100000)/100000), key=v.join(',');
@@ -406,6 +412,7 @@ function rigidMesh(gl,groups){
    indices.push(n);
   }
   if(first)nearCount=indices.length;
+  if(first==='close')closeCount=indices.length;
  }
  gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(vertices),gl.STATIC_DRAW);
  for(const [i,n,offset] of [[0,3,0],[1,3,12],[5,4,24]]){
@@ -414,7 +421,7 @@ function rigidMesh(gl,groups){
  gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());gl.bufferData(gl.ARRAY_BUFFER,new Uint8Array(joints),gl.STATIC_DRAW);
  gl.enableVertexAttribArray(3);gl.vertexAttribIPointer(3,1,gl.UNSIGNED_BYTE,1,0);
  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,gl.createBuffer());gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,new Uint16Array(indices),gl.STATIC_DRAW);
- return [{vao,len:indices.length,nearCount,first:true,baked:true}];
+ return [{vao,len:indices.length,nearCount,closeCount,first:true,baked:true}];
 }
 function metalShop(){
  const groups=[];
@@ -512,7 +519,7 @@ export function loadProceduralSuit(gl){
  const {groups,get,box,tube}=metalShop();
  const shell=(joint,center,rx,ry,rz,color)=>{
   const buf=get(joint,color,joint>=4);
-  const L=joint===1?24:rx>=.070?20:12,S=joint===1?12:rx>=.070?9:6;
+  const L=joint===1?24:joint===0?14:rx>=.070?20:12,S=joint===1?12:joint===0?7:rx>=.070?9:6;
   const p=(i,j)=>{
    const theta=j*2*Math.PI/L, phi=(i/S-.5)*Math.PI, c=Math.cos(phi);
    const [x,y,z]=[c*Math.cos(theta),c*Math.sin(theta),Math.sin(phi)];
@@ -559,13 +566,13 @@ export function loadProceduralSuit(gl){
   shell(j,[0,0,.225],.082,.081,.069,panel);
   shell(j+1,[0,0,.018],.072,.074,.062,seam);
   tube(j+1,[[0,0,.014],[0,0,.046],[0,0,.103],[0,0,.156],[0,0,.176]],[.077,.080,.077,.067,.060],white,true,26);
-  for(const z of [.045,.062,.081,.101,.121,.141])tube(j+1,[[0,0,z-.004],[0,0,z],[0,0,z+.004]],[.077-(z-.045)*.09,.081-(z-.045)*.10,.077-(z-.045)*.09],white,true,22);
+  for(const z of [.045,.062,.081,.101,.121,.141])tube(j+1,[[0,0,z-.004],[0,0,z],[0,0,z+.004]],[.077-(z-.045)*.09,.081-(z-.045)*.10,.077-(z-.045)*.09],white,'close',22);
   tube(j+1,[[0,0,.158],[0,0,.180],[0,0,.212],[0,0,.227]],[.063,.073,.065,.051],navy,true,28);
   tube(j+1,[[0,0,.176],[0,0,.183],[0,0,.189]],[.073,.074,.071],gold,true,26);
   tube(j+1,[[0,0,.193],[0,0,.197]],[.072,.071],red,true,24);
-  box(j+1,[0,.068,.116],[.034,.012,.041],panel,true,.009);
-  box(j+1,[0,.081,.116],[.023,.002,.024],navy,true,.005);
-  box(j+1,[.007,.084,.124],[.011,.001,.004],gold,true,.002);
+  box(j+1,[0,.068,.116],[.034,.012,.041],panel,'close',.009);
+  box(j+1,[0,.081,.116],[.023,.002,.024],navy,'close',.005);
+  box(j+1,[.007,.084,.124],[.011,.001,.004],gold,'close',.002);
   shell(j+2,[0,0,.040],.047,.039,.058,panel);
   shell(j+2,[(i?1:-1)*.037,-.012,.044],.021,.026,.042,rubber);
   for(let f=0;f<4;f++)shell(j+2,[(f-1.5)*.021,.001,.079],.013,.020,.037,rubber);
