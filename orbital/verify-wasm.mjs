@@ -2,13 +2,18 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 const path=process.argv[2] ?? new URL('./orbital.wasm',import.meta.url);
 const wasm=new WebAssembly.Module(readFileSync(path));
-assert.deepEqual(WebAssembly.Module.imports(wasm).map(e=>e.module+'.'+e.name),['orbital.scenery','orbital.hands','orbital.frame']);
+const imports=WebAssembly.Module.imports(wasm);
+const actual=imports.map(({module,name,kind})=>`${module}.${name}:${kind}`).sort();
+const orbitalImports=['orbital.frame:function','orbital.hands:function','orbital.scenery:function'];
+const procExit='wasi_snapshot_preview1.proc_exit:function';
+assert.deepEqual(actual,actual.includes(procExit)?[...orbitalImports,procExit]:orbitalImports,
+ 'expected the exact browser import contract (Orbital callbacks and optional WASI proc_exit)');
 let room,hand,state,engine,roomLoads=0,handLoads=0;
 function read(p,n){assert.equal(p%4,0);return new Float32Array(engine.memory.buffer,p,n).slice();}
 engine=new WebAssembly.Instance(wasm,{orbital:{
  scenery(p,n){room=read(p,n);roomLoads++;},hands(p,n){hand=read(p,n);handLoads++;},
  frame(p,n){assert.equal(n,21);state=read(p,n);}
-}}).exports;
+},wasi_snapshot_preview1:{proc_exit(n){throw Error("Station exited: "+n);}}}).exports;
 engine._start();
 const step=(keys=0,yaw=0,pitch=0,dt=1/60)=>engine.tick(dt,keys,yaw,pitch);
 const until=(test,keys,cap=400)=>{for(let i=0;i<cap&&!test();i++)step(keys);assert.ok(test(),'state did not arrive '+[...state]);};
