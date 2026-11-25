@@ -472,10 +472,9 @@ function configureShadow(){
 }
 let shadowDirty=true;
 let visual=null,tileRow=null,entryMesh=null,entrySample=null,renderPlan=null,hudRow=null;
-let worldVersion=0,renderVersion=-1,renderYaw=NaN,renderPitch=NaN,renderW=0,renderH=0,renderX=NaN,renderY=NaN,renderZ=NaN,renderGrip=NaN,renderRoute=-1,renderReach=-1;
+let worldVersion=0;
 let scene,space,skyCopy,depth,shadowFbo,shadowTexture,earthTexture,starTexture,moonTexture,surfaceTexture,earthReady=0,starReady=0,moonReady=0,engine,active=false, frame=null, grabbed=null, last=0;
 let apolloBody=null,apolloModelActive=false;
-let avatarMotion="",renderSkySpin=NaN;
 // Wosy frame: [0..4] eye/aim, [5..7] velocity, [8..20] mission/contact;
 // [21..22] body aim, [23..25] applied acceleration, [26] contact,
 // [27] pre-grip speed², [28..32] altitude/entry/time/fuel/scenario,
@@ -585,7 +584,7 @@ function meshes(program,eva,pose,onlyStatic=false){
    gl.bindVertexArray(hand.vao);gl.drawArrays(gl.TRIANGLES,0,hand.num);
  }
 }
-let skyFbo, skyTexture, priorHeading=NaN, priorPitch=NaN, skyW=0, skyH=0, skyHeading=NaN, skyPitch=NaN, skyDeck=-1, skyPhoto=-1, skyRoll=0, skyStars=-1, skyMoon=-1, skySpin=NaN, skyOrbit=null;
+let skyFbo,skyTexture,skyW=0,skyH=0,skyDetailEpoch=0;
 let fineEarth;
 function bindOrbit(frame){
  fineEarth.bind();
@@ -594,12 +593,9 @@ function bindOrbit(frame){
  gl.activeTexture(gl.TEXTURE9);gl.bindTexture(gl.TEXTURE_2D,moonTexture);gl.uniform1i(space.moonMap,9);gl.uniform1i(space.moonReady,moonReady);
  gl.uniform1i(space.upgradedSky,Number(upgradedSky));gl.uniform1f(space.earthAngle,frame.spin);gl.uniform4fv(space.orbitCenter,frame.center);
 }
-function bakeBackdrop(bind,w,h,eva,heading,pitch,roll,orbit){
+function bakeBackdrop(bind,w,h,orbit){
+ if(engine.sky_plan(w,h,Number(upgradedSky),earthReady,starReady,moonReady,skyDetailEpoch)===0)return;
  const wide=skyW!==w || skyH!==h;
- if(!wide && Math.abs(skyHeading-heading)<.001 && Math.abs(skyPitch-pitch)<.001
-    && skyDeck===Number(eva) && skyPhoto===earthReady && skyRoll===roll[1]
-    && (!eva||!upgradedSky||(skyStars===starReady&&skyMoon===moonReady&&Math.abs(orbit.spin-skySpin)<.0006
-      && orbit.center.every((n,i)=>Math.abs(n-skyOrbit[i])<.0006))))return;
  if(wide){skyW=w;skyH=h;}
  gl.activeTexture(gl.TEXTURE3);gl.bindTexture(gl.TEXTURE_2D,skyTexture);
  if(wide)gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
@@ -608,7 +604,7 @@ function bakeBackdrop(bind,w,h,eva,heading,pitch,roll,orbit){
  bindOrbit(orbit);
  gl.bindVertexArray(null);gl.drawArrays(gl.TRIANGLES,0,3);
  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
- skyHeading=heading;skyPitch=pitch;skyDeck=Number(eva);skyPhoto=earthReady;skyRoll=roll[1];skyStars=starReady;skyMoon=moonReady;skyOrbit=orbit.center;skySpin=orbit.spin;
+
 }
 let glow=null;
 function render(alpha) {
@@ -624,12 +620,11 @@ function render(alpha) {
  const optics=visual.subarray(44,46),roll=visual.subarray(46,48);
  const orbit={spin:visual[48],center:visual.subarray(49,53)};
  const eva=pose[15]===1,body=eva&&apolloBody,entry=pose[32]===1;
- const heated=visual[58]>.01,evolving=visual[59]===1;
+ const heated=visual[58]>.01;
  if(eva&&upgradedSky&&earthReady&&$("intro").hidden)fineEarth.update(h);
- const skyMoved=eva&&upgradedSky&&!(Math.abs(orbit.spin-renderSkySpin)<.0006);
- const motion=body?[pose[21],pose[22],...pose.slice(23,26),...pose.slice(33,37),drawBody].join(","):"";
- if(renderVersion===worldVersion && renderYaw===heading && renderPitch===pitch && renderW===w && renderH===h && Math.abs(renderX-x)<.00002 && Math.abs(renderY-y)<.00002 && Math.abs(renderZ-z)<.00002 && renderGrip===pose[8] && renderRoute===pose[20] && renderReach===pose[10] && avatarMotion===motion && !skyMoved&&!evolving)return;
- renderVersion=worldVersion;renderYaw=heading;renderPitch=pitch;renderW=w;renderH=h;renderX=x;renderY=y;renderZ=z;renderGrip=pose[8];renderRoute=pose[20];renderReach=pose[10];avatarMotion=motion;if(skyMoved)renderSkySpin=orbit.spin;
+ const draw=engine.draw_plan(worldVersion,w,h,Number(Boolean(apolloBody)),Number(upgradedSky));
+ if(draw===0)return;
+ const holdingAngle=draw===2;
  if(eva&&shadowDirty){
    shadowDirty=false;
    gl.bindFramebuffer(gl.FRAMEBUFFER,shadowFbo);
@@ -645,9 +640,7 @@ function render(alpha) {
   gl.uniform2fv(o.optics,optics);
   gl.uniform1i(o.eva,Number(eva));gl.uniform1f(o.renderFraction,fraction);gl.uniform2fv(o.roll,roll);
  }
- const holdingAngle=Math.abs(priorHeading-heading)<.001&&Math.abs(priorPitch-pitch)<.001;
- priorHeading=heading;priorPitch=pitch;
- if(holdingAngle)bakeBackdrop(bind,w,h,eva,heading,pitch,roll,orbit);
+ if(holdingAngle)bakeBackdrop(bind,w,h,orbit);
  gl.clear(gl.DEPTH_BUFFER_BIT);
  gl.enable(gl.DEPTH_TEST);bind(scene);
  gl.uniform1i(scene.practicalLighting,Number(upgradedPractical));gl.uniform1i(scene.lightingUpgrade,Number(upgradedSky));gl.uniform3fv(scene.earthBounceDir,orbit.center.slice(0,3));
@@ -880,7 +873,7 @@ function shadowBuffer(size){
  }
 try{
  if(!gl)throw Error("WebGL 2 is required to render the station.");
- const response=await fetch(new URL("./orbital.wasm?v=53",import.meta.url));
+ const response=await fetch(new URL("./orbital.wasm?v=54",import.meta.url));
  if(!response.ok)throw Error("The station engine could not be downloaded.");
  const {instance}=await WebAssembly.instantiate(await response.arrayBuffer(),{
   orbital:{
@@ -982,7 +975,7 @@ try{
  panelStamp.src=new URL("./thermal-panel.jpg?v=2",import.meta.url).href;
  pressureStamp.src=new URL("./pressure-skin.jpg",import.meta.url).href;
  fasciaStamp.src=new URL("./cargo-fascia.jpg?v=1",import.meta.url).href;
- fineEarth=earthDetail(gl,space.p,()=>{worldVersion++;skyPhoto=-1;},(now,height)=>{
+ fineEarth=earthDetail(gl,space.p,()=>{worldVersion++;skyDetailEpoch++;},(now,height)=>{
   const scanned=engine.globe_tiles(now,height)===1;
   return {row:tileRow,scanned};
  });

@@ -824,3 +824,13 @@ assert.ok(Math.abs(hudView[0]-Math.hypot(...state.slice(5,8)))<1e-10);
 assert.equal(hudView[5],0,'observed touch look survives later task copy projection');
 assert.equal(hudView[4],0);
 console.log('Wosy HUD projection: telemetry vector, learned hint, terminal signal and copy intent passed.');
+
+visualOf(1,1280/720);
+assert.equal(engine.draw_plan(0,1280,720,1,1),1,'first projected scene uses direct sky');
+assert.equal(engine.draw_plan(0,1280,720,1,1),0,'unchanged frame is reusable');
+assert.equal(engine.draw_plan(1,1280,720,1,1),2,'an uploaded resource forces drawing but retains a steady camera');
+assert.equal(engine.sky_plan(1280,720,1,1,1,1,0),1);
+assert.equal(engine.sky_plan(1280,720,1,1,1,1,0),0);
+assert.equal(engine.sky_plan(1280,720,1,1,1,1,1),1,'Earth page update invalidates the projected backdrop');
+assert.equal(engine.sky_plan(390,844,1,1,1,1,1),1,'resize invalidates the projected backdrop');
+console.log('Wosy draw policy: idle skips, resource epochs, steady camera, tile texture invalidation and viewport changes passed.');
