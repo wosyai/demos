@@ -14,6 +14,12 @@ f32[8][16][16][16] page2 = [page1, page1, page1, page1, page1, page1, page1, pag
 f32[8][16][16][16][5] mesh = [page2,page2,page2,page2,page2];
 f32[38] state = [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0];
 i32 count = 0;
+i32 motion_first=0;
+i32 motion_size=0;
+bool room_partial=false;
+i32(i32) scenery_motion=fn(field){
+    if(field==0){motion_first*8}else{if(field==1){motion_size*8}else{if(room_partial){1}else{0}}}
+};
 f32 r = 0.0;
 f32 g = 0.0;
 f32 b = 0.0;
@@ -81,7 +87,7 @@ unit(i32) rack = fn(n) {
     };
 };
 unit() draw = fn {
-    count=0;
+    motion_first=0;motion_size=0;count=0;
     paint(0.26,0.34,0.38,0.0);
     box(-2.26,-1.78,-10.1,4.52,0.1,12.4);
     box(-2.26,1.72,-10.1,4.52,0.12,12.4);
@@ -1205,10 +1211,23 @@ unit() eva_room = fn {
     paint(0.72,0.54,0.27,0.17);
     sweep(-1.59,-0.88,-5.38,-0.28,-0.88,-5.38,0.03,0.03,0,0,10);
     sweep(-1.59,-0.82,-5.38,-0.27,-0.82,-5.38,0.025,0.025,0,0,10);
-    suspended_cargo();manipulator();lock_support();
+    suspended_cargo();
+    motion_first=count;manipulator();motion_size=count-motion_first;
+    lock_support();
     traversal_rail(0);traversal_rail(1);traversal_rail(2);cargo_fixture();alignment_console();
     unsafe { host.scenery(core.pointer_cast<*?u8>(&?mesh[0][0][0][0][0]),count*8); };
 };
+unit() publish_robot=fn{
+    i32 previous=count;
+    count=motion_first;manipulator();
+    if(count-motion_first==motion_size){
+        room_partial=true;
+        unsafe {host.scenery(core.pointer_cast<*?u8>(&?mesh[0][0][0][0][0]),motion_size*8);};
+        room_partial=false;
+    }else{eva_room();};
+    count=previous;
+};
+
 f32 pilot_x=0.0;f32 pilot_y=0.0;f32 pilot_z=0.37;
 f32 vx=0.0;f32 vy=0.0;f32 vz=0.0;
 f32 yaw=0.0;f32 pitch=0.0;f32 timer=0.0;
@@ -1631,7 +1650,8 @@ unit(f32,i32,f32,f32) tick = fn(dt,keys,look_x,look_y) {
         if(transfer_clock>=core.sint_to_float<f32>(transfer_pose+1)*0.085){
             transfer_pose=transfer_pose+1;
             if(transfer_pose==15){transfer_clock=0.0;alignment_stage=4;};
-            mesh_grip=-1.0;eva_room();
+            if(transfer_pose>6 && transfer_pose<15){publish_robot();}
+            else{mesh_grip=-1.0;eva_room();};
         };
     };
     if(mode==1){

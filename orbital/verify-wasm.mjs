@@ -10,11 +10,26 @@ const orbitalImports=['orbital.frame:function','orbital.hands:function','orbital
 const procExit='wasi_snapshot_preview1.proc_exit:function';
 assert.deepEqual(actual,actual.includes(procExit)?[...orbitalImports,procExit]:orbitalImports,
  'expected the exact browser import contract (Orbital callbacks and optional WASI proc_exit)');
-let hull,hullLoads=0,room,hand,state,engine,roomLoads=0,handLoads=0;
+let hull,hullLoads=0,room,hand,state,engine,roomLoads=0,handLoads=0,roomSpan;
+const roomPatches=[];
 function read(p,n){assert.equal(p%4,0);return new Float32Array(engine.memory.buffer,p,n).slice();}
 engine=new WebAssembly.Instance(wasm,{orbital:{
  hull(p,n){hull=read(p,n);hullLoads++;},
- scenery(p,n){room=read(p,n);roomLoads++;},hands(p,n){hand=read(p,n);handLoads++;},
+ scenery(p,n){
+  const start=engine.scenery_motion(0),len=engine.scenery_motion(1);
+  assert.ok(start>=0&&len>=0&&start%24===0&&len%24===0);
+  if(engine.scenery_motion(2)){
+    assert.deepEqual([start,len],roomSpan,'partial room segment matches the last full indexed upload');
+    assert.ok(n===len&&len>0&&start+len<room.length);
+    const next=room.slice(),moving=read(p+start*4,n);
+    assert.ok(moving.every(Number.isFinite));
+    next.set(moving,start);room=next;roomPatches.push({start,len,n});
+  }else{
+    assert.ok(start+len<=n&&Boolean(start)===Boolean(len));
+    room=read(p,n);roomSpan=[start,len];
+  }
+  roomLoads++;
+ },hands(p,n){hand=read(p,n);handLoads++;},
  frame(p,n){assert.equal(n,38);state=read(p,n);}
 },wasi_snapshot_preview1:{proc_exit(n){throw Error("Station exited: "+n);}}}).exports;
 engine._start();
@@ -286,7 +301,7 @@ assert.equal(state[19],3,'held seat input never commands the transfer');
 assert.equal(roomLoads,countBeforeLatch+10);
 step();step(64);assert.equal(state[19],3.25);
  hudIs("Closing cradle keepers",false);
-const transferBatches=roomLoads, transferMeshes=[];
+const transferBatches=roomLoads, transferMeshes=[],patchStart=roomPatches.length;
 for(let n=0;n<90&&state[19]<4;n++){
  const previousBatch=roomLoads;step(n===0||n===2?0:64);
  assert.deepEqual([...state.slice(0,8)],handoffCamera,'the docked eye and velocity do not change');
@@ -295,6 +310,15 @@ for(let n=0;n<90&&state[19]<4;n++){
 }
 assert.equal(state[19],4);
 assert.equal(roomLoads,transferBatches+15);
+const patches=roomPatches.slice(patchStart);
+assert.equal(patches.length,8,'the eight intermediate parking poses issue robot-only updates');
+const {start:patchFirst,len:patchCount}=patches[0];
+assert.ok(patchCount/room.length<.26,'room pool updates are restricted to the robot');
+const whole=transferMeshes[5].room;
+for(const {room:current} of transferMeshes.slice(6,-1)){
+ assert.deepEqual(current.subarray(0,patchFirst),whole.subarray(0,patchFirst),'visible and shadow indices outside the robot stay shared');
+ assert.deepEqual(current.subarray(patchFirst+patchCount),whole.subarray(patchFirst+patchCount),'all landed station geometry remains bit-identical');
+}
 assert.deepEqual(transferMeshes.map(v=>v.stage),[3.25,3.25,3.5,3.5,3.5,3.75,3.75,3.75,3.75,3.75,3.75,3.75,3.75,3.75,4]);
 const ease=t=>t*t*(3-2*t);
 const armVertex=(i,x,y,z)=>{
