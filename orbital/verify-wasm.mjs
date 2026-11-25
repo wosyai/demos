@@ -293,6 +293,14 @@ step(64);until(()=>state[19]===6,64);
 assert.deepEqual([...state.slice(12,15)].map(n=>n.toFixed(2)),['-0.94','-0.14','-2.48']);
 for(let i=0;i<60;i++)step(64);assert.equal(state[19],6,'holding a capture does not lock it');
 const openHatch=room, lockEye=[...state.slice(0,8)];
+function locatorColor(m){
+ for(let i=0;i<m.length;i+=8){
+  if(nearEq(m[i],-1.261)&&nearEq(m[i+1],.2)&&nearEq(m[i+2],-2.785))return [...m.slice(i+3,i+6)].map(x=>x.toFixed(2));
+ }
+ assert.fail('double-chevron locator must be mounted on the closed hatch');
+}
+assert.deepEqual(locatorColor(evaRoom),['0.37','0.78','0.69']);
+assert.deepEqual(locatorColor(openHatch),['1.00','0.61','0.22']);
 step();step(64);assert.equal(state[19],6.5);
 const lockHatchPoses=[];
 for(let i=0;i<24&&state[19]===6.5;i++){
@@ -313,6 +321,7 @@ assert.deepEqual([...state.slice(12,15)].map(n=>n.toFixed(2)),['-0.94','-0.03','
 assert.ok(hasVertex(openHatch,-1.11,-.14,-2.398)&&hasVertex(room,-1.11,-.03,-2.398),'actual hatch bar and glove rise together');
 assert.ok(hasVertex(openHatch,-1.015,-.14,-2.398)&&hasVertex(room,-1.015,-.03,-2.398),"the machined grip keeps the authored glove radius");
 assert.ok(hasVertex(room,2.17,.13,-7.13)&&hasVertex(room,.49+.041,-.705,-6.554),'cargo stays seated under its closed keepers');
+assert.deepEqual(locatorColor(room),['0.28','0.99','0.58']);
 for(let i=0;i<30;i++){step();step(64);}
 assert.equal(state[19],7);
 assert.equal(roomLoads,countBeforeLatch+20,'only the four hatch poses republish geometry');
