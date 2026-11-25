@@ -86,13 +86,13 @@ spherical photographic Earth backdrop. Earth imagery:
 Amy Moran and Jesse Allen, from Suomi NPP VIIRS. The image is presented in a
 fictional orbit and does not imply NASA endorsement.
 
-The exterior first-person arm uses a compact, indexed export of the Apollo
-astronaut asset. The authored Wosy arm is the loading/fallback mesh.
+A compact indexed Apollo arm is available only as a load fallback. The default
+uses the original two-arm suit and equipment mesh.
 [Art sources, credit, and two-pose export](art/README.md).
 
 Only the next usable grip is lit. The locator lenses are built into the rails,
 console and hatch; on the return leg a small reticle arrow points to the hatch
-when it is off to the side and the HUD names which way to drag. The pilot eye, aim and hand ease in on the same
+when it is off to the side and the HUD names which way to look. Eye, aim and hand settle through a
 fixed-step capture curve.
 
 The contact and release states retain world-space rail anchors on all screen
@@ -100,7 +100,7 @@ sizes. At the cargo brace the pin and hand share both Wosy-authored endpoints.
 The blue console first seats the cargo, then a separate press closes both
 cradle keepers and opens the robot jaws at a fixed cargo position. Green
 keeper indicators confirm the completed transfer. Release the console and ride the
-return push, brake at the round airlock, and aim toward the amber locking bar.
+return push, counterthrust at the round airlock, and aim toward the amber locking bar.
 Grip the machined bar and slide its carriage into the upper detent to complete
 the EVA. Its local status light confirms the lock. The
 airlock stays closed: this exercise ends with an external lock confirmation,
@@ -141,3 +141,11 @@ The exterior preserves the existing cached shadow budget in Auto and on
 software graphics. Full detail on a detected hardware renderer enables
 higher-precision contact shadows. Mipmapped surfaces and smoother round
 hardware are available at both settings without a screen-wide blur.
+
+The default avatar, MMU and controls are original analytic meshes, with no
+downloaded suit asset. The third-person toggle sees the same Wosy flight and
+grip state as first person. Controller tilt follows actual left/right input;
+the cold-gas jets are shown only while thrust is applied. The upgraded sky adds
+a directional atmosphere limb, observable Earth rotation and a dim star map
+to the existing cache, without a new rendering pass. `?sky=legacy` skips
+the star-map download for an exact visual comparison.

@@ -43,7 +43,7 @@ footer{position:absolute;bottom:1.35rem;left:50%;transform:translateX(-50%);widt
 
 @media(orientation:portrait) and (max-width:390px){
  .console-hud .lockup{visibility:hidden}
- .console-hud .task{top:max(.6rem,env(safe-area-inset-top));max-width:min(calc(100vw - 8.1rem),12rem)}
+ .console-hud .task{top:max(.6rem,env(safe-area-inset-top));max-width:min(calc(100vw - 12.125rem),12rem)}
 }
 /* The touch halves are transparent interactive surfaces, not drawn controls. */
 .touch{display:none}

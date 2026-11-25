@@ -101,21 +101,7 @@ export class ApolloPose {
   install(neck,[...look.slice(0,12),...neckPoint,1]);
   const debug={};
   const gear=transformBasis(body.right,body.up,mul(body.forward,-1),eye);
-  this.palette.set(gear,84*16);
-  const acceleration=Array.from(frame.slice(23,26));
-  const amount=length(acceleration);
-  if(amount>.004){
-   const ex=mul(acceleration,-1/amount);
-   const guide=Math.abs(ex[1])>.94?body.forward:body.up;
-   const side=unit(cross(ex,guide)), up=cross(side,ex);
-   const scale=Math.min(1,Math.sqrt(amount));
-   for(const [i,x] of [-.382,.382].entries()){
-    const nozzle=transform(gear,[x,-.585,.300]);
-    this.palette.set(transformBasis(side,up,mul(ex,.19+.27*scale),nozzle),(87+i)*16);
-   }
-  }
-  const controls=mmuControls(frame);
-  for(const [i,control] of controls.entries())this.palette.set(product(gear,control.pivot), (85+i)*16);
+  const {amount,controls}=equipmentPose(this.palette,frame,body,gear);
   for(const [side,s] of [['Left',-1],['Right',1]]){
    const upper=index(side+'ArmUpper'),lower=index(side+'ArmLower'), wrist=index(side+'HandWrist');
    let a=origin(joints[upper]),b=origin(joints[lower]),c=origin(joints[wrist]);
@@ -241,16 +227,24 @@ function program(gl){
  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(p));
  return p;
 }
-const hidden=new Set(['helmet_shell','helmet_neck_ring','helmet_visor','helmet_visor_assembly','plss','plss_antenna_details','plss_ops_details','plss_small_details','hanging_hook','umbilical_hoses','tether']);
+const sleeveParts=new Set(['forearm_gauge_body','forearm_gauge_face','forearm_gauge_glass','forearm_gauge_ticks','glove_fingertips','gloves','wrist_rings','wristwatch','wristwatch_glass','suit_torso_arms']);
+function firstPersonSleeve(asset,part,indices){
+ const j=asset.accessor(part.attributes.JOINTS_0),w=asset.accessor(part.attributes.WEIGHTS_0);
+ const arm=asset.json.skins[0].joints.map(i=>/^(Left|Right)(ArmLower|ArmUpper|Hand)/.test(asset.json.nodes[i].name));
+ const weights=new Float32Array(j.length/4);
+ for(let i=0;i<weights.length;i++)for(let k=0;k<4;k++)if(arm[j[i*4+k]])weights[i]+=w[i*4+k];
+ const keep=[];
+ for(let i=0;i<indices.length;i+=3){
+  if(weights[indices[i]]>.6&&weights[indices[i+1]]>.6&&weights[indices[i+2]]>.6)keep.push(indices[i],indices[i+1],indices[i+2]);
+ }
+ return new indices.constructor(keep);
+}
 export async function loadApolloBody(gl,url=new URL('./apollo-body.glb',import.meta.url)){
  const response=await fetch(url);
  if(!response.ok)throw Error('Apollo mesh: '+response.status);
- const asset=openApolloGLB(await response.arrayBuffer()), pose=new ApolloPose(asset), p=program(gl);
- const U=Object.fromEntries(['eye','basis','optics','roll','sunDirection','firstPerson','plume','baseColor','mapped','albedo'].map(n=>[n,gl.getUniformLocation(p,n)]));
- const UBO=3, TEX=8, palette=gl.createBuffer();
- gl.uniformBlockBinding(p,gl.getUniformBlockIndex(p,'ApolloJoints'),UBO);
- gl.bindBuffer(gl.UNIFORM_BUFFER,palette);gl.bufferData(gl.UNIFORM_BUFFER,89*64,gl.DYNAMIC_DRAW);
+ const asset=openApolloGLB(await response.arrayBuffer()), pose=new ApolloPose(asset);
  const textures=[];
+ const TEX=8;
  for(let i=0;i<asset.json.images.length;i++){
   const pixels=await createImageBitmap(asset.image(i),{colorSpaceConversion:'none'});
   const tex=gl.createTexture();
@@ -272,12 +266,28 @@ export async function loadApolloBody(gl,url=new URL('./apollo-body.glb',import.m
     else gl.vertexAttribPointer(i,dim,gl.FLOAT,false,0,0);
    }
    const indices=asset.accessor(part.indices);
-   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,gl.createBuffer());gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,indices,gl.STATIC_DRAW);
+   const elements=gl.createBuffer();
+   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,elements);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,indices,gl.STATIC_DRAW);
+   let nearElements=null,nearCount=0;
+   if(node.name==='suit_torso_arms'){
+    const sleeve=firstPersonSleeve(asset,part,indices);
+    nearElements=gl.createBuffer();nearCount=sleeve.length;
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,nearElements);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,sleeve,gl.STATIC_DRAW);
+   }
    const mat=asset.json.materials[part.material].pbrMetallicRoughness;
    const tex=mat.baseColorTexture?textures[asset.json.textures[mat.baseColorTexture.index].source]:null;
-   meshes.push({name:node.name,vao,len:indices.length,kind:indices instanceof Uint16Array?gl.UNSIGNED_SHORT:gl.UNSIGNED_INT,tex,color:mat.baseColorFactor??[1,1,1,1]});
+   meshes.push({name:node.name,vao,first:sleeveParts.has(node.name),elements,nearElements,nearCount,len:indices.length,kind:indices instanceof Uint16Array?gl.UNSIGNED_SHORT:gl.UNSIGNED_INT,tex,color:mat.baseColorFactor??[1,1,1,1]});
   }
  }
+ return renderAvatar(gl,pose,meshes);
+}
+
+function renderAvatar(gl,pose,meshes){
+ const p=program(gl);
+ const U=Object.fromEntries(['eye','basis','optics','roll','sunDirection','firstPerson','plume','baseColor','mapped','albedo'].map(n=>[n,gl.getUniformLocation(p,n)]));
+ const UBO=3, TEX=8, palette=gl.createBuffer();
+ gl.uniformBlockBinding(p,gl.getUniformBlockIndex(p,'ApolloJoints'),UBO);
+ gl.bindBuffer(gl.UNIFORM_BUFFER,palette);gl.bufferData(gl.UNIFORM_BUFFER,89*64,gl.DYNAMIC_DRAW);
  meshes.push(...createEquipment(gl));
  const plumes=[createPlume(gl,87),createPlume(gl,88)];
  gl.bindVertexArray(null);
@@ -292,14 +302,18 @@ export async function loadApolloBody(gl,url=new URL('./apollo-body.glb',import.m
    gl.bindBuffer(gl.UNIFORM_BUFFER,palette);gl.bufferSubData(gl.UNIFORM_BUFFER,0,last.palette);
    gl.bindBufferBase(gl.UNIFORM_BUFFER,UBO,palette);gl.activeTexture(gl.TEXTURE0+TEX);
    for(const m of meshes){
-    if(!thirdPerson&&hidden.has(m.name))continue;
+    if(!thirdPerson&&!m.first)continue;
     gl.bindVertexArray(m.vao);
     if(m.tex)gl.bindTexture(gl.TEXTURE_2D,m.tex);
     gl.uniform1i(U.mapped,Boolean(m.tex));gl.uniform4fv(U.baseColor,m.color);
     if(m.joint!==undefined){
      gl.vertexAttribI4ui(3,m.joint,0,0,0);gl.vertexAttrib4f(4,1,0,0,0);
      gl.drawArrays(gl.TRIANGLES,0,m.len);
-    }else gl.drawElements(gl.TRIANGLES,m.len,m.kind,0);
+    }else {
+     const near=!thirdPerson&&m.nearElements;
+     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,near?m.nearElements:m.elements);
+     gl.drawElements(gl.TRIANGLES,near?m.nearCount:m.len,m.kind,0);
+    }
    }
    if(last.plume>.03){
     gl.depthMask(false);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
@@ -310,19 +324,39 @@ export async function loadApolloBody(gl,url=new URL('./apollo-body.glb',import.m
     }
     gl.disable(gl.BLEND);gl.depthMask(true);
    }
-   gl.bindVertexArray(null);
+   gl.bindVertexArray(null);gl.vertexAttrib4f(3,0,0,0,1);
   },
   diagnostics:()=>last?.joints,
  };
 }
 
+function equipmentPose(palette,frame,body,gear){
+  palette.set(gear,84*16);
+  const acceleration=Array.from(frame.slice(23,26));
+  const amount=length(acceleration);
+  if(amount>.004){
+   const ex=mul(acceleration,-1/amount);
+   const guide=Math.abs(ex[1])>.94?body.forward:body.up;
+   const side=unit(cross(ex,guide)), up=cross(side,ex);
+   const scale=Math.min(1,Math.sqrt(amount));
+   for(const [i,x] of [-.382,.382].entries()){
+    const nozzle=transform(gear,[x,-.585,.300]);
+    palette.set(transformBasis(side,up,mul(ex,.19+.27*scale),nozzle),(87+i)*16);
+   }
+  }
+  const controls=mmuControls(frame);
+  for(const [i,control] of controls.entries())palette.set(product(gear,control.pivot), (85+i)*16);
+  return {amount,controls};
+}
+
 // In eye-relative body space (+X right, +Y up, +Z behind). A geared
 // hinge at each arm tip is the one shared transform for hardware and fingers.
+const controllerPoint=([x,y,z])=>[x*.90,y+.040,z-.095];
 export function mmuControls(frame){
  return [-1,1].map((s,i)=>{
   const x=clamp(frame[33+i*2]||0,-1,1), y=clamp(frame[34+i*2]||0,-1,1);
-  const stem=[s*.285,-.255,-.425];
-  const handle=[s*.285,-.307,-.50];
+  const stem=controllerPoint([s*.285,-.255,-.425]);
+  const handle=controllerPoint([s*.285,-.307,-.50]);
   const r=matrix(stem,orbitRotation([y,-x,0],Math.min(1,Math.hypot(x,y))*.34));
   const pivot=product(r,matrix(mul(stem,-1)));
   return {stem,handle:transform(pivot,handle),pivot};
@@ -332,6 +366,7 @@ export function mmuControls(frame){
 function createEquipment(gl){
  const geometry=[];
  const box=(joint,center,half,color)=>{
+  if(joint===85||joint===86)center=controllerPoint(center);
   let group=geometry.find(g=>g.joint===joint&&g.color===color);
   if(!group){group={joint,color,buf:[]};geometry.push(group);}
   const vertices=Array.from({length:8},(_,i)=>add(center,half.map((v,j)=>(i&(1<<j))?v:-v)));
@@ -345,10 +380,10 @@ function createEquipment(gl){
  for(const [i,s] of [-1,1].entries()){
   const j=85+i;
   box(84,[s*.347,-.52,.17],[.095,.15,.13],silver);
-  box(84,[s*.328,-.354,-.038],[.037,.043,.31],silver);
-  box(84,[s*.317,-.326,-.353],[.051,.086,.066],dark);
-  box(84,[s*.285,-.255,-.397],[.042,.03,.039],alloy);
-  box(84,[s*.317,-.31,-.382],[.050,.006,.018],s<0?amber:cyan);
+  box(84,[s*.309,-.345,-.083],[.035,.032,.372],silver);
+  box(84,[s*.287,-.290,-.451],[.042,.055,.074],dark);
+  box(84,controllerPoint([s*.285,-.255,-.397]),[.038,.03,.039],alloy);
+  box(84,[s*.286,-.235,-.433],[.041,.006,.018],s<0?amber:cyan);
   box(j,[s*.285,-.277,-.462],[.019,.023,.047],alloy);
   box(j,[s*.285,-.300,-.501],[.037,.040,.029],dark);
   for(const y of [-.273,-.287,-.301,-.315])
@@ -361,7 +396,7 @@ function createEquipment(gl){
   gl.bindVertexArray(vao);gl.bindBuffer(gl.ARRAY_BUFFER,v);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(buf),gl.STATIC_DRAW);
   gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,24,0);
   gl.enableVertexAttribArray(1);gl.vertexAttribPointer(1,3,gl.FLOAT,false,24,12);
-  return {name:'MMU',joint,vao,len:buf.length/6,color};
+  return {name:'MMU',joint,vao,len:buf.length/6,color,first:true};
  });
 }
 
@@ -381,4 +416,94 @@ function createPlume(gl,joint){
  gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,20,0);
  gl.enableVertexAttribArray(2);gl.vertexAttribPointer(2,2,gl.FLOAT,false,20,12);
  return {vao,joint,len:source.length/5};
+}
+
+// Original low-poly EVA suit. No download, imported topology, texture, or bone store.
+export function loadProceduralSuit(gl){
+ const navy=[.035,.067,.085,1], rubber=[.028,.042,.049,1], white=[.73,.76,.75,1], panel=[.21,.3,.34,1], gold=[.30,.17,.075,1], pale=[.84,.89,.85,1], red=[.65,.11,.035,1];
+ const groups=[];
+ const shell=(joint,center,rx,ry,rz,color)=>{
+  let group=groups.find(g=>g.joint===joint&&g.color===color);
+  if(!group){group={joint,color,buf:[],first:joint>=4};groups.push(group);}
+  const L=10,S=6;
+  const p=(i,j)=>{
+   const theta=j*2*Math.PI/L, phi=(i/S-.5)*Math.PI, c=Math.cos(phi);
+   const [x,y,z]=[c*Math.cos(theta),c*Math.sin(theta),Math.sin(phi)];
+   return [...add(center,[x*rx,y*ry,z*rz]),...unit([x/rx,y/ry,z/rz])];
+  };
+  for(let i=0;i<S;i++)for(let j=0;j<L;j++){
+   const a=p(i,j),b=p(i,j+1),c=p(i+1,j),d=p(i+1,j+1);
+   if(i)group.buf.push(...a,...b,...c);
+   if(i!==S-1)group.buf.push(...b,...d,...c);
+  }
+ };
+ shell(0,[0,-.38,0],.26,.325,.16,white);
+ shell(0,[0,-.39,.102],.205,.21,.126,panel);
+ shell(0,[0,-.37,-.14],.135,.104,.066,navy);
+ shell(0,[0,-.37,-.196],.092,.042,.015,panel);
+ for(const s of [-1,1]){
+  shell(0,[s*.16,-.66,0],.112,.102,.125,rubber);
+  shell(0,[s*.155,-.86,.007],.10,.234,.111,white);
+  shell(0,[s*.166,-1.102,.013],.094,.087,.101,navy);
+  shell(0,[s*.171,-1.237,.014],.083,.184,.089,white);
+  shell(0,[s*.173,-1.409,-.044],.100,.103,.158,navy);
+  shell(0,[s*.173,-1.417,-.093],.089,.065,.148,panel);
+ }
+ shell(1,[0,.009,.01],.148,.166,.155,pale);
+ shell(1,[0,-.019,-.099],.125,.092,.079,navy);
+ shell(1,[0,-.020,-.129],.106,.069,.056,gold);
+ for(let i=0;i<2;i++){
+  const j=4+3*i;
+  shell(j,[0,0, .11],.098,.098,.171,white);
+  shell(j,[0,0,.225],.082,.081,.069,panel);
+  shell(j+1,[0,0,.107],.077,.079,.138,white);
+  shell(j+1,[0,0,.203],.064,.068,.055,navy);
+  shell(j+1,[0,.004,.175],.069,.069,.012,red);
+  shell(j+2,[0,0,.040],.047,.039,.058,panel);
+  shell(j+2,[(i?1:-1)*.037,-.012,.044],.021,.026,.042,rubber);
+  for(let f=0;f<4;f++)shell(j+2,[(f-1.5)*.021,.001,.079],.013,.020,.037,rubber);
+ }
+ const meshes=groups.map(({joint,color,buf,first})=>{
+  const vao=gl.createVertexArray(),v=gl.createBuffer();
+  gl.bindVertexArray(vao);gl.bindBuffer(gl.ARRAY_BUFFER,v);gl.bufferData(gl.ARRAY_BUFFER,new Float32Array(buf),gl.STATIC_DRAW);
+  gl.enableVertexAttribArray(0);gl.vertexAttribPointer(0,3,gl.FLOAT,false,24,0);
+  gl.enableVertexAttribArray(1);gl.vertexAttribPointer(1,3,gl.FLOAT,false,24,12);
+  return {vao,joint,len:buf.length/6,color,first};
+ });
+ return renderAvatar(gl,new ProceduralPose(),meshes);
+}
+
+class ProceduralPose{
+ constructor(){this.palette=new Float32Array(89*16);}
+ solve(frame,options={}){
+  const eye=Array.from(frame.slice(0,3));
+  const body=facing(frame[21]??frame[3],frame[22]??frame[4]), head=facing(frame[3],frame[4]);
+  const gear=transformBasis(body.right,body.up,mul(body.forward,-1),eye);
+  const helmet=transformBasis(head.right,head.up,mul(head.forward,-1),eye);
+  this.palette.set(gear,0);this.palette.set(helmet,16);
+  const {amount,controls}=equipmentPose(this.palette,frame,body,gear);
+  const grip=clamp(frame[8],0,1), debug={};
+  const wristFrame=options.wrist??add(Array.from(frame.slice(12,15)),[.068,.154,.077]);
+  const aim=(a,b)=>{
+   const z=unit(sub(b,a));
+   const guide=Math.abs(dot(body.up,z))>.92?body.right:body.up;
+   const x=unit(cross(guide,z));return transformBasis(x,cross(z,x),z,a);
+  };
+  for(const [i,s] of [-1,1].entries()){
+   let a=transform(gear,[s*.228,-.177,-.076]);
+   const control=controls[i], handle=transform(gear,control.handle), controlAxis=unit(sub(handle,transform(gear,control.stem)));
+   const rest=sub(handle,mul(controlAxis,.064));
+   const reach=i===0?grip:0, target=mix(rest,wristFrame,reach);
+   const deficit=Math.max(0,length(sub(target,a))-.496);
+   if(reach&&deficit)a=add(a,mul(unit(sub(target,a)),Math.min(.17,deficit)*Math.min(1,reach*2.1)));
+   const M=elbowIK(a,target,.276,.232,add(mul(body.right,s*.46),mul(body.up,-1)));
+   const hand=unit(mix(controlAxis,options.gripForward??head.forward,reach));
+   const j=(4+3*i)*16;
+   this.palette.set(aim(a,M.elbow),j);
+   this.palette.set(aim(M.elbow,M.wrist),j+16);
+   this.palette.set(aim(M.wrist,add(M.wrist,hand)),j+32);
+   debug[i?'Right':'Left']={shoulder:a,elbow:M.elbow,wrist:M.wrist,requested:target,error:M.wristError};
+  }
+  return {palette:this.palette,joints:debug,plume:Math.min(.66,Math.sqrt(amount)*.46)};
+ }
 }
