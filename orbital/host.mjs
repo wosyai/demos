@@ -1,6 +1,6 @@
 import {hudText} from "./hud-text.mjs?v=6";
 import {reentryGlow} from "./reentry-glow.mjs?v=2";
-import {earthDetail} from "./earth-detail.mjs?v=2";
+import {earthDetail} from "./earth-detail.mjs?v=3";
 import {exteriorSky} from "./exterior-sky.mjs?v=6";
 import {loadApolloBody,loadProceduralSuit,stationGrip} from "./apollo-body.mjs?v=15";
 const $ = id => document.getElementById(id);
@@ -873,7 +873,7 @@ function shadowBuffer(size){
  }
 try{
  if(!gl)throw Error("WebGL 2 is required to render the station.");
- const response=await fetch(new URL("./orbital.wasm?v=54",import.meta.url));
+ const response=await fetch(new URL("./orbital.wasm?v=55",import.meta.url));
  if(!response.ok)throw Error("The station engine could not be downloaded.");
  const {instance}=await WebAssembly.instantiate(await response.arrayBuffer(),{
   orbital:{
@@ -978,7 +978,7 @@ try{
  fineEarth=earthDetail(gl,space.p,()=>{worldVersion++;skyDetailEpoch++;},(now,height)=>{
   const scanned=engine.globe_tiles(now,height)===1;
   return {row:tileRow,scanned};
- });
+ },engine.globe_request,engine.globe_retry);
  earthTexture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,earthTexture);
  gl.texImage2D(gl.TEXTURE_2D,0,gl.RGB,1,1,0,gl.RGB,gl.UNSIGNED_BYTE,new Uint8Array([0,0,0]));
  gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);

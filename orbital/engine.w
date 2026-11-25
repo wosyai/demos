@@ -2062,4 +2062,6 @@ i32(i32,i32,i32,i32,i32,i32,i32) sky_plan=fn(width,height,upgraded,photo,stars,m
         1
     }
 };
+i32(i32,i32) globe_request=fn(mask,in_flight){globe.request(mask,in_flight)};
+f64(f64) globe_retry=fn(now){globe.retry(now)};
 %%end

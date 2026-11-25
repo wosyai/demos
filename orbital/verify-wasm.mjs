@@ -787,6 +787,15 @@ assert.equal(engine.globe_tiles(380-.001,845),0,'respect the view-scan cadence')
 assert.equal(earthTiles[0],10430/(845*globeView[45]),'update the sample footprint between scans');
 assert.deepEqual(earthTiles.slice(1),geographicPlan);
 assert.equal(engine.globe_tiles(380,845),1,'the next eligible view sample regenerates the plan');
+for(let mask=0;mask<512;mask++){
+ const expected=Array.from(earthTiles.slice(10,19)).reduce((chosen,score,i)=>{
+  return (mask&(1<<i))&&score>0&&(chosen<0||score>earthTiles[10+chosen])?i:chosen;
+ },-1);
+ assert.equal(engine.globe_request(mask,0),expected);
+ assert.equal(engine.globe_request(mask,1),expected);
+ assert.equal(engine.globe_request(mask,2),-1);
+}
+assert.equal(engine.globe_retry(237.5),60237.5);
 console.log('Wosy globe detail: camera geography, exact tile slots and scores, and scan cadence passed.');
 
 engine.select_deck(1);engine.tick(0,0,0,0);
