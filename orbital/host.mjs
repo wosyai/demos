@@ -63,12 +63,19 @@ void main(){
  uint uvHigh=uint(round(color.a*255.));
  armUV=armPose.w<0.?vec2(0.):(vec2(uvHigh%16u,uvHigh/16u)*256.+armUVLow)/4095.;
 }`;
+// One physical Sun for the station, fitted suit, shadow basis and sky.
+const normalize3=v=>v.map(n=>n/Math.hypot(...v));
+const cross3=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
+const orbitalSun=normalize3([.48,.35,.80]);
+const shadowX=normalize3(cross3([0,1,0],orbitalSun));
+const shadowY=cross3(orbitalSun,shadowX);
+const glslVec=v=>"vec3("+v.map(x=>x.toFixed(7)).join(",")+")";
 const sun = `
-const vec3 sunDir=vec3(.5674,.6110,.5521);
+const vec3 sunDir=${glslVec(orbitalSun)};
 vec3 lightClip(vec3 p){
  vec3 q=p-vec3(0.,.3,-5.);
- return vec3(dot(q,vec3(.6976,0.,-.7165))/6.4,
-             dot(q,vec3(-.4378,.7920,-.4262))/6.4,
+ return vec3(dot(q,${glslVec(shadowX)})/6.4,
+             dot(q,${glslVec(shadowY)})/6.4,
             -dot(q,sunDir)/14.);
 }
 
@@ -669,7 +676,7 @@ function render(alpha) {
   const relative=entry?{...camera,eye:camera.eye.map((n,i)=>n-pose[i])}:camera;
   let suitPose=pose;
   if(entry){suitPose=pose.slice();suitPose[0]=0;suitPose[1]=0;suitPose[2]=0;}
-  apolloBody.draw(suitPose,{camera:relative,optics,thirdPerson:drawBody,roll});
+  apolloBody.draw(suitPose,{camera:relative,optics,thirdPerson:drawBody,roll,sunDirection:orbitalSun});
  }
  // The background lies behind the mesh; early depth rejects the sky and globe
  // across the station rather than shading those pixels and drawing over them.
