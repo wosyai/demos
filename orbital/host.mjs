@@ -1,4 +1,4 @@
-import {hudText} from "./hud-text.mjs?v=1";
+import {hudText} from "./hud-text.mjs?v=2";
 import {earthDetail} from "./earth-detail.mjs";
 import {exteriorSky} from "./exterior-sky.mjs?v=2";
 import {chaseView,loadApolloBody,loadProceduralSuit,stationGrip} from "./apollo-body.mjs?v=14";
@@ -976,7 +976,7 @@ try{
   };
   stars.src=new URL("./starfield.jpg?v=1",import.meta.url).href;
  }
- const response=await fetch(new URL("./orbital.wasm?v=40",import.meta.url));
+ const response=await fetch(new URL("./orbital.wasm?v=41",import.meta.url));
  if(!response.ok)throw Error("The station engine could not be downloaded.");
  const {instance}=await WebAssembly.instantiate(await response.arrayBuffer(),{
   orbital:{
