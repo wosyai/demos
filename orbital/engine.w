@@ -289,6 +289,31 @@ unit(f32,f32,f32,f32,f32,f32,f32,f32,i32,i32,i32) round_shell = fn(px,py,pz,ax,a
         round_shell(px,py,pz,ax,ay,az,r0,r1,ring_axis,n+1,t);
     };
 };
+unit(f32,f32,f32,f32,f32,f32,i32) lower_rail_tube = fn(px,py,pz,ax,ay,az,k){
+    if(k<9){
+        f32 a=6.28318531*core.sint_to_float<f32>(k)/9.0;
+        f32 ring_b=6.28318531*core.sint_to_float<f32>(k+1)/9.0;
+        if(a>4.6){a=a-6.28318531;};if(ring_b>4.6){ring_b=ring_b-6.28318531;};
+        f32 sa=wave(a);f32 ca=cw(a);f32 sb=wave(ring_b);f32 cb=cw(ring_b);
+        f32 u= -((ay-py)*sa+(az-pz)*ca)/(ax-px);
+        f32 v= -((ay-py)*sb+(az-pz)*cb)/(ax-px);
+        shell_point(px,py,pz,0.046,sa,ca,u,0);shell_point(px,py,pz,0.046,sb,cb,v,0);
+        shell_point(ax,ay,az,0.046,sb,cb,v,0);shell_point(px,py,pz,0.046,sa,ca,u,0);
+        shell_point(ax,ay,az,0.046,sb,cb,v,0);shell_point(ax,ay,az,0.046,sa,ca,u,0);
+        lower_rail_tube(px,py,pz,ax,ay,az,k+1);
+    };
+};
+unit(f32,f32,f32,f32,i32,i32) flat_pin_end = fn(x,y,z,radius,n,k){
+    if(k<n-1){
+        f32 a=6.28318531*core.sint_to_float<f32>(k)/core.sint_to_float<f32>(n);
+        f32 ring_b=6.28318531*core.sint_to_float<f32>(k+1)/core.sint_to_float<f32>(n);
+        if(a>4.6){a=a-6.28318531;};if(ring_b>4.6){ring_b=ring_b-6.28318531;};
+        pt(x+cw(0.0)*radius,y,z,0.85);
+        pt(x+cw(a)*radius,y+wave(a)*radius,z,0.85);
+        pt(x+cw(ring_b)*radius,y+wave(ring_b)*radius,z,0.85);
+        flat_pin_end(x,y,z,radius,n,k+1);
+    };
+};
 unit(f32,f32,f32,bool) quilt_panel = fn(y,z,billow,formed){
     f32 skin=-1.500; f32 loft=skin+billow;
     f32 h=y+0.81; f32 far=z+2.42;
@@ -472,7 +497,7 @@ unit(i32) traversal_rail = fn(leg) {
         rail_foot(-1.30,z,0.238);
         rail_foot(0.755,z,0.44);
         paint(0.37,0.44,0.46,0.62);
-        sweep(-1.54,-0.904,z-0.04,0.779,-1.097,z-0.062,0.046,0.046,0,0,7);
+        lower_rail_tube(-1.54,-0.904,z-0.04,0.779,-1.097,z-0.062,0);
     }else{
         paint(0.19,0.21,0.22,0.08);
         draw_rail_bracket(4);draw_rail_bracket(5);
@@ -489,10 +514,10 @@ unit(f32,f32,f32,f32) pin_z = fn(x,y,z,radius){
 
     paint(0.74,0.74,0.72,0.62);
     round_shell(x,y,z,x,y,z+0.050,radius,radius*0.89,1,0,20);
-    sweep(x,y,z+0.050,x,y,z+0.050,radius*0.89,0.0,1,0,20);
+    flat_pin_end(x,y,z+0.050,radius*0.89,20,1);
     paint(0.15,0.20,0.23,0.40);
     round_shell(x,y,z+0.054,x,y,z+0.075,radius*0.62,radius*0.54,1,0,12);
-    sweep(x,y,z+0.075,x,y,z+0.075,radius*0.54,0.0,1,0,12);
+    flat_pin_end(x,y,z+0.075,radius*0.54,12,1);
     paint(0.71,0.43,0.13,0.63);
     sweep(x,y,z+0.080,x,y,z+0.097,radius*0.30,radius*0.26,1,0,10);
     sweep(x,y,z+0.097,x,y,z+0.097,radius*0.26,0.0,1,0,10);
