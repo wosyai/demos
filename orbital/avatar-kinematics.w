@@ -35,9 +35,20 @@ Grip(Vec,Vec,f64,f64,bool) grip=fn(eye,anchor,weight,stage,valid){
         Vec rest=sub(eye,v(0.23,0.40,0.80));
         Vec center=add(rest,mul(sub(anchor,rest),1.0/weight));
         f64 radius=if(stage>=5.0){0.082}else{0.087};f64 theta=if(stage>=5.0){0.61}else{0.365};
-        Vec inward=v(0.0,math.sin(theta),-math.cos(theta));
+        Vec shaft_inward=v(0.0,math.sin(theta),-math.cos(theta));
         Vec knuckle=radial(center,0.023,radius+0.020,theta);
-        Grip value={.active=true;.center=center;.radius=radius;.theta=theta;.wrist=sub(knuckle,mul(inward,0.066));.inward=inward;.progress=smooth((weight-0.69)/0.31);};value
+        Vec ordinary_wrist=sub(knuckle,mul(shaft_inward,0.066));
+        Vec fitted_wrist=if(stage>=5.0){
+            Vec radial_wrist=sub(ordinary_wrist,center);
+            Vec outside=normalized(v(0.0,radial_wrist.y,radial_wrist.z));
+            add(ordinary_wrist,mul(outside,0.020))
+        }else{ordinary_wrist};
+        Vec fitted_inward=if(stage>=5.0){
+            f64 hat_roll_sin=math.sin(0.18);f64 hat_roll_cos=math.cos(0.18);
+            v(0.0,shaft_inward.y*hat_roll_cos-shaft_inward.z*hat_roll_sin,
+                shaft_inward.y*hat_roll_sin+shaft_inward.z*hat_roll_cos)
+        }else{shaft_inward};
+        Grip value={.active=true;.center=center;.radius=radius;.theta=theta;.wrist=fitted_wrist;.inward=fitted_inward;.progress=smooth((weight-0.69)/0.31);};value
     }else{
         Grip value={.active=false;.center=v(0.0,0.0,0.0);.radius=0.0;.theta=0.0;.wrist=v(0.0,0.0,0.0);.inward=v(0.0,0.0,0.0);.progress=0.0;};value
     }
