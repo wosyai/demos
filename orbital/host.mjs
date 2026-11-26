@@ -106,6 +106,33 @@ const sunCompare=`float shadowAt(vec3 p,vec3 n,float direct){
  return texture(sunMap,vec3(u.xy,depth));
 }
 `;
+const earthLightingShader=profile=>{
+ const n=i=>profile[i].toFixed(8);
+ return `
+uniform vec4 earthLighting;
+float earthPhase(vec3 planet){
+ // Hemisphere contribution follows illuminated fraction. Bound the
+ // stylized Earth-shine floor to retain existing night navigation.
+ return mix(${n(109)},1.,smoothstep(-1.,${n(110)},-dot(planet,sunDir)));
+}
+vec3 earthFill(vec3 n){
+ vec3 planet=normalize(earthLighting.xyz);
+ float r=earthLighting.w;
+ float mu=dot(n,planet);
+ float horizon=(1.-abs(mu));
+ float spread=${n(111)}*r*horizon*horizon;
+ float lighting=(max(0.,mu)+spread)*smoothstep(-r,r*.42,mu);
+ return vec3(${n(103)},${n(104)},${n(105)})*earthPhase(planet)*lighting;
+}
+vec3 earthMetal(vec3 n,vec3 v,float metal){
+ vec3 planet=normalize(earthLighting.xyz);
+ float angular=dot(planet,reflect(-normalize(v),n));
+ float outer=sqrt(max(0.,1.-earthLighting.w*earthLighting.w));
+ float gain=smoothstep(outer-${n(112)},min(1.,outer+${n(112)}),angular);
+ return vec3(${n(106)},${n(107)},${n(108)})*gain*earthPhase(planet)*metal;
+}
+`;
+};
 const exteriorMaterial=(sun,profile)=>{
 const n=i=>profile[i].toFixed(8);
 const v=i=>`vec3(${n(i)},${n(i+1)},${n(i+2)})`;
@@ -115,7 +142,7 @@ uniform highp sampler2DShadow sunMap;
 uniform int detailedShadow;
 uniform int lightingUpgrade;
 uniform bool practicalLighting;
-uniform vec3 earthBounceDir;
+
 uniform vec4 gripContact;
 uniform float gripRadius;
 uniform float renderFraction;
@@ -128,6 +155,7 @@ uniform int routeLens;
 uniform bool routeReach;
 ${sun}
 ${sunCompare}
+${earthLightingShader(profile)}
 // Wosy transfer_hatch lamp-centre coordinates (right, up, depth).
 // Top and bottom rim fixtures face inward/down; recessed lamps throw forward
 // through the cavity. The local baffle suppresses light behind the pressure skin.
@@ -315,14 +343,14 @@ vec3 sunColor(vec3 n,vec3 worldDx,vec3 worldDy){
  }
  vec3 ambient=mix(vec3(.09,.12,.18),vec3(.23,.39,.51),max(0.,-n.y)*.75+max(0.,n.x)*.19);
  if(lightingUpgrade==1){
-   float bounce=max(dot(n,normalize(earthBounceDir)),0.);
-   ambient=vec3(.055,.075,.115)+vec3(.168,.281,.390)*bounce;
+   ambient=vec3(.055,.075,.115)+earthFill(n);
  }
- if(layer==1.){
+ if(layer==1.&&lightingUpgrade!=1){
    float skyReflect=smoothstep(-.5,.6,n.y);
    ambient+=mix(vec3(.06,.125,.20),vec3(.026,.028,.022),skyReflect)*(.40+.60*sheet.b);
  }
  vec3 energy=col*(ambient+lamp*direct*shadow*1.44)+directMetal*spec*shadow*lamp;
+ if(lightingUpgrade==1&&layer==1.)energy+=earthMetal(n,eye-world,min(metal,1.));
  if(gripContact.w>0.){
    // Profile-local contact occlusion on the bar. Existing station shadows
    // remain authoritative for projected structures; no new render pass.
@@ -489,7 +517,7 @@ function program(a,b) {
  }
  gl.linkProgram(p);
  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(p));
- return {p, eye:gl.getUniformLocation(p,"eye"), basis:gl.getUniformLocation(p,"basis"), optics:gl.getUniformLocation(p,"optics"), roll:gl.getUniformLocation(p,"roll"), eva:gl.getUniformLocation(p,"eva"), photo:gl.getUniformLocation(p,"photo"), earth:gl.getUniformLocation(p,"earthMap"),starMap:gl.getUniformLocation(p,"starMap"),starReady:gl.getUniformLocation(p,"starReady"),moonMap:gl.getUniformLocation(p,"moonMap"),moonReady:gl.getUniformLocation(p,"moonReady"),upgradedSky:gl.getUniformLocation(p,"upgradedSky"),orbitCenter:gl.getUniformLocation(p,"orbitCenter"),earthAngle:gl.getUniformLocation(p,"earthAngle"), backdrop:gl.getUniformLocation(p,"backdrop"), sunMap:gl.getUniformLocation(p,"sunMap"),armPose:gl.getUniformLocation(p,"armPose"),armSurfaceReady:gl.getUniformLocation(p,"armSurfaceReady"),panelStampReady:gl.getUniformLocation(p,"panelStampReady"),pressureStampReady:gl.getUniformLocation(p,"pressureStampReady"),fasciaStampReady:gl.getUniformLocation(p,"fasciaStampReady"), renderFraction:gl.getUniformLocation(p,"renderFraction"),surfaceTile:gl.getUniformLocation(p,"surfaceTile"), routeLens:gl.getUniformLocation(p,"routeLens"), routeReach:gl.getUniformLocation(p,"routeReach"), detailedShadow:gl.getUniformLocation(p,"detailedShadow"),lightingUpgrade:gl.getUniformLocation(p,"lightingUpgrade"),practicalLighting:gl.getUniformLocation(p,"practicalLighting"),earthBounceDir:gl.getUniformLocation(p,"earthBounceDir"),gripContact:gl.getUniformLocation(p,"gripContact"),gripRadius:gl.getUniformLocation(p,"gripRadius")};
+ return {p, eye:gl.getUniformLocation(p,"eye"), basis:gl.getUniformLocation(p,"basis"), optics:gl.getUniformLocation(p,"optics"), roll:gl.getUniformLocation(p,"roll"), eva:gl.getUniformLocation(p,"eva"), photo:gl.getUniformLocation(p,"photo"), earth:gl.getUniformLocation(p,"earthMap"),starMap:gl.getUniformLocation(p,"starMap"),starReady:gl.getUniformLocation(p,"starReady"),moonMap:gl.getUniformLocation(p,"moonMap"),moonReady:gl.getUniformLocation(p,"moonReady"),upgradedSky:gl.getUniformLocation(p,"upgradedSky"),orbitCenter:gl.getUniformLocation(p,"orbitCenter"),earthAngle:gl.getUniformLocation(p,"earthAngle"), backdrop:gl.getUniformLocation(p,"backdrop"), sunMap:gl.getUniformLocation(p,"sunMap"),armPose:gl.getUniformLocation(p,"armPose"),armSurfaceReady:gl.getUniformLocation(p,"armSurfaceReady"),panelStampReady:gl.getUniformLocation(p,"panelStampReady"),pressureStampReady:gl.getUniformLocation(p,"pressureStampReady"),fasciaStampReady:gl.getUniformLocation(p,"fasciaStampReady"), renderFraction:gl.getUniformLocation(p,"renderFraction"),surfaceTile:gl.getUniformLocation(p,"surfaceTile"), routeLens:gl.getUniformLocation(p,"routeLens"), routeReach:gl.getUniformLocation(p,"routeReach"), detailedShadow:gl.getUniformLocation(p,"detailedShadow"),lightingUpgrade:gl.getUniformLocation(p,"lightingUpgrade"),practicalLighting:gl.getUniformLocation(p,"practicalLighting"),earthLighting:gl.getUniformLocation(p,"earthLighting"),gripContact:gl.getUniformLocation(p,"gripContact"),gripRadius:gl.getUniformLocation(p,"gripRadius")};
 }
 const coarseShadow=matchMedia("(pointer:coarse)").matches;
 const maxShadow=gl?gl.getParameter(gl.MAX_TEXTURE_SIZE):1024;
@@ -657,7 +685,7 @@ function render(alpha) {
  if(holdingAngle)bakeBackdrop(bind,w,h,orbit);
  gl.clear(gl.DEPTH_BUFFER_BIT);
  gl.enable(gl.DEPTH_TEST);bind(scene);
- gl.uniform1i(scene.practicalLighting,Number(upgradedPractical));gl.uniform1i(scene.lightingUpgrade,Number(upgradedSky));gl.uniform3fv(scene.earthBounceDir,orbit.center.slice(0,3));
+ gl.uniform1i(scene.practicalLighting,Number(upgradedPractical));gl.uniform1i(scene.lightingUpgrade,Number(upgradedSky));gl.uniform4fv(scene.earthLighting,orbit.center);
  // Both suit solvers use this same Wosy-derived rail anchor; shade only in contact.
  const grip=body?avatarRig.stationGrip(pose):null;
  const contact=(!apolloModelActive||upgradedPractical)?grip:null;
@@ -672,7 +700,7 @@ function render(alpha) {
   const relative=entry?{...camera,eye:camera.eye.map((n,i)=>n-pose[i])}:camera;
   let suitPose=pose;
   if(entry){suitPose=pose.slice();suitPose[0]=0;suitPose[1]=0;suitPose[2]=0;}
-  apolloBody.draw(suitPose,{camera:relative,optics,thirdPerson:drawBody,roll,sunDirection:orbitalSun,contact:grip,stationSun:apolloModelActive&&!entry,shadowDetail:detailed,renderFraction:fraction});
+  apolloBody.draw(suitPose,{camera:relative,optics,thirdPerson:drawBody,roll,sunDirection:orbitalSun,contact:grip,stationSun:apolloModelActive&&!entry,earthLighting:upgradedSky?orbit.center:null,shadowDetail:detailed,renderFraction:fraction});
  }
  // The background lies behind the mesh; early depth rejects the sky and globe
  // across the station rather than shading those pixels and drawing over them.
@@ -923,7 +951,7 @@ try{
   orbital:{
    indexed:uploadIndexed,hands:uploadHands,
    avatar_rig(p,n){rigRow=new Float64Array(engine.memory.buffer,p,n);},
-   material_art(p,n){if(n!==103)throw Error("Unexpected station material profile");materialArt=new Float64Array(engine.memory.buffer,p,n);},
+   material_art(p,n){if(n!==113)throw Error("Unexpected station material profile");materialArt=new Float64Array(engine.memory.buffer,p,n);},
    sky_art(p,n){if(n!==37)throw Error("Unexpected celestial profile");skyArt=new Float64Array(engine.memory.buffer,p,n);},
    hud_view(p,n){if(n!==8)throw Error("Unexpected HUD projection");hudRow=new Float64Array(engine.memory.buffer,p,n);},
    render_budget(p,n){if(n!==3)throw Error("Unexpected renderer plan");renderPlan=new Float64Array(engine.memory.buffer,p,n);},
@@ -1081,7 +1109,7 @@ try{
   try{installSuit(loadProceduralSuit(gl,avatarRig));}
   catch(e){console.warn("EVA equipment fallback: "+e.message);loadBakedArm();}
  };
- if(wantsApollo)loadApolloBody(gl,new URL("./apollo-body.glb?v=1",import.meta.url),avatarRig,sun+sunCompare).then(body=>installSuit(body,true)).catch(e=>{console.warn("Apollo body fallback: "+e.message);useDefaultSuit();});
+ if(wantsApollo)loadApolloBody(gl,new URL("./apollo-body.glb?v=1",import.meta.url),avatarRig,sun+sunCompare+earthLightingShader(materialArt)).then(body=>installSuit(body,true)).catch(e=>{console.warn("Apollo body fallback: "+e.message);useDefaultSuit();});
  else useDefaultSuit();
  $("start").disabled=false;$("training").disabled=false;$("reentry").disabled=false;requestAnimationFrame(animate);
 }catch(e){$("error").textContent=String(e.message);console.error(e);}

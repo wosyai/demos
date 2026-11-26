@@ -321,7 +321,9 @@ void main(){
  vec3 N=normalize(n);
  float direct=max(dot(N,sunDirection),0.);
  ${sunVisibility?"float sunVisibility=stationSun&&direct>0.?shadowAt(world,N,direct):1.;":"const float sunVisibility=1.;"}
- vec3 lit=color*(vec3(.15,.18,.23)+vec3(.035,.079,.118)*max(0.,dot(N,vec3(.46,-.80,-.35)))+direct*sunVisibility*vec3(1.08,1.04,.94));
+ vec3 diffuseFill=vec3(.035,.079,.118)*max(0.,dot(N,vec3(.46,-.80,-.35)));
+ ${sunVisibility?"if(stationSun&&earthLighting.w>0.)diffuseFill=earthFill(N);":""}
+ vec3 lit=color*(vec3(.15,.18,.23)+diffuseFill+direct*sunVisibility*vec3(1.08,1.04,.94));
  if(!mapped&&surfaceColor.a<.99){
    vec3 V=normalize(eye-world);
    if(surfaceColor.a<.3){
@@ -333,6 +335,7 @@ void main(){
      lit*=1.+.055*pattern*coverage;
    }
    float metal=smoothstep(.50,.93,surfaceColor.a);
+   ${sunVisibility?"if(stationSun&&earthLighting.w>0.)lit+=earthMetal(N,V,metal*.30);":""}
    float facing=max(dot(V,N),0.);
    float h=max(dot(N,normalize(sunDirection+V)),0.);
    float h2=h*h,h4=h2*h2,h8=h4*h4,h16=h8*h8,h32=h16*h16;
@@ -410,7 +413,8 @@ export async function loadApolloBody(gl,url,rig,sunVisibility){
 function renderAvatar(gl,pose,meshes,hasEquipment=false,sunVisibility){
  const p=program(gl,sunVisibility);
  const U=Object.fromEntries(['eye','basis','optics','roll','sunDirection','firstPerson','plume','baseColor','baked','mapped','albedo'].map(n=>[n,gl.getUniformLocation(p,n)]));
- const S=sunVisibility?Object.fromEntries(['stationSun','sunMap','detailedShadow','renderFraction'].map(n=>[n,gl.getUniformLocation(p,n)])):null;
+ const S=sunVisibility?Object.fromEntries(['stationSun','sunMap','detailedShadow','renderFraction','earthLighting'].map(n=>[n,gl.getUniformLocation(p,n)])):null;
+ const unlitEarth=new Float32Array(4);
  const UBO=3, TEX=8, palette=gl.createBuffer();
  gl.uniformBlockBinding(p,gl.getUniformBlockIndex(p,'ApolloJoints'),UBO);
  gl.bindBuffer(gl.UNIFORM_BUFFER,palette);gl.bufferData(gl.UNIFORM_BUFFER,89*64,gl.DYNAMIC_DRAW);
@@ -419,7 +423,7 @@ function renderAvatar(gl,pose,meshes,hasEquipment=false,sunVisibility){
  gl.bindVertexArray(null);
  let last=null;
  return {
-  draw(frame,{camera, optics, thirdPerson=false, sunDirection=[.5674,.611,.5521], roll=[1,0],stationSun=false,shadowDetail=false,renderFraction=1,...opts}){
+  draw(frame,{camera, optics, thirdPerson=false, sunDirection=[.5674,.611,.5521], roll=[1,0],stationSun=false,earthLighting,shadowDetail=false,renderFraction=1,...opts}){
    last=pose.solve(frame,opts);
    gl.useProgram(p);gl.uniform3fv(U.eye,camera.eye);
    if(S){
@@ -427,7 +431,7 @@ function renderAvatar(gl,pose,meshes,hasEquipment=false,sunVisibility){
     gl.uniform1i(S.stationSun,Number(stationSun));
     if(stationSun){
      gl.uniform1i(S.detailedShadow,Number(shadowDetail));
-     gl.uniform1f(S.renderFraction,renderFraction);
+     gl.uniform1f(S.renderFraction,renderFraction);gl.uniform4fv(S.earthLighting,earthLighting??unlitEarth);
     }
    }
    gl.uniform4f(U.basis,Math.cos(camera.yaw),Math.sin(camera.yaw),Math.cos(camera.pitch),Math.sin(camera.pitch));

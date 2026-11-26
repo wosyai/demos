@@ -52,7 +52,7 @@ engine=new WebAssembly.Instance(wasm,{orbital:{
   }
  },hands(p,n){hand=read(p,n);handLoads++;},
  avatar_rig(p,n){assert.equal(p%8,0);rigRow=new Float64Array(engine.memory.buffer,p,n);},
- material_art(p,n){assert.equal(n,103);assert.equal(p%8,0);materialArt=new Float64Array(engine.memory.buffer,p,n).slice();},
+ material_art(p,n){assert.equal(n,113);assert.equal(p%8,0);materialArt=new Float64Array(engine.memory.buffer,p,n).slice();},
  sky_art(p,n){assert.equal(n,37);assert.equal(p%8,0);skyArt=new Float64Array(engine.memory.buffer,p,n).slice();},
  hud_view(p,n){assert.equal(n,8);assert.equal(p%8,0);hudView=new Float64Array(engine.memory.buffer,p,n).slice();},
  render_budget(p,n){assert.equal(n,3);assert.equal(p%8,0);rendererPlan=new Float64Array(engine.memory.buffer,p,n).slice();},
