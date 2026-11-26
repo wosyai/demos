@@ -237,7 +237,7 @@ export class ApolloPose {
    debug[side]={shoulder:a, elbow:origin(joints[lower]), wrist:origin(joints[wrist]), requested:target, error:M.wristError};
   }
   for(let j=0;j<this.joints.length;j++)this.palette.set(product(joints[this.joints[j]],this.asset.bind[j]),j*16);
-  return {palette:this.palette, joints:debug, plume:Math.min(.66,Math.sqrt(amount)*.46)};
+  return {palette:this.palette, joints:debug, helmetForward:head.forward, plume:Math.min(.66,Math.sqrt(amount)*.46)};
  }
 }
 
@@ -298,6 +298,8 @@ uniform vec3 eye;
 uniform bool firstPerson;
 uniform bool stockEyeSeat;
 uniform int interiorOptic;
+uniform bool helmetHardwareInside;
+uniform vec3 helmetForward;
 uniform float plume;
 flat in vec4 surfaceColor;
 uniform bool mapped;
@@ -328,6 +330,22 @@ void main(){
  vec3 color=surfaceColor.rgb;
  if(mapped)color*=texture(albedo,tex).rgb;
  vec3 N=normalize(n);
+ if(helmetHardwareInside){
+   // Light enters through the front aperture, not the opaque pressure shell.
+   vec3 linerNormal=faceforward(N,world-eye,N);
+   float entry=smoothstep(.48,.78,dot(helmetForward,sunDirection));
+   float incidence=max(0.,dot(linerNormal,sunDirection));
+   float sun=entry*incidence;
+   ${sunVisibility?"if(stationSun&&sun>0.)sun*=shadowAt(world,linerNormal,incidence);":""}
+   vec3 indirect=vec3(.021,.026,.036);
+   ${sunVisibility?`if(stationSun&&earthLighting.w>0.){
+     float aperture=smoothstep(-earthLighting.w,.60,dot(helmetForward,normalize(earthLighting.xyz)));
+     indirect+=earthFill(linerNormal)*aperture*.48;
+   }`:""}
+   vec3 liner=color*(indirect+sun*vec3(.40,.36,.30));
+   pix=vec4(pow(max(liner,0.),vec3(.45455)),1.);
+   return;
+ }
  float direct=max(dot(N,sunDirection),0.);
  ${sunVisibility?"float sunVisibility=stationSun&&direct>0.?shadowAt(world,N,direct):1.;":"const float sunVisibility=1.;"}
  vec3 diffuseFill=vec3(.035,.079,.118)*max(0.,dot(N,vec3(.46,-.80,-.35)));
@@ -364,6 +382,7 @@ function program(gl,sunVisibility){
  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(p));
  return p;
 }
+const opaqueHelmetParts=new Set(['helmet_shell','helmet_neck_ring','helmet_visor_assembly']);
 const sleeveParts=new Set(['forearm_gauge_body','forearm_gauge_face','forearm_gauge_glass','forearm_gauge_ticks','glove_fingertips','gloves','wrist_rings','wristwatch','wristwatch_glass','suit_torso_arms']);
 function firstPersonSleeve(asset,part,indices){
  const j=asset.accessor(part.attributes.JOINTS_0),w=asset.accessor(part.attributes.WEIGHTS_0);
@@ -427,7 +446,7 @@ export async function loadApolloBody(gl,url,rig,sunVisibility){
 
 function renderAvatar(gl,pose,meshes,hasEquipment=false,sunVisibility,stock=false){
  const p=program(gl,sunVisibility);
- const U=Object.fromEntries(['eye','basis','optics','roll','depthClip','sunDirection','firstPerson','stockEyeSeat','plume','interiorOptic','baseColor','baked','mapped','albedo'].map(n=>[n,gl.getUniformLocation(p,n)]));
+ const U=Object.fromEntries(['eye','basis','optics','roll','depthClip','sunDirection','firstPerson','stockEyeSeat','plume','interiorOptic','helmetHardwareInside','helmetForward','baseColor','baked','mapped','albedo'].map(n=>[n,gl.getUniformLocation(p,n)]));
  const S=sunVisibility?Object.fromEntries(['stationSun','sunMap','detailedShadow','renderFraction','earthLighting'].map(n=>[n,gl.getUniformLocation(p,n)])):null;
  const unlitEarth=new Float32Array(4);
  const UBO=3, TEX=8, palette=gl.createBuffer();
@@ -457,11 +476,15 @@ function renderAvatar(gl,pose,meshes,hasEquipment=false,sunVisibility,stock=fals
    gl.bindBufferBase(gl.UNIFORM_BUFFER,UBO,palette);gl.activeTexture(gl.TEXTURE0+TEX);
    const fullInterior=!thirdPerson&&stock&&frame[32]!==1;
    gl.uniform1i(U.stockEyeSeat,Number(Boolean(fullInterior)&&frame[32]!==1));
-   gl.uniform1i(U.interiorOptic,0);
+   gl.uniform1i(U.interiorOptic,0);gl.uniform1i(U.helmetHardwareInside,0);
+   if(fullInterior)gl.uniform3fv(U.helmetForward,last.helmetForward);
+   let lining=false;
    for(const m of meshes){
     if(fullInterior){
      if(m.name==="helmet_visor"){visor=m;continue;}
     }else if(!thirdPerson&&!m.first)continue;
+    const inside=fullInterior&&opaqueHelmetParts.has(m.name);
+    if(inside!==lining){gl.uniform1i(U.helmetHardwareInside,Number(inside));lining=inside;}
     gl.bindVertexArray(m.vao);
     if(m.tex)gl.bindTexture(gl.TEXTURE_2D,m.tex);
     gl.uniform1i(U.mapped,Boolean(m.tex));gl.uniform1i(U.baked,Boolean(m.baked));
@@ -480,6 +503,7 @@ function renderAvatar(gl,pose,meshes,hasEquipment=false,sunVisibility,stock=fals
      gl.drawElements(gl.TRIANGLES,near?m.nearCount:m.len,m.kind,0);
     }
    }
+   if(lining)gl.uniform1i(U.helmetHardwareInside,0);
    if(last.plume>.03){
     gl.depthMask(false);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE);
     gl.uniform1f(U.plume,last.plume);gl.uniform1i(U.baked,0);gl.vertexAttrib4f(4,1,0,0,0);
