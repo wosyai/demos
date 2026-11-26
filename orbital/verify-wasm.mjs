@@ -1,0 +1,1303 @@
+import {hudText,flightStatusText} from './hud-text.mjs';
+import {ProceduralPose} from './apollo-body.mjs';
+import {bindAvatarRig} from './avatar-rig.mjs';
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {createHash} from 'node:crypto';
+const path=process.argv[2] ?? new URL('./orbital.wasm',import.meta.url);
+const wasm=new WebAssembly.Module(readFileSync(path));
+const imports=WebAssembly.Module.imports(wasm);
+const actual=imports.map(({module,name,kind})=>`${module}.${name}:${kind}`).sort();
+const orbitalImports=['orbital.avatar_rig:function','orbital.earth_tiles:function','orbital.entry_shell:function','orbital.entry_visual:function','orbital.frame:function','orbital.hands:function','orbital.hud_view:function','orbital.indexed:function','orbital.material_art:function','orbital.render_budget:function','orbital.sky_art:function','orbital.visual:function'];
+const procExit='wasi_snapshot_preview1.proc_exit:function';
+assert.deepEqual(actual,actual.includes(procExit)?[...orbitalImports,procExit]:orbitalImports,
+ 'expected the exact browser import contract (Orbital callbacks and optional WASI proc_exit)');
+let materialArt,roomVertices,roomElements,skyArt,hudView,rendererPlan,entryMesh,entrySample,earthTiles,visual,hull,hullLoads=0,room,hand,state,engine,roomLoads=0,handLoads=0,roomSpan,stagedRoom;
+let rigRow;
+const roomPatches=[];
+function read(p,n){assert.equal(p%4,0);return new Float32Array(engine.memory.buffer,p,n).slice();}
+engine=new WebAssembly.Instance(wasm,{orbital:{
+ indexed(p,n,e,ne,kind,base,first){
+  assert.ok(n>0&&n%8===0&&ne>0&&ne%3===0&&e%2===0);
+  const vertices=read(p,n),elements=new Uint16Array(engine.memory.buffer,e,ne).slice();
+  assert.ok(vertices.every(Number.isFinite));
+  const expand=(verts,ids)=>{
+   const out=new Float32Array(ids.length*8);
+   for(let i=0;i<ids.length;i++){const pos=ids[i]*8;assert.ok(pos+8<=verts.length);out.set(verts.subarray(pos,pos+8),i*8);}
+   return out;
+  };
+  if(kind===0){
+   assert.deepEqual([base,first],[0,0]);hull=expand(vertices,elements);hullLoads++;
+  }else if(kind===1){
+   assert.deepEqual([base,first],[0,0]);assert.equal(stagedRoom,undefined);
+   roomVertices=vertices;roomElements=elements;
+   roomSpan=Array.from({length:5},(_,i)=>[engine.scenery_motion(i*2),engine.scenery_motion(i*2+1)]);
+   let last=0;
+   for(const [start,len] of roomSpan){
+    assert.ok(start>=last&&len>=0&&start%24===0&&len%24===0&&start+len<=ne*8);
+    if(len)last=start+len;
+   }
+   assert.ok(roomSpan.every(v=>v[1]===0)||roomSpan.every(v=>v[1]>0));
+   room=expand(vertices,elements);roomLoads++;
+  }else{
+   const id=kind-2,start=first*8,len=ne*8;
+   assert.equal(engine.scenery_motion(10),id+1);
+   assert.deepEqual([start,len],roomSpan[id]);
+   assert.ok(n/8<=ne&&base+n/8<=roomVertices.length/8&&first+ne<=roomElements.length);
+   assert.equal(base,engine.scenery_motion(id+11));
+   assert.ok(elements.every(q=>q>=base&&q<base+n/8));
+   roomVertices.set(vertices,base*8);roomElements.set(elements,first);
+   stagedRoom??=room.slice();stagedRoom.set(expand(roomVertices,elements),start);
+   roomPatches.push({id,start,len});
+  }
+ },hands(p,n){hand=read(p,n);handLoads++;},
+ avatar_rig(p,n){assert.equal(p%8,0);rigRow=new Float64Array(engine.memory.buffer,p,n);},
+ material_art(p,n){assert.equal(n,113);assert.equal(p%8,0);materialArt=new Float64Array(engine.memory.buffer,p,n).slice();},
+ sky_art(p,n){assert.equal(n,37);assert.equal(p%8,0);skyArt=new Float64Array(engine.memory.buffer,p,n).slice();},
+ hud_view(p,n){assert.equal(n,15);assert.equal(p%8,0);hudView=new Float64Array(engine.memory.buffer,p,n).slice();},
+ render_budget(p,n){assert.equal(n,3);assert.equal(p%8,0);rendererPlan=new Float64Array(engine.memory.buffer,p,n).slice();},
+ earth_tiles(p,n){assert.equal(n,19);assert.equal(p%8,0);earthTiles=new Float64Array(engine.memory.buffer,p,n).slice();},
+ entry_shell(p,n){assert.equal(n,6144);entryMesh=read(p,n);},
+ entry_visual(p,n){assert.equal(n,14);assert.equal(p%8,0);entrySample=new Float64Array(engine.memory.buffer,p,n).slice();},
+ visual(p,n){assert.equal(n,64);assert.equal(p%8,0);visual=new Float64Array(engine.memory.buffer,p,n).slice();},
+ frame(p,n){
+  assert.equal(n,38);assert.equal(engine.scenery_motion(10),0);
+  if(stagedRoom){room=stagedRoom;stagedRoom=undefined;roomLoads++;}
+  state=read(p,n);
+ }
+},wasi_snapshot_preview1:{proc_exit(n){throw Error("Station exited: "+n);}}}).exports;
+engine._start();
+engine.celestial_profile();engine.material_profile();
+assert.deepEqual([...materialArt.slice(0,10)],[.6205,.18375,.18525,.752,.75625,-1.10,.20,-6.39,.926,.378]);
+assert.deepEqual([...materialArt.slice(22,29)],[-.001,.646,.177,0,-.77,-.64,.108]);
+assert.ok(Math.abs(Math.hypot(...skyArt.slice(0,3))-1)<1e-12,'one normalized Sun before drawing');
+assert.deepEqual([...skyArt.slice(9,20)],[0,.3,-5,6.4,14,.76,.57,-.31,.00372906,.06104854,.0009869]);
+assert.deepEqual([...skyArt.slice(0,9)].map(x=>x.toFixed(7)),[
+ '0.4817131','0.3512492','0.8028552','0.8574929','0.0000000','-0.5144958','-0.1807162','0.9362820','-0.3011937'
+],'existing GPU literals for the Sun and shadow basis are preserved');
+assert.equal(hullLoads,0,'the celestial startup packet needs no prematurely built GL buffers');
+
+function visualOf(alpha,aspect,hasAvatar=1){
+ visual=undefined;
+ engine.project_visual(alpha,aspect,hasAvatar);
+ assert.ok(visual?.every(Number.isFinite),'projection publishes finite, aligned values synchronously');
+ return visual;
+}
+const waypointChecks=new Set();
+const routeGeometry=[
+ [.2,-.4895,-1.484],[.2,-.4895,-3.324],[-.08,-.2185,-5.060],[1.18,-.2665,-4.837],[-.972,.0795,-2.471],
+];
+function validateWaypoint(){
+ const id=state[20];if(!id||waypointChecks.has(id))return;
+ waypointChecks.add(id);
+ const target=routeGeometry[id-1],material=1.09+id/100;
+ const vertices=[];
+ for(let i=0;i<room.length;i+=8)if(Math.abs(room[i+7]-material)<1e-5)vertices.push([...room.slice(i,i+3)]);
+ assert.ok(vertices.length>=6,"registered lens is an actual attributed station surface");
+ for(let axis=0;axis<3;axis++){
+  const coords=vertices.map(v=>v[axis]);
+  assert.ok(target[axis]>=Math.min(...coords)-1e-5&&target[axis]<=Math.max(...coords)+1e-5);
+ }
+ for(const [width,height] of [[390,844],[1280,720]])for(const hasAvatar of [0,1]){
+  const v=visualOf(1,width/height,hasAvatar);
+  const [dx,dy,dz]=target.map((q,i)=>q-v[38+i]),[cy,sy,cp,sp]=v.slice(54,58);
+  // Reference shader toEye, then its homogeneous clip coordinates.
+  const a=[cy*dx+sy*dz,dy,-sy*dx+cy*dz];
+  const b=[a[0],cp*a[1]+sp*a[2],-sp*a[1]+cp*a[2]];
+  const x=(v[46]*b[0]+v[47]*b[1])*v[44],y=(-v[47]*b[0]+v[46]*b[1])*v[45],w=-b[2];
+  const extent=Math.max(Math.abs(x),Math.abs(y));
+  const visible=w>=.05&&extent<=w;
+  const scale=visible?1/w:.86/extent;
+  assert.equal(v[60],id);
+  assert.ok(Math.abs(v[61]-x*scale)<2e-6&&Math.abs(v[62]-y*scale)<2e-6,"marker projects exact material point");
+  assert.equal(v[63],visible?0:Math.abs(x)>=Math.abs(y)?(x>=0?1:2):(y>=0?3:4));
+ }
+}
+const captureFrames=[];
+const statusIs=(expected)=>{engine.hud_view();assert.equal(flightStatusText(hudView[7]),expected);};
+const hint=()=>{const code=engine.hud_view();assert.equal(code,engine.hud_code());return hudText(code,state[16],Boolean(hudView[5]),hudView[6]);};
+function hudIs(objective,interact,marker="+"){
+ const view=hint();
+ assert.equal(view.objective,objective);assert.equal(view.interact,interact);assert.equal(view.marker,marker);
+}
+const step=(keys=0,yaw=0,pitch=0,dt=1/60)=>{
+ engine.tick(dt,keys,yaw,pitch);
+ validateWaypoint();
+ if(state[15]===1&&state[8]>.004&&[1,2,3].includes(state[9]))captureFrames.push([...state]);
+};
+const until=(test,keys,cap=400)=>{for(let i=0;i<cap&&!test();i++)step(keys);assert.ok(test(),'state did not arrive '+[...state]);};
+function underRail(previous,next){
+ const z=[-1.59,-3.43,-4.88];
+ const destinations=[[.14,-1.28,z[previous]+.65],[.14,-1.28,z[next]+.76],[.06,-.025,z[next]+.76]];
+ for(const [x,y,depth] of destinations){
+  let arrived=false;
+  for(let i=0;i<1000;i++){
+   const limit=t=>Math.max(-.7,Math.min(.7,t));
+   const ax=limit((x-state[0])*2-state[5]*2.6),az=limit((depth-state[2])*2-state[7]*2.6);
+   const sn=Math.sin(state[3]),cs=Math.cos(state[3]),forward=ax*sn-az*cs;
+   engine.set_thrust(ax*cs+az*sn,forward);
+   const up=(y-state[1])*2-state[6]*2.75-forward*Math.sin(state[4]);
+   step(up>.08?16:up<-.08?32:0);
+   if(i>25&&Math.hypot(state[0]-x,state[1]-y,state[2]-depth)<.085&&Math.hypot(...state.slice(5,8))<.08){
+    arrived=true;break;
+   }
+  }
+  assert.ok(arrived,'ordinary under-rail input path must reach '+[x,y,depth]);
+ }
+ engine.set_thrust(0,0);
+ const dx=.05-state[0],dz=state[2]-z[next],dy=-.235-state[1];
+ step(0,Math.atan2(dx,dz)-state[3],Math.atan2(dy,Math.hypot(dx,dz))-state[4]);
+ assert.equal(state[10],1,'actual next grip must be offered');
+}
+let initial,contact;
+const capture=()=>[...state.slice(0,21),...new Array(17).fill(0),...hand];
+function reset(){engine.reset();step(0,0,0,0);}
+reset();
+initial=capture();
+statusIs("FREE FLOAT");
+ hudIs("Approach the amber rail",false);
+assert.ok(room.length>=2500*8 && room.length<=4096*8 && room.length%24===0);
+assert.ok(room.every(Number.isFinite));assert.ok(hand.every(Number.isFinite));
+step(64);assert.equal(state[9],0,'cannot grip from spawn');step();
+until(()=>state[10]===1,260);
+step(0,1.25);assert.equal(state[10],0,'cannot grip when facing away');step(64);assert.equal(state[9],0);
+step(0,-1.25);assert.equal(state[10],1);
+step(64);assert.equal(state[9],1);statusIs("TAKING HOLD");
+until(()=>state[9]===2,64);
+contact=capture();statusIs("ANCHORED");
+for(let i=0;i<90;i++)step(64|4|2|16);
+assert.deepEqual(capture(),contact,'held action/thrust cannot exit the frozen handrail pose');
+assert.deepEqual(contact.slice(5,10),[0,0,0,1,2]);
+const box = (m) => [0,1,2].map(i=>{const a=m.filter((_,j)=>j%8===i);return [Math.min(...a),Math.max(...a)];});
+assert.notDeepEqual(box(initial.slice(38)),box(contact.slice(38)),'contact has its own authored hand volume');
+const [x,y,z]=box(contact.slice(38));assert.ok(x[0]<.745 && x[1]>.745 && y[1]>-.21 && z[0]<-1.94 && z[1]>-1.94,'contact mesh wraps the handrail');
+step();step(1088);assert.equal(state[9],3);assert.equal(state[11],2);assert.ok(state[7]<0);statusIs("RELEASING");
+const before=state[2];until(()=>state[9]===0,0);assert.ok(state[2]<before);
+reset();assert.deepEqual(capture(),initial,'reset restores exact initial pose');
+until(()=>state[7]<-.65,4);statusIs("THRUST");
+const velocity=state[7];step();assert.equal(state[7],velocity,'release retains momentum exactly');statusIs("DRIFT");
+while(state[7]<-.015)step(8);
+assert.ok(Math.abs(state[7])<.028,'opposite thrust neutralizes drift without a brake');
+until(()=>state[1]>1.019,16);assert.ok(state[1]<=1.02001 && state[6]===0);
+assert.equal(roomLoads,1,'static shell is published only once across interactions and reset');
+console.log('Orbital WASM: station batch, initial/contact poses, reach/aim gating, trigger latch, held pose, push-off, inertia, counterthrust and indoor boundaries passed.');
+
+engine.select_deck(1);step(0,0,0,0);
+const evaStart=capture(),evaRoom=room;
+ hudIs("Approach the airlock rail",false);
+ assert.equal(hint().section,"EVA / 1 OF 3");
+assert.equal(state[20],1,'the Wosy route starts with only the first grip visible as active');
+const lenses=Array.from({length:5},(_,i)=>1.10+i*.01);
+for(const material of lenses)assert.ok(evaRoom.some((n,i)=>i%8===7&&Math.abs(n-material)<.0001),'every cue has actual tagged 3D geometry');
+assert.ok(evaRoom.length/24<6680,'route indicators and console details stay within the static batch budget');
+assert.equal(state[15],1);assert.ok(evaRoom.length>=5400*8 && evaRoom.length<6680*24 && evaRoom.length%24===0);
+assert.ok(evaRoom.every(Number.isFinite) && hand.every(Number.isFinite));
+const alloy=[];
+assert.deepEqual([...materialArt.slice(75,79)],[.71925,57,33,.61]);
+for(let i=0;i<evaRoom.length;i+=8)if(Math.abs(evaRoom[i+7]-materialArt[75])<.00001)alloy.push([...evaRoom.slice(i,i+8)]);
+assert.ok(alloy.length>=180&&alloy.length%3===0,'machined tag contains original complete annulus/bevel triangles');
+assert.ok(alloy.every(([x,y,z])=>x>=-1.2821&&x<=-1.2349&&Math.hypot(y-.27,z+2.60)>=.686&&Math.hypot(y-.27,z+2.60)<=.8141),'only the authored airlock collar has the alloy role');
+const wingRear=[];
+assert.deepEqual([...materialArt.slice(79,87)],[.47825,-17.05,-10.90,0,-15.64,-9.41,4.95,5.70]);
+for(let i=0;i<hull.length;i+=8)if(Math.abs(hull[i+7]-materialArt[79])<.00001)wingRear.push([...hull.slice(i,i+8)]);
+assert.equal(wingRear.length,36,'six existing wing backs, each with two triangles');
+assert.ok(wingRear.every(v=>Math.abs(v[1]-2.66)<.002),'solar rear role never tags top or edge composite');
+for(const x of materialArt.slice(80,83))for(const z of materialArt.slice(83,85)){
+ const tile=wingRear.filter(v=>v[0]>x-.015&&v[0]<x+4.965&&v[2]>z-.015&&v[2]<z+5.715);
+ assert.equal(tile.length,6);
+}
+const airlockLid=[];
+for(let i=0;i<hull.length;i+=8)if(Math.abs(hull[i+7]-.754)<.0001)airlockLid.push(hull.slice(i,i+8));
+assert.equal(airlockLid.length,90,'closed pressure lid is one immutable 30-segment bowl');
+assert.ok(airlockLid.every(v=>v[0]>=-1.2781&&v[0]<=-1.2659
+ &&Math.hypot(v[1]-.27,v[2]+2.60)<.527),'lid stays behind the physical latch and route locators');
+const maskedPanel=[];
+for(let i=0;i<evaRoom.length;i+=8)if(Math.abs(evaRoom[i+7]-.18375)<.0001)maskedPanel.push(evaRoom.slice(i,i+8));
+assert.equal(maskedPanel.length,84,'only the formed faces of thermal panel n=7 are registered');
+assert.ok(maskedPanel.every(v=>v[0]<-1.41&&v[0]>-1.51&&v[1]>-.761&&v[1]<.051&&v[2]>-6.641&&v[2]<-4.219));
+const pressurePanel=[];
+for(let i=0;i<hull.length;i+=8)if(Math.abs(hull[i+7]-.752)<.0001)pressurePanel.push(hull.slice(i,i+8));
+assert.equal(pressurePanel.length,42,'generated pressure albedo belongs to seven raised faces across two immutable courses');
+assert.ok(pressurePanel.every(v=>v[0]>=-1.485&&v[0]<=-1.483&&v[1]>=-.761&&v[1]<=.961&&v[2]>=-4.161&&v[2]<=-1.739));
+assert.ok(pressurePanel.every(v=>v[1]<=-.089||v[1]>=-.062),'pressure seam is open in actual mesh');
+
+const unpackStationNormal=(code)=>{
+ const n=-code-1,u=Math.floor(n/255)/127-1,v=(n%255)/127-1,z=1-Math.abs(u)-Math.abs(v);
+ return z<0?[(1-Math.abs(v))*Math.sign(u+1e-6),(1-Math.abs(u))*Math.sign(v+1e-6),z]:[u,v,z];
+};
+const encodedStationNormals=evaRoom.filter((_,i)=>i%8===6).filter(x=>x<0);
+assert.ok(encodedStationNormals.length>1100&&encodedStationNormals.length<evaRoom.length/16,'only curved station skins carry authored normals');
+assert.ok(encodedStationNormals.every(n=>Number.isInteger(n)&&n>=-65025));
+const railNormal=evaRoom.findIndex((x,i)=>i%8===0&&Math.abs(x+1.55)<.001&&Math.abs(evaRoom[i+1]+.57)<.001&&Math.abs(evaRoom[i+2]+3.343)<.001);
+assert.ok(railNormal>=0 && unpackStationNormal(evaRoom[railNormal+6])[2]>.98,'rail skin normal follows the outside cylinder; caps remain separate');
+assert.ok(evaRoom.some((v,i)=>i%8===0&&v<-1.13&&v>-1.29&&Math.abs(evaRoom[i+1]+.57)<.003&&Math.abs(evaRoom[i+2]+1.59-.137)<.003),'rail mount split collar clears the original rail without interpenetration');
+const narrowFlange=evaRoom.filter((v,i)=>i%8===0&&Math.abs(v+1.367)<.001&&Math.abs(evaRoom[i+1]+.57)<.002&&Math.abs(evaRoom[i+2]+1.59-.130)<.001);
+assert.ok(narrowFlange.length>0&&.130*Math.cos(Math.PI/10)>.120,'the blue/gold inscribed shoulder faces protrude beyond the base collars without poking through');
+
+
+const hatchPoint=(u,v,d,lit)=>evaRoom.some((value,i)=>i%8===0&&
+ Math.abs(value-(-1.10+.926*u+.378*d))<.0001&&Math.abs(evaRoom[i+1]-(.20+v))<.0001&&
+ Math.abs(evaRoom[i+2]-(-6.39-.378*u+.926*d))<.0001&&(!lit||evaRoom[i+7]>.98));
+assert.ok(hatchPoint(0,0,-.635,false),'the hatch has a recessed bulkhead, not a flat painted aperture');
+const capEdge=(r,d)=>hatchPoint(r*Math.cos(Math.PI/12),r*Math.sin(Math.PI/12),d,false);
+assert.ok(capEdge(.57,-.65)&&capEdge(.473,-.637)&&capEdge(.373,-.635),
+ 'rear cap joins the casing, recess and central pressure plate on original radial edges');
+assert.ok(!capEdge(.44,-.641)&&!hatchPoint(0,0,-.65,false),
+ 'replaced annulus and background disk do not persist behind the closed cap');
+assert.ok(!hatchPoint(0,0,.158,false),'the apertural front ring is open');
+assert.ok(hatchPoint(-.063,.611,.177,true)&&hatchPoint(-.432,-.274,-.473,true),'warm lamp fixtures are present at the rim and inside the recess');
+assert.ok(hatchPoint(-.239,-.429,.041,false)&&hatchPoint(.239,-.429,.041,false),
+ 'raised paired sill runners sit below the aperture');
+assert.ok(hatchPoint(.514*Math.cos(Math.PI/12),.514*Math.sin(Math.PI/12),-.403,false)
+ &&hatchPoint(.373*Math.cos(Math.PI/12),.373*Math.sin(Math.PI/12),-.635,false),
+ 'retaining ring and recessed pressure flange retain distinct section depths');
+assert.ok(hatchPoint(.64*Math.cos(Math.PI/12),.64*Math.sin(Math.PI/12),.168,false),
+ 'new chamfer matches the liner and leaves the fixture in front');
+const back=evaRoom.findIndex((x,i)=>i%8===0&&Math.abs(x-(-1.10-.635*.378))<.0001
+ &&Math.abs(evaRoom[i+1]-.20)<.0001&&Math.abs(evaRoom[i+2]-(-6.39-.635*.926))<.0001);
+assert.ok(back>=0&&evaRoom[back+3]>evaRoom[back+4]&&evaRoom[back+4]>evaRoom[back+5],
+ 'rear pressure plate gets an authored warm reflection instead of an unlit disk');
+const localBounce=[];
+for(let i=0;i<evaRoom.length;i+=8)if(evaRoom[i+6]>1)localBounce.push(evaRoom.slice(i,i+8));
+assert.ok(localBounce.length>=200&&localBounce.length<500,'practical warmth is baked only into the hatch interior');
+assert.ok(localBounce.every(v=>v[0]<-.51&&v[0]>-1.95&&v[2]<-6.06&&v[2]>-7.23&&v[7]<.8));
+
+
+
+assert.notDeepEqual(initial.slice(38),evaStart.slice(38),'EVA uses a separately authored pressurized glove');
+assert.ok(evaRoom.some((x,i)=>i%8===4 && x<.14),'station includes the dark solar cell trim');
+step(64);assert.equal(state[9],0);step();
+until(()=>state[10]===1,260);
+step(0,1.15);assert.equal(state[10],0);assert.equal(state[18],1,"an off-axis approach gets the optional re-aim cue");step(64);assert.equal(state[9],0);
+step(0,-1.15);assert.equal(state[10],1);
+assert.equal(state[18],0,"a reachable EVA handrail does not ask for counterthrust");
+const startEase=[...state.slice(0,5)], incoming=[...state.slice(5,8)];
+step(64);
+const targetEase=[0.05,-0.025,-0.88,-0.105,-0.30];
+for(let i=1;i<=9;i++){
+   const t=i*2.85/60, blend=t*t*(3-2*t), tangent=t*(1-t)**2/2.85;
+   for(let axis=0;axis<5;axis++){
+      const expected=startEase[axis]+(targetEase[axis]-startEase[axis])*blend+(incoming[axis]??0)*(tangent+(1-blend)/60);
+      assert.ok(Math.abs(state[axis]-expected)<.0005,'reach settles continuously from the actual incoming pose and momentum');
+   }
+   step(64);
+}
+until(()=>state[9]===2,64);
+const evaContact=capture();
+ hudIs("Airlock rail secured",true);
+assert.deepEqual(evaContact.slice(5,10),[0,0,0,1,2]);
+assert.notDeepEqual(evaStart.slice(38),evaContact.slice(38));
+const extents=box(evaContact.slice(38));
+assert.ok(extents[1][1]>-.472 && extents[2][0]<-1.665 && extents[2][1]>-1.50,'fingers are authored both above and behind the rounded rail');
+const heldUploads=handLoads;
+for(let i=0;i<85;i++)step(64|16|2);assert.deepEqual(capture(),evaContact);
+assert.equal(handLoads,heldUploads,'a still grip does not re-upload meshes or invalidate cached shadows');
+step();
+step(1088);assert.equal(state[11],2);assert.ok(state[6]<0&&state[7]>0,"release follows the outward and downward rail face");
+until(()=>state[9]===0,0);
+assert.equal(state[16],1);assert.equal(state[17],0);assert.equal(state[20],2);
+step(64);assert.equal(state[9],0,'cannot trigger the next rail as soon as released');step();
+hudIs("Descend below the rail",false);
+underRail(0,1);
+step(64);until(()=>state[9]===2,64);
+assert.equal(state[16],1);assert.equal(state[17],0);assert.equal(state[20],0);
+assert.equal(state[14].toFixed(2),'-3.43');
+assert.equal(state[3].toFixed(2),'0.13','the scaffold settle frames the outboard suspended load');
+assert.equal(state[4].toFixed(2),'-0.13');
+const scaffoldBatches=roomLoads;
+for(let i=0;i<8;i++)step(64);
+assert.equal(roomLoads,scaffoldBatches,'looking out at the cargo never republishes the stationary world');
+step();step(1088);until(()=>state[9]===0,0);
+assert.equal(state[16],2);
+underRail(1,2);
+step(64);until(()=>state[9]===2,64);
+const beforeLatch=room, countBeforeLatch=roomLoads;
+const openPin=[...state.slice(12,15)], openGlove=hand, openHandLoads=handLoads;
+assert.ok(room.length<6680*24,'exterior geometry fits without clipping the assembly batch');
+assert.equal(state[14].toFixed(2),'-4.88');
+for(let i=0;i<120;i++)step(64);
+assert.equal(state[17],0,'holding grip does not seat the latch automatically');
+step();step(64);
+assert.equal(state[19],.5);
+ hudIs("Seating cargo pin",false);
+const cargoLockCamera=[...state.slice(0,8)], cargoLockPoses=[];
+for(let i=0;i<24&&state[17]===0;i++){
+ const seen=roomLoads;step(i===0||i===2?0:64);
+ if(seen!==roomLoads)cargoLockPoses.push({m:room,w:[...state.slice(12,15)],locked:state[17]});
+ assert.deepEqual([...state.slice(0,8)],cargoLockCamera);
+}
+assert.equal(state[17],1);assert.equal(state[9],2,'latch is secured with the glove still braced');
+assert.equal(roomLoads,countBeforeLatch+4);
+assert.notDeepEqual(room,beforeLatch,'the contact lever and status light visibly change');
+const seatedPin=[...state.slice(12,15)];
+assert.ok(Math.abs(seatedPin[1]-openPin[1]-.12)<1e-5,'Wosy moves the held wrist exactly with the detent');
+assert.equal(seatedPin[0],openPin[0]);assert.equal(seatedPin[2],openPin[2]);
+assert.notDeepEqual(hand,openGlove,'fallback glove reaches the same seated endpoint');
+assert.equal(handLoads,openHandLoads+4,'fallback uploads only the four pin poses');
+function pinVertices(mesh,pose){
+ return mesh.filter((v,i)=>i%8===1&&Math.abs(mesh[i-1]-pose[0])<.16&&
+   Math.abs(v-pose[1])<.088&&Math.abs(mesh[i+1]-pose[2])<.088&&
+   Math.abs(mesh[i+2]-.51)<1e-5&&Math.abs(mesh[i+6]-.62)<1e-5).length;
+}
+assert.ok(pinVertices(beforeLatch,openPin)>30 && pinVertices(room,seatedPin)>30,'wrist and exposed lock shaft share the same physical anchor in both endpoints');
+function luminanceCode(mesh){
+ const found=[];
+ for(let i=0;i<mesh.length;i+=8){
+  if(mesh[i]>-.03&&mesh[i]<.20&&mesh[i+1]>-.275&&mesh[i+1]<-.23&&mesh[i+2]>-5.074&&mesh[i+2]<-5.05&&mesh[i+7]>.98)
+   found.push([mesh[i+3],mesh[i+4],mesh[i+5]]);
+ }
+ return found;
+}
+assert.ok(luminanceCode(beforeLatch).some(rgb=>rgb[0]>.9&&rgb[1]<.65),'physical latch light starts amber');
+assert.equal(cargoLockPoses.length,4);
+for(const [i,{m,w,locked}] of cargoLockPoses.entries()){
+ const t=(i+1)/4;
+ assert.ok(Math.abs(w[1]-(-.57+.12*t*t*(3-2*t)))<.0001&&pinVertices(m,w)>30,'cargo pin and hand share every timed pose');
+ assert.equal(locked,+(i===3));
+ assert.ok(luminanceCode(m).some(rgb=>i===3?rgb[0]<.4&&rgb[1]>.9:rgb[0]>.9&&rgb[1]<.65));
+}
+assert.ok(luminanceCode(room).some(rgb=>rgb[0]<.4&&rgb[1]>.90),'physical latch light ends green');
+step();step(64);
+assert.equal(roomLoads,countBeforeLatch+4,'releasing the seated lock does not regenerate the station');
+assert.equal(state[9],3);
+until(()=>state[19]===1,0);assert.equal(state[10],0);
+until(()=>state[0]>.77,0);
+assert.equal(state[18],3);assert.equal(state[10],0,'drifting through reach is not sufficient');
+ hudIs("Match speed at the console",false);assert.equal(hint().short,"Thrust left");
+assert.ok(hint().tip.startsWith("Thrust left to slow down."),"desktop help exposes the same real counterthrust direction");
+step(64);assert.equal(state[9],0);
+engine.set_thrust(-1,0);while(state[5]>.08)step(256);engine.set_thrust(0,0);step();
+assert.equal(state[18],4);assert.equal(state[10],0,'counterthrust does not bypass aim');
+if(process.argv[3]==="--console-overshoot"){
+ for(let i=0;i<900;i++)step();
+ const sight=()=>{
+  const dx=1.255-state[0],dz=state[2]+4.864,dy=-.260-state[1];
+  return [Math.atan2(dx,dz),Math.atan2(dy,Math.hypot(dx,dz))];
+ };
+ const look=(offsetYaw,offsetPitch)=>{
+  const [targetYaw,targetPitch]=sight();
+  step(0,targetYaw+offsetYaw-state[3],targetPitch+offsetPitch-state[4],0);
+ };
+ look(0,0);
+ for(let i=0;i<180;i++){look(0,0);step();}
+ assert.ok(Math.hypot(state[0]-1.04,state[1]+.025,state[2]+4.16)>1.25);
+ assert.ok(Math.hypot(...state.slice(5,8))<.25);
+ for(const [dyaw,dpitch,name,marker] of [
+  [-.65,0,"Look right","→"],[.65,0,"Look left","←"],
+  [0,-.46,"Look up","↑"],[0,.46,"Look down","↓"],
+ ]){
+  look(dyaw,dpitch);hudIs("Face the alignment console",false,marker);
+  assert.equal(hint().action,name);
+  assert.equal(state[10],0);
+ }
+ step(64);assert.equal(state[9],0,"signed guidance never widens grip reach");
+ look(0,0);assert.equal(hint().objective,"Approach the alignment console");
+ // Drift out along the unobstructed starboard departure; warp is enabled only past the existing limit.
+ look(0,0);
+ for(let i=0;i<150;i++)step(2);
+ const radius=()=>Math.hypot(...state.slice(0,3));
+ until(()=>radius()>=149.6,0,15_000);
+ until(()=>radius()>150.1,512,120);
+ hudIs("Separated from station",false);
+ assert.equal(hint().far,true);assert.equal(hint().coast,true);assert.equal(state[30],120);
+ console.log("Console overshoot: four signed disabled bearings, unchanged Grip reach, generic aligned approach and existing far warp passed.");
+ process.exit(0);
+}
+ hudIs("Face the alignment console",false,"→");
+step(64);assert.equal(state[9],0);
+step(0,1.00);assert.equal(state[18],5,'overshooting the light reverses the Wosy reticle cue');
+ hudIs("Face the alignment console",false,"←");
+step(0,-.65);assert.equal(state[10],1);assert.equal(state[18],0);
+step(64);until(()=>state[19]===2,64);
+ hudIs("Alignment handle secured",true);assert.ok(hint().console);
+assert.deepEqual([...state.slice(12,15)].map(n=>n.toFixed(2)),['1.09','-0.54','-4.81']);
+for(let i=0;i<60;i++)step(64);assert.equal(state[19],2,'holding the grip never seats the alignment handle');
+const suspended=room;
+const seatStartCamera=[...state.slice(0,8)], seatBatches=roomLoads;
+step();step(64);
+assert.equal(state[19],2.5);
+const seatMeshes=[];
+for(let n=0;n<36&&state[19]===2.5;n++){
+ const previousBatch=roomLoads;step(n===0||n===2?0:64);
+ if(roomLoads!==previousBatch)seatMeshes.push({room,contact:state[13]});
+ assert.deepEqual([...state.slice(0,8)],seatStartCamera,'seating preserves the docked camera');
+}
+assert.equal(state[19],3);
+assert.equal(roomLoads,seatBatches+6);
+assert.equal(seatMeshes.length,6);
+const nearEq=(x,y)=>Math.abs(x-y)<.0001;
+const hasVertex=(m,x,y,z)=>m.some((v,i)=>i%8===0&&nearEq(x,v)&&nearEq(y,m[i+1])&&nearEq(z,m[i+2]));
+assert.ok(hasVertex(suspended,2.17,.53,-7.13)&&hasVertex(room,2.17,.13,-7.13),'capsule travels from suspension to the capture shoes');
+assert.ok(hasVertex(suspended,.47,.873,-6.64)&&hasVertex(room,.47,.473,-6.64),'freight shell bevel moves with the same registered cargo stroke');
+assert.ok(hasVertex(suspended,2.20,.62,-6.523)&&hasVertex(room,2.20,.22,-6.523),'the captive wrist tracks the same travel');
+assert.ok(hasVertex(suspended,.49,-.404,-7.45)&&hasVertex(room,.49,-.404,-7.45),'capture shoes remain fixed to the truss');
+const elbowOffsets=[
+ [.005204942,-.003655004,-.000982262],[.014663307,-.009332873,-.002095023],
+ [.017319421,-.009841309,-.001543880],[.005443067,-.004177934,-.001316310],
+ [-.016463812,.002321792,-.004557410],[-.028937600,.004856000,-.007602000]
+];
+for(const [i,{room:m,contact}] of seatMeshes.entries()){
+ const t=(i+1)/6,a=t*t*(3-2*t), y=-.4*a, p=elbowOffsets[i].map((n,j)=>n+[2.88,.46,-6.89][j]);
+ assert.ok(nearEq(contact,-.54+.11*a)&&hasVertex(m,2.17,.53+y,-7.13)&&hasVertex(m,2.20,.62+y,-6.523),'cargo, captive wrist and glove follow the shared clock');
+ assert.ok(hasVertex(m,.49,-.404,-7.45)&&hasVertex(m,p[0],p[1],p[2]+.097),'fixed shoes and authored elbow pose are present');
+ assert.ok(nearEq(Math.hypot(p[0]-3.23,p[1]-1.20,p[2]+7.81),1.231462545)&&nearEq(Math.hypot(p[0]-2.2,p[1]-.62-y,p[2]+6.62),.748932574),'intermediate robot links retain physical lengths');
+}
+const span=(a,b)=>Math.hypot(...a.map((x,i)=>x-b[i]));
+const sh=[3.23,1.20,-7.81], elbow=[2.88,.46,-6.89], finalElbow=[2.8510624,.464856,-6.897602],
+startW=[2.20,.62,-6.62], endW=[2.20,.22,-6.62];
+assert.ok(hasVertex(suspended,...elbow.map((v,i)=>i===2?v+.097:v))&&hasVertex(room,...finalElbow.map((v,i)=>i===2?v+.097:v)),'elbow geometry uses the validated endpoint coordinates');
+assert.ok(nearEq(span(sh,elbow),span(sh,finalElbow)) && nearEq(span(elbow,startW),span(finalElbow,endW)),'both physical arm links retain their lengths');
+const wristIndicator=(m)=>m.some((f,i)=>i%8===4&&f>.95&&m[i-4]>2.12&&m[i-4]<2.28&&m[i-3]>0&&m[i-3]<.05&&m[i-2]>-6.59&&m[i-2]<-6.56&&m[i+3]>.9);
+assert.equal(wristIndicator(beforeLatch),false);
+assert.equal(wristIndicator(room),true,'the local seating endpoint changes the remote gripper status');
+assert.deepEqual([...state.slice(12,15)].map(n=>n.toFixed(2)),['1.09','-0.43','-4.81']);
+assert.equal(roomLoads,countBeforeLatch+10,'seating updates only the six authored timed poses');
+const cradleSeated=room, handoffCamera=[...state.slice(0,8)];
+for(let i=0;i<60;i++)step(64);
+assert.equal(state[19],3,'held seat input never commands the transfer');
+assert.equal(roomLoads,countBeforeLatch+10);
+step();step(64);assert.equal(state[19],3.25);
+ hudIs("Closing cradle keepers",false);
+const transferBatches=roomLoads, transferMeshes=[],patchStart=roomPatches.length;
+for(let n=0;n<90&&state[19]<4;n++){
+ const previousBatch=roomLoads;step(n===0||n===2?0:64);
+ assert.deepEqual([...state.slice(0,8)],handoffCamera,'the docked eye and velocity do not change');
+ if(roomLoads!==previousBatch)transferMeshes.push({room,stage:state[19],contact:state[13]});
+ if(state[19]===3.75)hudIs("Robot arm clearing",false);
+}
+assert.equal(state[19],4);
+assert.equal(roomLoads,transferBatches+15);
+const patches=roomPatches.slice(patchStart);
+assert.deepEqual(patches.map(v=>v.id),[...Array.from({length:6},()=>[1,2,4]).flat(),...Array(8).fill(2),0,2,4],
+ 'initial transfer: keepers, robot and console; parking: robot only; final colors: hatch, robot, console, no complete upload');
+const {start:patchFirst,len:patchCount}=patches.find(v=>v.id===2);
+assert.ok(patchCount/room.length<.26,'room pool updates are restricted to the robot');
+const whole=transferMeshes[5].room;
+for(const {room:current} of transferMeshes.slice(6,-1)){
+ assert.deepEqual(current.subarray(0,patchFirst),whole.subarray(0,patchFirst),'visible and shadow indices outside the robot stay shared');
+ assert.deepEqual(current.subarray(patchFirst+patchCount),whole.subarray(patchFirst+patchCount),'all landed station geometry remains bit-identical');
+}
+assert.deepEqual(transferMeshes.map(v=>v.stage),[3.25,3.25,3.5,3.5,3.5,3.75,3.75,3.75,3.75,3.75,3.75,3.75,3.75,3.75,4]);
+const ease=t=>t*t*(3-2*t);
+const armVertex=(i,x,y,z)=>{
+ const a=64*Math.PI/180*ease(Math.max(0,(i-8)/6)),px=2.8510624,py=.464856;
+ x+=.30*ease(Math.min(1,Math.max(0,(i-5)/3)));
+ return [px+(x-px)*Math.cos(a)-(y-py)*Math.sin(a),py+(x-px)*Math.sin(a)+(y-py)*Math.cos(a),z];
+};
+for(const [i,{room:m,contact}] of transferMeshes.entries()){
+ const k=ease(Math.min((i+1)/3,1)), j=ease(Math.min(1,Math.max((i-2)/3,0)));
+ for(const x of [.49,1.71]){
+  assert.ok(hasVertex(m,x+.041,-.372-.333*k,-6.554),'both keeper jaws close before robot release');
+  assert.ok(hasVertex(m,x+.061,-.686,-6.655),'landed lugs are fixed throughout');
+  assert.ok(m.some((v,n)=>n%8===0&&nearEq(v,x+.067)&&nearEq(m[n+1],-.469)&&nearEq(m[n+2],-6.509)&&nearEq(m[n+4],i>=2?1:.51)),'keeper confirmation changes only on the fully closed pose');
+ }
+ assert.ok(hasVertex(m,...armVertex(i,1.96,.331+.14*j,-6.838))&&hasVertex(m,...armVertex(i,1.96,.022-.14*j,-6.838)),'robot jaws stay closed until the cradle is seated');
+ assert.ok(hasVertex(m,2.17,.13,-7.13)&&hasVertex(m,...armVertex(i,2.20,.22,-6.523)),'the landed cargo is fixed and the wrist follows the elbow arc');
+
+ if(i>=8){
+  // The two open jaws and wrist housing are convex boxes. Every corner is
+  // beyond the cargo end plane before rotation, so their entire sweep is clear.
+  for(const [x,y,z,w,h,d] of [[2.04,.44,-6.889,.16,.128,.140],[2.04,-.125,-6.889,.16,.121,.140],
+    [1.96,.471,-6.838,.113,.066,.115],[1.96,-.118,-6.838,.113,.065,.115],[2.13,.10,-6.88,.14,.22,.25]]){
+   for(const xx of [x,x+w])for(const yy of [y,y+h])for(const zz of [z,z+d]){
+    const point=armVertex(i,xx,yy,zz);
+    assert.ok(point[0]>2.17+.07&&hasVertex(m,...point),'each jaw/wrist corner clears the cargo cap plane before turning');
+   }
+  }
+ }
+ assert.ok(nearEq(contact,-.43+.07*k),'the glove stays attached to the lever');
+}
+
+assert.deepEqual([...state.slice(0,8)],handoffCamera,'handoff keeps the restrained eye and aim fixed');
+assert.deepEqual([...state.slice(12,15)].map(n=>n.toFixed(2)),['1.09','-0.36','-4.81']);
+for(const x of [.49,1.71]){
+    assert.ok(hasVertex(cradleSeated,x+.041,-.372,-6.554)&&hasVertex(room,x+.041,-.705,-6.554),'cradle keepers slide down their guides');
+    assert.ok(hasVertex(cradleSeated,x+.061,-.686,-6.655)&&hasVertex(room,x+.061,-.686,-6.655),'both landed cargo lugs stay fixed');
+}
+assert.ok(hasVertex(cradleSeated,1.96,.331,-6.838)&&hasVertex(room,...armVertex(14,1.96,.471,-6.838)),'upper gripper jaw opens away from cargo');
+assert.ok(hasVertex(cradleSeated,1.96,.022,-6.838)&&hasVertex(room,...armVertex(14,1.96,-.118,-6.838)),'lower gripper jaw opens away from cargo');
+assert.ok(hasVertex(room,2.17,.13,-7.13)&&hasVertex(room,...armVertex(14,2.20,.22,-6.523)),'the load remains fixed as the elbow clears the wrist');
+for(let i=0;i<60;i++)step(64);
+assert.equal(roomLoads,countBeforeLatch+25,'the handoff publishes only a bounded fifteen world poses');
+assert.equal(state[19],4,'held transfer does not push off');
+step();step(64);
+assert.ok(state[5]>.40&&state[7]===0,"console pushes outboard instead of into the scaffold");
+until(()=>state[19]===5,0);
+assert.equal(state[18],12,"hatch phase selects the actual scaffold bypass, not stale console speed");
+assert.equal(state[20],5,'hatch guidance is selected after release');
+hudIs("Clear the end of the scaffold",false);
+step(64);assert.equal(state[9],0,'cargo is too far from hatch to grip');
+assert.equal(state[10],0);
+function returnStaging(x,y,z){
+ for(let i=0;i<1000;i++){
+  const limit=v=>Math.max(-.5,Math.min(.5,v));
+  const ax=limit((x-state[0])*1.5-state[5]*3.15),az=limit((z-state[2])*1.5-state[7]*3.15);
+  const sn=Math.sin(state[3]),cs=Math.cos(state[3]),forward=ax*sn-az*cs;
+  engine.set_thrust(ax*cs+az*sn,forward);
+  const up=(y-state[1])*1.5-state[6]*3.3-forward*Math.sin(state[4]);
+  step((up>.055?16:up<-.055?32:0)|256);
+  if(i>25&&Math.hypot(state[0]-x,state[1]-y,state[2]-z)<.10&&Math.hypot(...state.slice(5,8))<.08){
+   engine.set_thrust(0,0);return;
+  }
+ }
+ assert.fail('ordinary scaffold bypass must reach author target '+[x,y,z]);
+}
+returnStaging(1.97,.30,-4.17);
+assert.equal(state[18],13,"move along the station after clearing the physical rail end");
+hudIs("Pass the end of the scaffold",false);
+returnStaging(1.94,.22,-2.24);
+assert.notEqual(state[18],13);
+returnStaging(.89,.02,-2.24);
+function aimReturn(){
+ const x=-.94-state[0],y=-.14-state[1],z=state[2]+2.48;
+ return [Math.atan2(x,z)-state[3],Math.atan2(y,Math.hypot(x,z))-state[4]];
+}
+for(let i=0;i<65;i++)step(0,...aimReturn());
+for(let i=0;i<350&&state[18]!==3;i++){
+ const dx=-.39-state[0],dy=-.025-state[1],dz=-2.16-state[2],m=Math.hypot(dx,dy,dz);
+ const ax=.53*dx/m-state[5],az=.53*dz/m-state[7];
+ const sn=Math.sin(state[3]),cs=Math.cos(state[3]),forward=(ax*sn-az*cs)*1.8;
+ const up=(dy*2-state[6]*2.8)-forward*Math.sin(state[4]);
+ engine.set_thrust((ax*cs+az*sn)*1.8,forward);
+ step(up>.12?16:up<-.12?32:0,...aimReturn());
+}
+engine.set_thrust(0,0);
+assert.equal(state[18],3,"actual closing drift triggers hatch counterthrust beyond grip reach");
+const hatchDistance=()=>Math.hypot(state[0]+.39,state[1]+.025,state[2]+2.16);
+assert.ok(hatchDistance()>.65&&hatchDistance()<1.20,'return cue precedes the .424 m grip volume without advertising maneuver at cast-off');
+hudIs("Match speed at the hatch",false);
+assert.ok(hint().tip.startsWith(hint().short),"hatch counterthrust direction reaches both responsive displays");
+assert.equal(state[10],0,'coasting past the hatch does not count as a grip');
+step(64);assert.equal(state[9],0);
+step(0,0,-state[4]);
+for(let i=0;i<100&&Math.hypot(state[5],state[7])>.085;i++){
+ const yaw=state[3],pitch=state[4],vx=state[5],vy=state[6],vz=state[7];
+ const magnitude=Math.hypot(vx,vz);
+ engine.set_thrust(-(vx*Math.cos(yaw)+vz*Math.sin(yaw))/magnitude,-((vx*Math.sin(yaw)-vz*Math.cos(yaw))*Math.cos(pitch)+vy*Math.sin(pitch))/magnitude);
+ step(0);
+}
+engine.set_thrust(0,0);
+assert.ok(hatchDistance()>.45,'deliberately reacting immediately can stop outside grab reach');
+for(let i=0;i<80&&state[18]!==10;i++){
+ const aimX=-.94-state[0],aimY=-.14-state[1],aimZ=-2.48-state[2];
+ const yaw=Math.atan2(aimX,-aimZ),pitch=Math.asin(aimY/Math.hypot(aimX,aimY,aimZ));
+ step(0,yaw-state[3],pitch-state[4]);
+}
+assert.equal(state[18],10,JSON.stringify({state:[...state],hatchDistance:hatchDistance()}));
+hudIs("Ease toward the hatch",false);
+assert.ok(hint().tip.startsWith(hint().short),"directional approach pulse reaches both viewports");
+let sawPulse=hint().short.includes("ulse");
+const limitPulse=(n)=>Math.max(-.6,Math.min(.6,n));
+for(let i=0;i<450&&state[10]!==1;i++){
+ const dx=-.46-state[0],dy=-.025-state[1],dz=-2.23-state[2];
+ const aimX=-.94-state[0],aimY=-.14-state[1],aimZ=-2.48-state[2];
+ const yaw=Math.atan2(aimX,-aimZ),pitch=Math.max(-.165,Math.min(.165,Math.asin(aimY/Math.hypot(aimX,aimY,aimZ))));
+ const ax=limitPulse(dx*2-state[5]*2.8),az=limitPulse(dz*2-state[7]*2.8);
+ const localF=ax*Math.sin(state[3])-az*Math.cos(state[3]);
+ const localR=ax*Math.cos(state[3])+az*Math.sin(state[3]);
+ engine.set_thrust(localR,localF);
+ const ay=dy*2-state[6]*2.8-localF*Math.sin(state[4]);
+ step(Math.abs(ay)>.055?(ay>0?16:32)|256:0,yaw-state[3],pitch-state[4]);
+ if(state[18]===10){sawPulse=true;assert.ok(hint().short.includes("ulse"));}
+}
+engine.set_thrust(0,0);
+assert.ok(sawPulse,'when the pilot slowed out of reach, a directional pulse cue was shown');
+assert.equal(state[10],1,[...state].join(","));
+step(64);until(()=>state[19]===6,64);
+ hudIs("Airlock handle secured",true);assert.equal(hint().section,"EVA / AIRLOCK RETURN");
+assert.deepEqual([...state.slice(12,15)].map(n=>n.toFixed(2)),['-0.94','-0.14','-2.48']);
+for(let i=0;i<60;i++)step(64);assert.equal(state[19],6,'holding a capture does not lock it');
+const openHatch=room, lockEye=[...state.slice(0,8)];
+function locatorColor(m){
+ for(let i=0;i<m.length;i+=8){
+  if(nearEq(m[i],-1.261)&&nearEq(m[i+1],.2)&&nearEq(m[i+2],-2.785))return [...m.slice(i+3,i+6)].map(x=>x.toFixed(2));
+ }
+ assert.fail('double-chevron locator must be mounted on the closed hatch');
+}
+assert.deepEqual(locatorColor(evaRoom),['0.37','0.78','0.69']);
+assert.deepEqual(locatorColor(openHatch),['1.00','0.61','0.22']);
+step();step(64);assert.equal(state[19],6.5);
+ hudIs("Moving hatch bar",false);
+const lockHatchPoses=[];
+for(let i=0;i<24&&state[19]===6.5;i++){
+ const seen=roomLoads;step(i===0||i===2?0:64);
+ if(seen!==roomLoads)lockHatchPoses.push({m:room,y:state[13],stage:state[19]});
+ assert.deepEqual([...state.slice(0,8)],lockEye);
+}
+assert.equal(state[19],7);
+ hudIs("EVA complete",false);
+assert.equal(lockHatchPoses.length,4);
+for(const [i,{m,y,stage}] of lockHatchPoses.entries()){
+ const t=(i+1)/4;
+ assert.ok(nearEq(y,-.14+.11*t*t*(3-2*t))&&hasVertex(m,-1.11,y,-2.398)&&hasVertex(m,-1.015,y,-2.398),'hatch bar and wrist stay in contact with the original radius');
+ assert.equal(stage,i===3?7:6.5);
+ assert.ok(m.some((v,n)=>n%8===0&&nearEq(v,-.971)&&nearEq(m[n+1],-.186)&&nearEq(m[n+2],-2.381)&&nearEq(m[n+3],i===3?.27:1)&&nearEq(m[n+4],i===3?1:.55)),'hatch confirmation changes only at its final stop');
+}
+assert.deepEqual([...state.slice(0,8)],lockEye);
+assert.deepEqual([...state.slice(12,15)].map(n=>n.toFixed(2)),['-0.94','-0.03','-2.48']);
+assert.ok(hasVertex(openHatch,-1.11,-.14,-2.398)&&hasVertex(room,-1.11,-.03,-2.398),'actual hatch bar and glove rise together');
+assert.ok(hasVertex(openHatch,-1.015,-.14,-2.398)&&hasVertex(room,-1.015,-.03,-2.398),"the machined grip keeps the authored glove radius");
+assert.ok(hasVertex(room,2.17,.13,-7.13)&&hasVertex(room,.49+.041,-.705,-6.554),'cargo stays seated under its closed keepers');
+assert.deepEqual(locatorColor(room),['0.28','0.99','0.58']);
+for(let i=0;i<30;i++){step();step(64);}
+assert.equal(state[19],7);
+assert.equal(roomLoads,countBeforeLatch+29,'only the four hatch poses republish geometry');
+reset();assert.deepEqual(capture(),evaStart,'reset restores the current exercise');
+assert.deepEqual(room,evaRoom);
+// Old outboard barrier is gone. Coast through it without a reset or a hidden brake.
+for(let i=0;i<60;i++)step(2);
+assert.ok(state[0]>0.6);const drift=state[5];
+for(let i=0;i<90;i++)step();
+assert.ok(state[0]>1.51 && Math.abs(state[5]-drift)<.001 && state[19]===0);
+reset();assert.deepEqual(capture(),evaStart);
+step(0,.9,.45);
+assert.ok(Math.abs(state[21]+.03)<.02 && state[3]>.8,'body trails head turn');
+engine.set_thrust(0,.5);step();
+assert.ok(state[23]>.30 && state[24]>.16 && state[25]<-.24,'analog forward thrust has head-relative x/y/z components');
+engine.set_thrust(0,0);step();assert.deepEqual([...state.slice(23,26)],[0,0,0]);
+reset();
+for(let i=0;i<200;i++)step(1);
+assert.ok(state[0]>-1.371&&state[0]<-1.369&&state[5]===0&&state[26]===1,'hull stops a direct inward burn');
+statusIs("HULL CONTACT");
+assert.ok(state[7]>0,'station contact preserves tangential translation');
+step(64);assert.equal(state[17],0,'skipping the rails cannot lock cargo');
+engine.select_deck(0);step(0,0,0,0);
+assert.deepEqual(capture(),initial,'indoor mode round-trips without exterior state');
+assert.equal(roomLoads,33,'only deck changes, locks, authored alignment poses and reset republish geometry');
+console.log('EVA WASM: geometry, distinct grip, eligibility and release, exterior bulkhead, reset and indoor round-trip passed.');
+
+const raw=readFileSync(new URL('./apollo-arm.bin',import.meta.url));
+assert.equal(raw.toString('ascii',0,4),'KAV3');
+const vn=raw.readUInt32LE(4), ni=raw.readUInt32LE(8);
+assert.ok(vn<=40000 && ni%3===0 && ni>=24000 && ni<=32000 && raw.length<200000);
+assert.equal(raw.length,12+vn*24+ni*2);
+const phase=(i,o)=>raw.readInt16LE(12+i*24+o)/10000;
+let wrapped=0,intersect=0,fittedNormals=0,sleeveTexels=0,gloveTexels=0;
+for(let i=0;i<vn;i++){
+ const y=phase(i,8),z=phase(i,10);
+ const radius=Math.hypot(y,z);
+ if(z<-.023 && radius>.082 && radius<.119)wrapped++;
+ if(radius<.08)intersect++;
+ if(Math.hypot(...[16,17,18].map(c=>raw.readInt8(12+i*24+c)))>110)fittedNormals++;
+ const uvBits=raw.readUInt8(12+i*24+15), u=(uvBits%16)*256+raw.readUInt8(12+i*24+22);
+ const v=Math.floor(uvBits/16)*256+raw.readUInt8(12+i*24+23);
+ assert.ok(u>0&&u<4095&&v>0&&v<4095,'UVs remain inside their padded layers');
+ if(u<2048)gloveTexels++;else sleeveTexels++;
+
+}
+assert.ok(wrapped>0.08*vn && intersect<0.02*vn,'baked fingers wrap the rear rail without material collision');
+assert.ok(fittedNormals>vn*.98,'export carries authored normals');
+assert.ok(gloveTexels>1800&&sleeveTexels>1000,'UV lanes select both Apollo material tiles');
+for(let i=0;i<ni;i++)assert.ok(raw.readUInt16LE(12+vn*24+i*2)<vn);
+assert.deepEqual(evaContact.slice(12,15).map(x=>x.toFixed(2)),['-0.18','-0.57','-1.59']);
+console.log('Apollo forearm: two indexed authored poses, contact fit, normals, index bounds and compact asset passed.');
+
+engine.select_deck(1);step(0,0,0,0);
+engine.select_arm(1);
+const uploadsForExternal=handLoads;
+until(()=>state[10]===1,260);
+step(64);until(()=>state[9]===2,64);
+assert.equal(handLoads,uploadsForExternal,'a loaded arm omits Wosy fallback tessellation and uploads');
+for (let next=1;next<3;next++) {
+ step();step(64);until(()=>state[9]===0,0);
+ underRail(next-1,next);
+ step(64);until(()=>state[9]===2,64);
+ assert.equal(state[16],next);
+}
+assert.deepEqual([...state.slice(12,15)],openPin);
+step();step(64);until(()=>state[17]===1,0);
+assert.deepEqual([...state.slice(12,15)],seatedPin,'the imported forearm receives the same exact pre/post seating endpoints');
+assert.equal(handLoads,uploadsForExternal,'seating the imported forearm never calls the mesh fallback');
+engine.select_arm(0);step();
+assert.equal(handLoads,uploadsForExternal+1,'the authored mesh can be restored without resetting EVA');
+assert.equal(state[9],2);
+console.log('EVA renderer: no procedural arm work while the fitted asset is present, fallback keeps the same Wosy grip.');
+
+// Ordinary EVA starts in a near-circular 390 km reference orbit. Even a
+// complete retrograde tank burn must not magically trigger atmospheric entry.
+engine.select_deck(1);step(0,.03,.095,0);engine.select_arm(1);
+for(let i=0;i<1500;i++)step(8);
+assert.equal(state[29],0);
+assert.equal(state[31],0,'finite tank limits total impulse');
+assert.equal(state[25],0,'a depleted tank produces no actual acceleration');
+assert.ok(state[7]>19&&state[7]<21,'full retrograde tank contributes about 20 m/s');
+let lowest=state[28];
+for(let i=0;i<6500;i++){step(512);lowest=Math.min(lowest,state[28]);}
+assert.ok(lowest>300000&&state[29]===0,'realistic suit impulse is insufficient for atmospheric entry from EVA orbit');
+engine.input_advance(0,0);engine.input_advance(46_655,1);
+engine.select_reentry();step(0,0,0,0);
+assert.equal(state[28],260000);assert.equal(state[32],1);
+let warpTicks=0,lastAbove=state[28];
+for(;warpTicks<2000&&state[29]===0;warpTicks++){
+  lastAbove=state[28];step(512);
+  if(state[29]===0)assert.equal(state[30],120);
+}
+assert.ok(warpTicks>700&&warpTicks<1450);
+assert.ok(Math.abs(state[37]-warpTicks*2)<.01);
+assert.ok(lastAbove>120000&&state[28]<=120000&&state[29]===1&&state[30]===1,'a distinct low-perigee orbit crosses threshold and exits warp on the crossing tick');
+const interfacePos=[...state.slice(0,3)];
+assert.equal(engine.entry_flow(3),0,'interface crossing does not display heat');
+hudIs('Atmosphere reached',false);
+step(4|64);assert.notDeepEqual([...state.slice(0,3)],interfacePos,'after interface the orbit continues');
+assert.equal(state[30],24);assert.equal(state[31],20);assert.deepEqual([...state.slice(23,26)],[0,0,0]);
+assert.deepEqual([...state.slice(33,35)],[0,0],'manual propulsion remains disabled during irreversible entry');
+engine.reentry_shell();
+assert.equal(createHash('sha256').update(Buffer.from(entryMesh.buffer)).digest('hex'),'f52c86520012c4ec26aca723657e3d117e1c8d0b746d98f21aca6fbed37398a2',
+ 'reentry shell retains the exact prior winding and all F32 vertex lanes');
+function checkEntryPresentation(){
+ const q=visualOf(.4,390/844);
+ assert.ok(Math.abs(q[52]-6371000/(6371000+q[28]))<1e-13,'actual reentry trajectory uses physical radius');
+ const [x,y,z,heat,load]=[0,1,2,3,4].map(engine.entry_flow);
+ const warm=heat>.01;
+ assert.equal(q[58],heat);assert.equal(q[59],Number(warm&&load<1));
+ entrySample=undefined;
+ engine.reentry_visual();
+ if(!warm){assert.equal(entrySample,undefined);return;}
+ const span=Math.hypot(x,z),ux=span>.05?-z/span:1,uz=span>.05?x/span:0;
+ const old=[q[0]-q[38],q[1]-q[39]-.58,q[2]-q[40],x,y,z,ux,0,uz,y*uz,z*ux-x*uz,-y*ux,heat,load<1?(hotPauseChecked?46.656:46.655):q[37]*.17];
+ assert.ok(entrySample.every((n,i)=>Math.abs(n-old[i])<2e-12));
+}
+let flightTicks=0, lastHeatLoad=0, lastAltitude=state[28], onset=0, peakAirSpeed=0, hotPauseChecked=false;
+for(;flightTicks<2200&&engine.entry_flow(4)<1;flightTicks++){
+ step(512|4|64);
+ const [x,y,z,heat,load,speed]=[0,1,2,3,4,5].map(engine.entry_flow);
+ assert.ok(Math.abs(Math.hypot(x,y,z)-1)<1e-5);
+ assert.ok(load>=lastHeatLoad&&state[28]<lastAltitude&&state[30]<120&&state[31]===20);
+ if(flightTicks%31===0)checkEntryPresentation();
+ if(!hotPauseChecked&&heat>.08&&load<.80){
+  hotPauseChecked=true;
+  const fraction=engine.input_advance(60_000,2);
+  const before=Array.from(visualOf(fraction,390/844));
+  engine.reentry_visual();const hot=Array.from(entrySample);
+  assert.ok(Math.abs(hot.at(-1)-46.655)<2e-12,'visual clock uses full active time, not physics cap or paused duration');
+  assert.ok(engine.draw_plan(301,390,844,1,1)>0);
+  assert.equal(engine.draw_plan(301,390,844,1,1),0,'unchanged hot paused view is reusable');
+  visualOf(fraction,844/390);
+  assert.ok(engine.draw_plan(302,844,390,1,1)>0,'paused resource/resize invalidation still renders');
+  engine.reentry_visual();assert.deepEqual(Array.from(entrySample),hot,'hot resize retains the same phase');
+  assert.deepEqual(Array.from(visualOf(fraction,390/844)),before);
+  engine.input_advance(1,1);visualOf(fraction,390/844);
+  engine.reentry_visual();assert.ok(Math.abs(entrySample.at(-1)-hot.at(-1)-.001)<2e-12,'resume advances heat by active elapsed time only');
+ }
+ if(heat>.08&&!onset){onset=state[28];hudIs('Entry heating',false);}
+ lastHeatLoad=load;lastAltitude=state[28];peakAirSpeed=Math.max(peakAirSpeed,speed);
+}
+assert.ok(hotPauseChecked,'captured a genuinely hot paused entry');
+assert.ok(onset>95000&&onset<105000,'visible plasma only appears deeper than the interface');
+assert.ok(flightTicks>800&&flightTicks<1400&&engine.entry_flow(4)===1&&state[28]>72000&&state[28]<87000);
+assert.ok(engine.entry_flow(5)<peakAirSpeed-25,'denser airflow causes observable deceleration before terminal');
+hudIs('Suit lost',false);checkEntryPresentation();
+const end=[...state.slice(0,3),state[28],state[37]];
+for(let i=0;i<30;i++){step(4|64);assert.deepEqual([...state.slice(0,3),state[28],state[37]],end);}
+
+reset();assert.equal(state[28],260000);assert.equal(state[29],0);assert.equal(state[30],1);assert.equal(state[31],20);assert.equal(engine.entry_flow(3),0);assert.equal(engine.entry_flow(4),0);
+engine.select_deck(1);step(0,0,0,0);
+assert.equal(state[28],390000);assert.equal(state[32],0);
+console.log('Orbital dynamics: full retrograde EVA tank remains above '+(lowest/1000).toFixed(0)+' km; separate low-perigee case crosses 120 km after '+warpTicks*2+' orbital seconds, then heating and suit loss after continued descent; reset passed.');
+const cameraBefore=[...state];
+assert.equal(engine.camera_clip(0,0,0,3,0,3),1,'unobstructed chase boom keeps its full length');
+assert.ok(Math.abs(engine.camera_clip(0,0,0,-3,0,0)-(-1.37/-3-.04))<.0001,'chase boom clips using the same station hull');
+step(0,0,0,0);assert.deepEqual([...state],cameraBefore,'camera clipping has no lasting simulation input or pose effects');
+console.log('Camera: unobstructed and hull-obstructed chase sweeps leave Wosy flight state unchanged.');
+
+// Independently test the drawn rigid-digit transforms against the cylindrical
+// rail, using real capture/hold/release poses from the existing mission above.
+// Bound each pressure digit by its largest radial envelope along its long axis.
+// The wide-phone playback can press Grip sooner than the deterministic
+// keyboard mission above. Keep its first observed fixed-tick pose as a guard.
+const fastLandscapeReach=new Float32Array(38);
+fastLandscapeReach.set([-.038953826,-.12249782,-.94724554,-.03049158,-.09634365],0);
+fastLandscapeReach.set([.006554406,1,1,1,-.26837078,-.52280921,-1.74621487,1],8);
+fastLandscapeReach.set([-.03002458,-.09506718],21);
+captureFrames.push(fastLandscapeReach);
+// The hatch approach can come in below the handle on desktop.
+const lowHatchReach=new Float32Array(38);
+lowHatchReach.set([-0.3595730364,-0.02891877852,-1.90815413,-0.7693254352,-0.1500000209],0);
+lowHatchReach.set([0.5337272882,1,0,1,-0.7766054273,-0.2747149467,-2.586382151,1],8);
+lowHatchReach.set([5,0,0.381921947,-0.07271004468],19);
+captureFrames.push(lowHatchReach);
+const rig=bindAvatarRig(engine,produce=>{rigRow=null;produce();return rigRow;});
+const handPose=new ProceduralPose(rig);
+const phalanges=[[.047,.041,.032],[.050,.044,.034],[.047,.042,.033],[.041,.038,.029]];
+let gripClearance=Infinity,heldSamples=0,sweepSamples=0;
+for(const frame of captureFrames){
+ const grip=rig.stationGrip(frame);
+ if(!grip)continue;
+ const {palette,joints}=handPose.solve(frame);
+ const nearest=(joint,beg,end,radius)=>{
+  const m=palette.subarray(joint*16,joint*16+16);
+  const [dy,dz]=[m[13]-grip.center[1],m[14]-grip.center[2]], py=m[9],pz=m[10];
+  const d=py*py+pz*pz, t=Math.max(beg,Math.min(end,d?-(dy*py+dz*pz)/d:beg));
+  return Math.hypot(dy+py*t,dz+pz*t)-radius-grip.radius;
+ };
+ for(const [i,digit] of phalanges.entries())for(const [k,l] of digit.entries())
+  gripClearance=Math.min(gripClearance,nearest(12+i*3+k,-.05*l,1.05*l,.0124-k*.0016-i*.0004));
+ gripClearance=Math.min(gripClearance,nearest(24,-.005,.041,.015),nearest(25,-.005,.037,.013));
+ if(frame[9]===2&&frame[8]===1){
+  heldSamples++;
+  assert.ok(joints.Left.error<=.001,'glove wrist can reach its fitted contact without stretching its limb lengths');
+ }else sweepSamples++;
+}
+assert.ok(heldSamples>5&&sweepSamples>60);
+assert.ok(gripClearance>=0,'digit volume must not penetrate any modeled bar during the mission sweep: '+gripClearance);
+console.log('Grip render: '+sweepSamples+' transition and '+heldSamples+' held samples. Minimum conservative clearance '+(gripClearance*1000).toFixed(2)+' mm.');
+
+// The free body catches the gaze around a signed wrapping boundary. The
+// anchored stance preserves world contacts under sustained excessive input.
+const az=(a,b)=>Math.atan2(Math.sin(a-b),Math.cos(a-b));
+engine.select_arm(1);engine.select_deck(1);step(0,0,0,0);
+let seams=0;
+for(const direction of [1,-1]){
+ let lastHead=state[3],lastBody=state[21];
+ for(let i=0;i<620;i++){
+  step(0,direction*.035,i<220?direction*.032:0);
+  if(Math.abs(state[3]-lastHead)>3)seams++;
+  assert.ok(Math.abs(az(state[3],state[21]))<=.9401&&Math.abs(state[4]-state[22])<=.6001,'free neck stays within its signed envelope');
+  assert.ok(direction*az(state[3],lastHead)>-.0001&&Math.abs(az(state[3],lastHead))<.075,'continued turning keeps direction across the seam');
+  assert.ok(Math.abs(az(state[21],lastBody))<=.015,'free body follows at its slower physical rate');
+  lastHead=state[3];lastBody=state[21];
+ }
+}
+assert.ok(seams>=2,'free look crossed the signed yaw seam in both directions');
+for(let i=0;i<180;i++)step();
+assert.ok(Math.abs(az(state[3],state[21]))<.025&&Math.abs(state[4]-state[22])<.025,'free body catches up without new input');
+reset();until(()=>state[10]===1,260);
+step(64);until(()=>state[9]===2,0);
+const railEye=[...state.slice(0,3)], railHand=[...state.slice(12,15)], anchor=[state[3],state[4]];
+for(const direction of [1,-1,1]){
+ for(let i=0;i<180;i++){
+  step(0,direction*1.7,direction*1.6);
+  assert.ok(Math.abs(az(state[3],state[21]))<=.3701&&Math.abs(state[4]-state[22])<=.2901,'held neck stays within reduced envelope');
+  assert.ok(Math.abs(az(state[3],anchor[0]))<=.4201&&Math.abs(state[4]-anchor[1])<=.3201,'held camera cannot wind around the grip');
+  assert.ok(Math.abs(az(state[21],anchor[0]))<=.101&&Math.abs(state[22]-anchor[1])<=.081,'held torso stays within its small anchored lean');
+  assert.deepEqual([...state.slice(0,3)],railEye);
+  assert.deepEqual([...state.slice(12,15)],railHand);
+ }
+}
+step();let beforeTurn=state[3];step(64,.025);
+for(let i=0;i<25;i++){
+ assert.ok(Math.abs(az(state[3],beforeTurn))<.085,'release widens the angular envelope without a snap');
+ beforeTurn=state[3];step(0,.025);
+}
+assert.equal(state[9],0,'head continues turning after release');
+console.log('Head and torso: free signed seam crossings, catch-up, smaller held envelope, immutable held contact anchors and gradual release passed.');
+
+// The remote support skeleton is immutable across all cargo/rail poses.
+assert.equal(hullLoads,1);
+assert.equal(hull.length%24,0);assert.ok(hull.length/24<6200&&hull.every(Number.isFinite));
+engine.select_deck(1);step(0,0,0,0);
+const clip=(a,b)=>engine.camera_clip(...a,...b);
+assert.ok(clip([-14,6,-12],[-14,1,-12])<.75,'concrete outer power blanket stops a sweep');
+assert.equal(clip([-11.5,6,-12],[-11.5,1,-12]),1,'free space between blankets has no proxy blocker');
+assert.ok(clip([-4.69,1,-25],[-4.69,1,-21])<.6,'aft freighter has a physical shield');
+assert.ok(clip([-15,-.30,-5.8],[-10,-.30,-5.8])<.6,'port observation bay has a physical end cap');
+assert.ok(clip([-4.69,6,2.5],[-4.69,4,2.5])<.3,'communications feed is solid');
+assert.equal(clip([5.84,2.30,-11],[5.84,2.30,-9.0]),1,'a real window between diagonal truss members is passable');
+console.log('Complete station: immutable batch, port lab, aft freighter, antenna, power blankets, navigable gaps passed.');
+// Pilot the real EVA integrator to the wing. These are ordinary suit
+// thruster commands, not writes into WASM memory or alternate collision code.
+function reachPoint(dest){
+ let carry=0;
+ const dt=1/60;
+ engine.tick(0,0,0,-state[4]);
+ for(let i=0;i<3100;i++){
+  const delta=dest.map((v,k)=>v-state[k]),distance=Math.hypot(...delta);
+  if(distance<.14&&Math.hypot(...state.slice(5,8))<.075)return;
+  const cruise=Math.min(2.4,.50*distance);
+  const accel=delta.map((v,k)=>1.8*(v*cruise/Math.max(.01,distance)-state[5+k]));
+  const yaw=state[3],sy=Math.sin(yaw),cy=Math.cos(yaw);
+  const a=Math.max(-1,Math.min(1,accel[1]/1.52));
+  carry+=a;
+  const ay=carry>.5?1:carry<-.5?-1:0;
+  carry-=ay;
+  engine.set_thrust((accel[0]*cy+accel[2]*sy)/1.52,(accel[0]*sy-accel[2]*cy)/1.52);
+  engine.tick(dt,ay>0?16:ay<0?32:0,0,0);
+ }
+ assert.fail('unreachable EVA waypoint '+dest+'; eye '+state.slice(0,3));
+}
+for(const [x,solid] of [[-14,true],[-11.50,false]]){
+ engine.select_deck(1);engine.tick(0,0,0,0);reachPoint([1,7.4,1]);reachPoint([x,6,-12]);
+ engine.set_thrust(0,0);let touched=false;
+ for(let i=0;i<120;i++){engine.tick(.032,32,0,0);touched||=Boolean(state[26]);}
+ assert.equal(touched,solid);
+ if(solid){assert.ok(state[1]>4.34&&state[1]<4.42&&Math.abs(state[6])<.001,'stock suited body rests above first boot clearance');}
+ else{assert.ok(state[1]<1,'suit crossed the actual gap');}
+}
+console.log('EVA flight: descended on the power blanket and through the open adjacent channel.');
+
+for(const [x,solid] of [[-4.69,true],[-7.15,false]]){
+ engine.select_deck(1);engine.tick(0,0,0,0);
+ reachPoint([1,7.4,1]);reachPoint([x,6,-20.8]);engine.set_thrust(0,0);
+ let first;
+ for(let i=0;i<120;i++){
+  const incoming=state[6];engine.tick(.032,32,0,0);
+  if(state[26]&&!first)first={incoming,outgoing:state[6],y:state[1]};
+ }
+ assert.equal(Boolean(first),solid,'the finite aft prism preserves the adjacent flight lane');
+ if(solid){
+  assert.ok(first.y>2.95&&first.y<3.23,'first contact is at the boots, not the pilot point');
+  assert.ok(first.incoming< -2&&first.outgoing>.47,'first impact reverses the inward component');
+  assert.ok(state[1]>2.92&&Math.abs(state[6])<.001,'the suit comes to rest above the physical hull');
+ }else assert.ok(state[1]< -5,'the adjacent flight lane is genuinely open');
+}
+console.log('Aft freighter: the stock suit rebounds at boot contact and the adjoining descent remains open.');
+
+for(const [z,plate] of [[-.43,true],[1.34,false]]){
+ engine.select_deck(1);engine.tick(0,0,0,0);
+ reachPoint([1,5,1.3]);reachPoint([-8.55,4.4,1.34]);
+ if(plate)reachPoint([-8.55,4.4,z]);
+ engine.set_thrust(0,0);
+ let first;
+ for(let i=0;i<105;i++){
+  engine.tick(.032,32,0,0);
+  if(state[26]&&!first)first=[...state.slice(0,8)];
+ }
+ assert.equal(Boolean(first),plate);
+ if(plate){
+  assert.ok(first[1]>2.70&&first[1]<3.12,'contact reaches the boots before the eye');
+  assert.ok(first[6]>.25,'an inward radiator impact reverses the normal speed');
+  assert.ok(state[1]>2.70,'the body stays above the radiator under sustained inward thrust');
+ }else assert.ok(state[1]<0,'the genuine open end of the radiator remains passable');
+}
+console.log('EVA radiator trays: boot-first rebound, sustained body separation, and open end passed.');
+
+
+engine.select_deck(1);step(0,0,0,0);
+until(()=>state[18]===2,4,120);
+hudIs("Approach the airlock rail",false);
+assert.equal(hint().action,"Slow down");assert.equal(hint().short,"Thrust back");
+assert.ok(hint().burn);
+console.log("Wosy HUD: exercise labels, actionable stages, off-axis reticle, and counterthrust cues passed.");
+
+engine.select_deck(0);engine.tick(0,0,0,0);
+assert.equal(engine.camera_mode(1),0,'camera preference cannot be changed inside the training deck');
+assert.deepEqual(visualOf(.2,16/9).slice(0,38),Float64Array.from(state),'do not blend across a reset');
+engine.select_deck(1);engine.tick(0,0,0,0);
+const still=state.slice(), portrait=visualOf(1,390/844);
+assert.deepEqual([...portrait.slice(38,43)],[...still.slice(0,5)]);
+assert.deepEqual([...portrait.slice(44,48)],[1.4,1.4*390/844,.99449,-.10481]);
+assert.equal(engine.camera_mode(1),1);
+let view=visualOf(1,16/9);
+assert.equal(view[53],1,'chase starts as a staged blend');
+for(let i=0;i<40;i++)view=visualOf(1,16/9);
+assert.equal(view[53],0,'chase blend converges');
+assert.deepEqual(state,still,'visual-only camera clip and blend do not write flight lanes');
+assert.equal(engine.camera_mode(1),0);
+
+for(const aspect of [390/844,16/9]){
+ const seated=Array.from(visualOf(1,aspect,2).slice(38,54));
+ assert.equal(seated[5],0,'stock begins from the physical helmet eye');
+ for(let n=0;n<6;n++){
+  assert.equal(engine.camera_mode(1),1);
+  const outside=Array.from(visualOf(1,aspect,2));
+  assert.equal(outside[53],0,'stock cut does not render an intermediate camera');
+  assert.equal(outside[43],1,'clear chase still draws the external Apollo');
+  assert.ok(Math.hypot(...outside.slice(38,41).map((v,i)=>v-still[i]))>.8);
+  assert.equal(engine.camera_mode(1),0);
+  assert.deepEqual(Array.from(visualOf(1,aspect,2).slice(38,54)),seated,'first rendered view returns to the original optical seat');
+  assert.deepEqual(state,still,'switching optics does not mutate flight');
+ }
+}
+engine.tick(1/60,4,.05,.02);
+const mid=visualOf(.5,16/9);
+assert.equal(mid[3],Math.fround(still[3]+(state[3]-still[3])*.5),'visual interpolation preserves the legacy f32 pose row');
+assert.equal(mid[15],state[15]);
+engine.select_reentry();engine.tick(0,0,0,0);
+const entry=visualOf(.2,390/844);
+assert.deepEqual(entry.slice(0,38),Float64Array.from(state),'reentry is a different scene, not a visual interpolation');
+assert.equal(entry[48],1.35);
+assert.ok(Math.abs(entry[50]+1)<1e-6&&entry[52]>.95,'entry globe uses the orbital center and altitude');
+console.log('Wosy presentation: pointer/width, reset, optical profile, chase/clip, render interpolation, and orbital globe passed.');
+
+engine.select_deck(0);engine.tick(0,0,0,0);engine.select_deck(1);engine.tick(0,0,0,0);
+const globeView=visualOf(1,390/844);
+assert.equal(engine.globe_tiles(200,844),1,'initial view selects tiles');
+assert.equal(earthTiles[0],10430/(844*globeView[45]));
+assert.deepEqual([...earthTiles.slice(1,10)],[294,199,293,-1,-1,229,262,-1,261]);
+const geographicPlan=earthTiles.slice(1);
+assert.equal(engine.globe_tiles(380-.001,845),0,'respect the view-scan cadence');
+assert.equal(earthTiles[0],10430/(845*globeView[45]),'update the sample footprint between scans');
+assert.deepEqual(earthTiles.slice(1),geographicPlan);
+assert.equal(engine.globe_tiles(380,845),1,'the next eligible view sample regenerates the plan');
+for(let mask=0;mask<512;mask++){
+ const expected=Array.from(earthTiles.slice(10,19)).reduce((chosen,score,i)=>{
+  return (mask&(1<<i))&&score>0&&(chosen<0||score>earthTiles[10+chosen])?i:chosen;
+ },-1);
+ assert.equal(engine.globe_request(mask,0),expected);
+ assert.equal(engine.globe_request(mask,1),expected);
+ assert.equal(engine.globe_request(mask,2),-1);
+}
+assert.equal(engine.globe_retry(237.5),60237.5);
+assert.equal(skyArt[36],10);
+assert.equal(engine.globe_tiles(381,342),1,'a coarse raster immediately retires detail demand');
+assert.ok(earthTiles[0]*(1-globeView[52])/globeView[52]>skyArt[36]+.001);
+assert.deepEqual([...earthTiles.slice(1,10)],Array(9).fill(-1));
+assert.equal(engine.globe_request(511,0),-1,'no demand can contribute at any visible Earth ray');
+assert.equal(engine.globe_tiles(382,341),0,'staying ineligible does not rescan');
+assert.equal(engine.globe_tiles(383,845),1,'detail recovery rescans immediately, before the old deadline');
+assert.deepEqual(earthTiles.slice(1),geographicPlan,'the native page demand and priorities are identical when recovered');
+assert.notEqual(engine.globe_request(511,0),-1);
+console.log('Wosy globe detail: camera geography, exact tile slots and scores, and scan cadence passed.');
+
+engine.select_deck(1);engine.tick(0,0,0,0);
+engine.input_clear();assert.equal(engine.input_advance(100,0),0);
+engine.input_key(0,1);engine.input_key(1,1);engine.input_key(0,0);
+engine.input_advance(17,1);
+assert.equal(Math.hypot(...state.slice(23,26)),0,'held look arrow does not command thrust');
+assert.ok(state[35]<0,'left arrow commands the right controller');
+engine.input_key(1,0);engine.input_key(0,1);engine.input_advance(17,1);
+assert.ok(state[23]<-.1,'A commands left translation');
+assert.equal(state[35],0,'left translation does not command right look');
+engine.input_key(0,0);
+engine.input_stick(0,390,0,-20);engine.input_stick(1,390,32,-16);
+engine.input_advance(17,1);
+assert.ok(state[34]>0&&state[35]>0&&state[36]>0&&Math.hypot(...state.slice(23,26))>.1);
+assert.equal(engine.input_status()&13,13,'look used, active gesture and a fixed tick may coexist');
+engine.input_clear();engine.input_advance(17,1);
+assert.deepEqual([...state.slice(33,37)],[0,0,0,0]);
+assert.equal(engine.input_status()&1,1,'input clearing does not erase the learned HUD interaction');
+console.log('Wosy input: fixed pacing, independent keyboard thrust/look, dual touch, release, and learned HUD state passed.');
+
+assert.equal(engine.quality_shadow(1,1,0,4096),3584*2+1);
+assert.equal(engine.quality_shadow(1,1,1,1536),1536*2+1);
+assert.equal(engine.quality_shadow(1,0,1,4096),1024*2);
+engine.input_key(4,1);engine.input_advance(100,1);
+engine.quality_adapt(16.7,1,0,1);engine.quality_plan(1280,720,1,0,1);
+assert.deepEqual([...rendererPlan],[832,468,.65]);
+engine.quality_adapt(120,1,0,1);engine.quality_adapt(120,1,0,1);
+engine.quality_plan(1280,720,1,0,1);
+assert.deepEqual([...rendererPlan],[657,370,.65*.79]);
+engine.quality_plan(1280,720,1,1,1);
+assert.deepEqual([...rendererPlan],[1280,720,1],'Full masks adaptive scaling without modifying the motion policy');
+console.log('Wosy rendering budget: capability-clamped shadows, software seed, motion degradation and Full mode passed.');
+
+const instrumentCode=engine.hud_view();
+assert.equal(instrumentCode,engine.hud_code());
+assert.ok(Math.abs(hudView[0]-Math.hypot(...state.slice(5,8)))<1e-10);
+assert.equal(hudView[5],0,'observed touch look survives later task copy projection');
+assert.equal(hudView[4],0);
+console.log('Wosy HUD projection: telemetry vector, learned hint, terminal signal and copy intent passed.');
+
+visualOf(1,1280/720);
+assert.equal(engine.draw_plan(0,1280,720,1,1),1,'first projected scene uses direct sky');
+assert.equal(engine.draw_plan(0,1280,720,1,1),0,'unchanged frame is reusable');
+assert.equal(engine.draw_plan(1,1280,720,1,1),2,'an uploaded resource forces drawing but retains a steady camera');
+assert.equal(engine.sky_plan(1280,720,1,1,1,1,0),1);
+assert.equal(engine.sky_plan(1280,720,1,1,1,1,0),0);
+assert.equal(engine.sky_plan(1280,720,1,1,1,1,1),1,'Earth page update invalidates the projected backdrop');
+assert.equal(engine.sky_plan(390,844,1,1,1,1,1),1,'resize invalidates the projected backdrop');
+console.log('Wosy draw policy: idle skips, resource epochs, steady camera, tile texture invalidation and viewport changes passed.');
+
+engine.select_deck(1);engine.tick(0,0,0,0);
+engine.input_clear();engine.input_advance(0,0);
+engine.input_key(1,1);
+engine.input_advance(17,1);
+engine.camera_mode(1);
+const fraction=engine.input_advance(6,1);
+const activePose=Array.from(visualOf(fraction,390/844));
+const activeSimulation=Array.from(state);
+assert.equal(engine.input_advance(60_000,2),fraction,'pause keeps the last interpolation fraction');
+assert.equal(engine.input_status()&8,0,'pause does not advance a fixed step');
+assert.deepEqual(Array.from(state),activeSimulation);
+for(let k=0;k<8;k++)assert.deepEqual(Array.from(visualOf(fraction,390/844)),activePose,'paused redraw must not advance chase');
+const resized=visualOf(fraction,844/390);
+assert.deepEqual(Array.from(resized.slice(0,44)),activePose.slice(0,44),'resize may change optics, not paused pilot or chase pose');
+assert.equal(engine.input_advance(0,1),fraction,'resume starts without adding paused time');
+assert.notDeepEqual(Array.from(visualOf(fraction,390/844).slice(38,43)),activePose.slice(38,43),'explicit resume advances chase again');
+engine.input_advance(17,1);
+assert.equal(Math.hypot(...state.slice(23,26)),0,'cleared momentary input does not return');
+console.log('Wosy pause: exact simulation and presentation freeze, resize, resume and input clearing passed.');
+
+engine.input_clear();engine.input_advance(0,0);
+engine.select_reentry();engine.tick(0,0,0,0);
+engine.input_action(1);
+engine.input_advance(17,1);
+assert.equal(state[30],120,'the ordinary Coast input selects warp');
+engine.input_key(1,1);
+engine.input_pointer(30,-10,0);
+engine.input_action(0);
+const coastPausedState=Array.from(state);
+engine.input_advance(0,2);
+engine.input_advance(90_000,2);
+assert.equal(engine.input_status()&6,2,'pause clears queued motion but preserves latched Coast');
+assert.deepEqual(Array.from(state),coastPausedState);
+engine.input_advance(17,1);
+assert.equal(state[37]-coastPausedState[37],2,'resume advances exactly one Coast tick');
+assert.equal(state[30],120);
+assert.ok(state.slice(23,26).every(value=>value===0),'resume does not restore thrust');
+engine.input_action(1);engine.input_advance(17,1);
+assert.equal(state[30],1,'manual Coast cancel still leaves warp');
+engine.input_action(1);engine.input_advance(17,1);assert.equal(state[30],120);
+engine.input_advance(0,2);
+engine.input_clear();
+assert.equal(engine.input_status()&2,0,'explicit safety loss clears Coast even while paused');
+engine.input_advance(17,1);
+assert.equal(state[30],1);
+console.log('Wosy Coast: ordinary pause preserves warp intent, not held input or elapsed time; cancel and safety clear still work.');
+
+assert.deepEqual([...waypointChecks].sort(),[1,2,3,4,5],"all five world waypoints were exercised along the real mission");
+console.log("Wosy waypoint: five authored station markers projected through actual camera optics in portrait and desktop.");
+
+
+const authoredMmu=rig.mmuGrasps();
+assert.equal(rig.mmuGrasps(),authoredMmu,'cache the authored profile once outside the dynamic buffer');
+for(const profile of authoredMmu){
+ assert.equal(profile.bends.length,14);
+ assert.ok(Math.abs(Math.hypot(...profile.orientation)-1)<1e-8);
+ assert.ok([...profile.translation,...profile.orientation,...profile.bends,profile.opposition].every(Number.isFinite));
+}
+const mmuProbe=new Float32Array(38);
+assert.equal(rig.controls(mmuProbe)[0].fit,1);
+mmuProbe[8]=.11;
+assert.ok(Math.abs(rig.controls(mmuProbe)[0].fit-.5)<1e-6);
+mmuProbe[8]=.23;
+assert.equal(rig.controls(mmuProbe)[0].fit,0);
+assert.equal(rig.controls(mmuProbe)[1].fit,1);
+console.log('Wosy MMU: cached authored profiles and bounded left station handoff; right remains on its control.');
+
+
+const atmosphereAnchor=skyArt[29];
+assert.equal(atmosphereAnchor,0.7962254705797849);
+engine.select_deck(1);engine.tick(0,0,0,0);
+assert.equal(visualOf(1,390/844)[52],atmosphereAnchor,'default station keeps the exact authored Earth disc');
+for(const altitudeKm of [390,260,80]){
+ const physicalRadius=6371/(6371+altitudeKm);
+ for(const heightKm of [0,8,25,55,100,225]){
+  const limb=(physicalRadius*(1+heightKm/6371)-physicalRadius)*(atmosphereAnchor/physicalRadius);
+  assert.ok(Math.abs(limb-heightKm/6371*atmosphereAnchor)<1e-14);
+  assert.ok(Math.abs(Math.exp(-limb*305)-Math.exp(-heightKm/6371*atmosphereAnchor*305))<1e-12);
+ }
+}
+console.log('Wosy Earth atmosphere: fixed physical column at physical orbit radii with the original showcase disc.');
+
+
+assert.deepEqual([...skyArt.slice(30,36)],[1,.97,.90,.46,.34,.23]);
+const solarRadiusSq=skyArt[19];
+const limb=(scale)=>.88+.12*Math.sqrt(Math.max(0,1-scale**2));
+const glow=(scale,inner)=>{
+ const s2=scale**2*solarRadiusSq;
+ const g=Math.max(0,1-s2*.32/.049)/(1+Math.max(0,s2-solarRadiusSq)*410);
+ const t=Math.min(1,Math.max(0,(s2-.016)/(.049-.016)));
+ return [.40,.24,.13].map((x,i)=>(x*g+inner[i]*g**3)*(1-t*t*(3-2*t)));
+};
+const disk=[...skyArt.slice(30,33)],newHalo=[...skyArt.slice(33,36)],oldHalo=[1.02,.75,.47];
+for(const scale of [0,.45,.80,.97]){
+ assert.ok(glow(scale,oldHalo).every((x,i)=>x+[1,.94,.81][i]*limb(scale)>1),'original core clamps all three channels white');
+ assert.ok(disk.every(x=>x*limb(scale)<=1),'photosphere retains its authored profile');
+}
+assert.ok(disk[1]-disk[1]*limb(.97)>.08);
+for(const i of [0,1,2]){
+ assert.ok(glow(1,newHalo)[i]<disk[i]*limb(1),'the closest halo is fainter than the photosphere edge');
+ assert.ok(glow(1.15,newHalo)[i]>glow(1.5,newHalo)[i]&&glow(1.5,newHalo)[i]>glow(2,newHalo)[i]);
+ assert.ok(Math.abs(glow(4,newHalo)[i]-glow(4,oldHalo)[i])<.002);
+}
+console.log('Wosy Sun: same angular disk and independently readable radial core; broad corona remains bounded.');
+
+engine.input_clear();engine.input_advance(0,0);
+engine.select_deck(0);engine.tick(0,0,0,0);
+engine.hud_view();assert.equal(hudView[8],0,'unreachable training equipment has no selectable identity');
+engine.equipment_activate(1);engine.input_advance(17,1);
+assert.equal(state[9],0,'unreachable target identity cannot queue an action');
+until(()=>state[10]===1,260);
+engine.hud_view();assert.equal(hudView[8],1);
+assert.ok(hudView[9]<hudView[12]&&hudView[10]<hudView[13]&&hudView[11]<hudView[14]);
+engine.equipment_activate(0);engine.equipment_activate(2);engine.equipment_activate(-1);
+engine.input_advance(17,1);
+assert.equal(state[9],0,'zero, disjoint equipment and negative identity are all rejected');
+engine.equipment_activate(1);engine.input_advance(17,1);
+assert.equal(state[9],1,'the current eligible identity enters the existing grasp');
+console.log('Wosy equipment authorization: wrong, absent and current target controls passed.');
+
+
+for(const deck of [0,1]){
+ engine.select_deck(deck);step(0);
+ until(()=>state[10]===1,260);
+ engine.input_action(3);engine.input_advance(17,1);
+ assert.equal(state[9],0,'an unavailable Push off must not capture a reachable rail');
+ step(64);until(()=>state[9]===2,64);step(0);
+ const held=[...state.slice(0,8)];
+ engine.equipment_activate(deck===0?1:2);engine.input_advance(17,1);
+ if(deck===0){
+  assert.equal(state[9],3);
+  assert.deepEqual([...state.slice(0,3)],[...held.slice(0,3)],'passive training release cannot reposition the player');
+  assert.equal(Math.hypot(...state.slice(5,8)),0);
+  until(()=>state[9]===0,0);
+  assert.ok(Math.hypot(...state.slice(5,8))<.005);
+ }else{
+  assert.equal(state[9],2,'second selection begins while still actually held');
+  assert.equal(Math.hypot(...state.slice(5,8)),0);
+  const contact=[...state.slice(12,15)];
+  const heldGoal=Math.hypot(state[1]+.57,state[2]+3.43);
+  assert.equal(hint().objective,'Vaulting over the rail','an immediate second selection advertises the preparation');
+  let onset,approach=heldGoal,waiting=0,preparing=false;
+  for(let i=0;i<150;i++){
+   const from=[...state.slice(0,3)];step();
+   if(state[9]===2){
+    const shift=Math.hypot(...state.slice(0,3).map((v,j)=>v-held[j]));
+    if(!preparing&&shift<2e-6)waiting++;else preparing=true;
+    assert.ok(Math.hypot(...state.slice(12,15).map((v,j)=>v-contact[j]))<2e-6,'preload keeps the real world handhold fixed within floating-point tolerance');
+    assert.ok(Math.hypot(...state.slice(0,3).map((v,j)=>v-from[j]))<.012,'preload advances smoothly, not by jump');
+   }else if(!onset)onset=[...state.slice(0,8)];
+   approach=Math.min(approach,Math.hypot(state[1]+.57,state[2]+3.43));
+   assert.equal(state[26],0,'ordinary vault requires no penetration or rebound');
+  }
+  assert.ok(waiting>0&&waiting<27&&preparing,'early intent waits briefly on the fixed grip then really preloads');
+  assert.ok(onset&&onset[6]>.79&&onset[7]<-.84);
+  assert.equal(state[16],1,'the next real target is the scaffold rail');
+  assert.ok(approach<heldGoal-.25,'launch moves toward the next actual equipment');
+  assert.notEqual(hint().objective,'Descend below the rail','top route never inherits the underpass cue');
+ }
+}
+console.log('Orbital WASM: actual second rail selection preloads continuously and advances the first exterior vault; training passive and explicit push eligibility unchanged.');
+
+function firstRailHeld(){
+ engine.input_clear();engine.input_advance(0,0);engine.select_deck(1);step(0);
+ until(()=>state[10]===1,260);
+ step(64);until(()=>state[9]===2,64);step();
+}
+firstRailHeld();
+for(let i=0;i<135;i++)step(0,.035);
+assert.ok(Math.abs(state[21]+.105)>.064,'actual held look reaches an unregistered body angle');
+const blockedStart=[...state.slice(0,3)];
+engine.equipment_activate(2);engine.input_advance(17,1);
+assert.equal(state[9],3);
+assert.deepEqual([...state.slice(0,3)],blockedStart);
+assert.equal(Math.hypot(...state.slice(5,8)),0);
+assert.equal(hint().objective,'Vault canceled');
+
+firstRailHeld();
+engine.equipment_activate(2);engine.input_advance(17,1);
+assert.equal(hint().objective,'Vaulting over the rail');
+const waitingPose=[...state.slice(0,3)];
+for(let i=0;i<24;i++)step();
+assert.ok(Math.hypot(...state.slice(0,3).map((v,j)=>v-waitingPose[j]))>.004,'the cancellation fixture is past pending and moving into preload');
+const cancelPose=[...state.slice(0,3)];
+engine.equipment_activate(2);engine.input_advance(34,1);
+assert.equal(state[9],3);
+assert.ok(Math.hypot(...state.slice(0,3).map((v,i)=>v-cancelPose[i]))<.012);
+assert.ok(Math.hypot(...state.slice(5,8))<.005);
+assert.equal(hint().objective,'Vault canceled');
+console.log('EVA vault: a nonregistered body angle and a fresh mid-preload click both fail soft into passive release.');
+
+for(const cancellation of ['extra rail press','pause','thrust','clear']){
+ firstRailHeld();
+ engine.equipment_activate(2);engine.input_advance(17,1);
+ assert.equal(hint().objective,'Vaulting over the rail');
+ assert.equal(state[9],2);
+ if(cancellation==='extra rail press'){
+  engine.equipment_activate(2);engine.input_advance(34,1);
+  assert.equal(state[9],3);
+  assert.ok(Math.hypot(...state.slice(5,8))<.005);
+  assert.equal(hint().objective,'Vault canceled');
+  continue;
+ }
+ if(cancellation==='pause'){
+  engine.input_advance(0,2);engine.input_advance(800,2);
+ }else if(cancellation==='thrust'){step(4);}
+ else{engine.input_clear();}
+ for(let i=0;i<74;i++)step();
+ assert.equal(state[9],2,cancellation+' clears the pending impulse and leaves the held rail');
+ assert.equal(Math.hypot(...state.slice(5,8)),0);
+ assert.notEqual(hint().objective,'Vaulting over the rail');
+}
+console.log('EVA early press: normal settling executes once; real pause, thrust or clear cancel pending intent without a later impulse.');
