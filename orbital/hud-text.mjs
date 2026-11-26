@@ -56,7 +56,11 @@ const messages=[
  ["Clear the end of the scaffold","Move away from the station to clear the end of the rail.","Scaffold ahead","Move outboard"],
  ["Pass the end of the scaffold","Move along the station past the end of the rail, then head for the hatch.","Scaffold ahead","Pass the rail end"],
  ["Level out to grip","Keep the handle in view while bringing your look closer to level. Let the suit settle.","Level out","Bring your look level"],
- ["Square up to the hatch","Keep facing the handle until the suit lines up with it.","Line up","Face the handle"]
+ ["Square up to the hatch","Keep facing the handle until the suit lines up with it.","Line up","Face the handle"],
+ ["Vaulting over the rail","Stay on the handhold while the suit lines up. Select the rail again to cancel the vault.","Let go","Preparing forward vault"],
+ ["Over the rail","You are moving toward the scaffold rail. Use opposite thrust to slow down.","Vaulting forward","Drift toward scaffold"],
+ ["Vault canceled","You let go without a push. Use the thrusters to move safely.","Letting go","Use thrusters"],
+ rail=>[rail+" secured","Select the rail again to vault forward over it. Use Push off for the underside route.","Vault over rail"]
 ];
 const sections=["TRAINING 01 / HANDRAIL","EVA / 1 OF 3","EVA / 2 OF 3","EVA / 3 OF 3","EVA / CARGO ALIGNMENT","EVA / AIRLOCK RETURN","ORBIT / REENTRY"];
 const markers=["+","+","+","+","→","←","↑","↓","❯","❮"];
@@ -92,7 +96,7 @@ export function flightStatusText(status){return flightStatuses[status];}
 const equipmentNames=["","rail","rail","rail","cargo pin","console handle","hatch handle"];
 const equipmentActions={
  "Grip rail":"grip it","Grip handle":"grip it","Grip hatch":"grip it",
- "Let go":"let go","Seat cargo lock":"seat it",
+ "Let go":"let go","Vault over rail":"vault forward","Seat cargo lock":"seat it",
  "Drift to align":"release and drift to the console","Set alignment":"lower the cargo",
  "Transfer cargo":"transfer the load","Release & return":"release and return to the hatch",
  "Lock airlock":"lock the hatch"

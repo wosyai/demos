@@ -121,7 +121,7 @@ function hint(){
  const message=code&63,aim=(code>>>6)&7,route=Boolean(code&512),dir=code>>>19;
  const signed=(neg,pos)=>dir&neg?-1:dir&pos?1:0;
  const legacyFlags=Boolean(aim)+route*2+Boolean(code&1024)*4+Boolean(code&2048)*8+
-  Boolean(code&4096)*16+Boolean(code&8192)*32+Boolean(code&32768)*64+(message===2||message===35?128:0);
+  Boolean(code&4096)*16+Boolean(code&8192)*32+Boolean(code&32768)*64+(message===2||message===35||message===55?128:0);
  assert.deepEqual([...hudView.slice(15)],[message,(code>>>16)&7,route?(aim===4?8:9):aim,
   message===15&&aim>=4?aim-3:0,signed(1,2),signed(4,8),signed(16,32),legacyFlags]);
  return hudText(hudView,state[16]);
@@ -1209,14 +1209,92 @@ for(const deck of [0,1]){
  assert.equal(state[9],0,'an unavailable Push off must not capture a reachable rail');
  step(64);until(()=>state[9]===2,64);step(0);
  const held=[...state.slice(0,8)];
- engine.input_action(0);engine.input_advance(17,1);
- assert.equal(state[9],3);
- assert.deepEqual([...state.slice(0,3)],[...held.slice(0,3)],'passive letting go cannot reposition the player');
- assert.equal(Math.hypot(...state.slice(5,8)),0,'passive letting go imparts no impulse');
- until(()=>state[9]===0,0);
- assert.ok(Math.hypot(...state.slice(5,8))<.005,'passive rail release retains only ambient motion');
+ engine.equipment_activate(deck===0?1:2);engine.input_advance(17,1);
+ if(deck===0){
+  assert.equal(state[9],3);
+  assert.deepEqual([...state.slice(0,3)],[...held.slice(0,3)],'passive training release cannot reposition the player');
+  assert.equal(Math.hypot(...state.slice(5,8)),0);
+  until(()=>state[9]===0,0);
+  assert.ok(Math.hypot(...state.slice(5,8))<.005);
+ }else{
+  assert.equal(state[9],2,'second selection begins while still actually held');
+  assert.equal(Math.hypot(...state.slice(5,8)),0);
+  const contact=[...state.slice(12,15)];
+  const heldGoal=Math.hypot(state[1]+.57,state[2]+3.43);
+  assert.equal(hint().objective,'Vaulting over the rail','an immediate second selection advertises the preparation');
+  let onset,approach=heldGoal,waiting=0,preparing=false;
+  for(let i=0;i<150;i++){
+   const from=[...state.slice(0,3)];step();
+   if(state[9]===2){
+    const shift=Math.hypot(...state.slice(0,3).map((v,j)=>v-held[j]));
+    if(!preparing&&shift<2e-6)waiting++;else preparing=true;
+    assert.ok(Math.hypot(...state.slice(12,15).map((v,j)=>v-contact[j]))<2e-6,'preload keeps the real world handhold fixed within floating-point tolerance');
+    assert.ok(Math.hypot(...state.slice(0,3).map((v,j)=>v-from[j]))<.012,'preload advances smoothly, not by jump');
+   }else if(!onset)onset=[...state.slice(0,8)];
+   approach=Math.min(approach,Math.hypot(state[1]+.57,state[2]+3.43));
+   assert.equal(state[26],0,'ordinary vault requires no penetration or rebound');
+  }
+  assert.ok(waiting>0&&waiting<27&&preparing,'early intent waits briefly on the fixed grip then really preloads');
+  assert.ok(onset&&onset[6]>.79&&onset[7]<-.84);
+  assert.equal(state[16],1,'the next real target is the scaffold rail');
+  assert.ok(approach<heldGoal-.25,'launch moves toward the next actual equipment');
+  assert.notEqual(hint().objective,'Descend below the rail','top route never inherits the underpass cue');
+ }
 }
-console.log('Orbital WASM: passive training and EVA rail release is stationary at onset; unavailable explicit push cannot capture a rail.');
+console.log('Orbital WASM: actual second rail selection preloads continuously and advances the first exterior vault; training passive and explicit push eligibility unchanged.');
+
+function firstRailHeld(){
+ engine.input_clear();engine.input_advance(0,0);engine.select_deck(1);step(0);
+ until(()=>state[10]===1,260);
+ step(64);until(()=>state[9]===2,64);step();
+}
+firstRailHeld();
+for(let i=0;i<135;i++)step(0,.035);
+assert.ok(Math.abs(state[21]+.105)>.064,'actual held look reaches an unregistered body angle');
+const blockedStart=[...state.slice(0,3)];
+engine.equipment_activate(2);engine.input_advance(17,1);
+assert.equal(state[9],3);
+assert.deepEqual([...state.slice(0,3)],blockedStart);
+assert.equal(Math.hypot(...state.slice(5,8)),0);
+assert.equal(hint().objective,'Vault canceled');
+
+firstRailHeld();
+engine.equipment_activate(2);engine.input_advance(17,1);
+assert.equal(hint().objective,'Vaulting over the rail');
+const waitingPose=[...state.slice(0,3)];
+for(let i=0;i<24;i++)step();
+assert.ok(Math.hypot(...state.slice(0,3).map((v,j)=>v-waitingPose[j]))>.004,'the cancellation fixture is past pending and moving into preload');
+const cancelPose=[...state.slice(0,3)];
+engine.equipment_activate(2);engine.input_advance(34,1);
+assert.equal(state[9],3);
+assert.ok(Math.hypot(...state.slice(0,3).map((v,i)=>v-cancelPose[i]))<.012);
+assert.ok(Math.hypot(...state.slice(5,8))<.005);
+assert.equal(hint().objective,'Vault canceled');
+console.log('EVA vault: a nonregistered body angle and a fresh mid-preload click both fail soft into passive release.');
+
+for(const cancellation of ['extra rail press','pause','thrust','clear']){
+ firstRailHeld();
+ engine.equipment_activate(2);engine.input_advance(17,1);
+ assert.equal(hint().objective,'Vaulting over the rail');
+ assert.equal(state[9],2);
+ if(cancellation==='extra rail press'){
+  engine.equipment_activate(2);engine.input_advance(34,1);
+  assert.equal(state[9],3);
+  assert.ok(Math.hypot(...state.slice(5,8))<.005);
+  assert.equal(hint().objective,'Vault canceled');
+  continue;
+ }
+ if(cancellation==='pause'){
+  engine.input_advance(0,2);engine.input_advance(800,2);
+ }else if(cancellation==='thrust'){step(4);}
+ else{engine.input_clear();}
+ for(let i=0;i<74;i++)step();
+ assert.equal(state[9],2,cancellation+' clears the pending impulse and leaves the held rail');
+ assert.equal(Math.hypot(...state.slice(5,8)),0);
+ assert.notEqual(hint().objective,'Vaulting over the rail');
+}
+console.log('EVA early press: normal settling executes once; real pause, thrust or clear cancel pending intent without a later impulse.');
+
 
 for(const [weight,span,registered,side] of [
  [0,0,false,0],[0,0,true,1],[.08,-.004,true,0],[.345,.034,true,0],[.85,.2,false,0],[1,0,true,0]
