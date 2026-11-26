@@ -104,11 +104,17 @@ vec3 orbitalExterior(vec3 ray, vec3 backdrop, vec3 centerDir, float earthSinRadi
   vec3 rayleigh=mix(vec3(.007,.019,.052),vec3(.087,.330,.89),daylight);
   vec3 lowerAir=mix(vec3(.007,.021,.058),vec3(.178,.46,.96),daylight)
       +vec3(.43,.13,.022)*twilight;
-  result+=(rayleigh*.61+lowerAir*column*.53)*column*scatter*(1.-occult);
-  // Projected sunlight-scatter halo outside the silhouette only. Reuse
-  // ground eclipse: no glow on the night side, no veil over the clouds.
-  float spread=sqrt(column)*(1.-smoothstep(.017,.037,altitude));
-  result+=vec3(.080,.235,.54)*spread*daylight*daylight*scatter*(1.-occult);
+  // Outside the silhouette, the denser aerosol band is paler and shallower
+  // than molecular blue. Both use the same tangent altitude and ground eclipse.
+  float lowerColumn=column*column;
+  float sunForward=max(angle,0.);
+  float forward2=sunForward*sunForward;
+  vec3 aerosol=mix(vec3(.005,.011,.028),vec3(.77,.84,.91),daylight)
+      +vec3(.49,.125,.018)*twilight;
+  vec3 lowBand=aerosol*lowerColumn*(.34+.18*forward2*forward2);
+  float highColumn=sqrt(column)*(1.-smoothstep(.017,.037,altitude));
+  vec3 highBand=rayleigh*(.42*column)+vec3(.025,.105,.31)*highColumn*daylight*daylight;
+  result+=(lowBand+highBand)*scatter*(1.-occult);
 
   if(arc>=edge-aa){
     float projected=sqrt(max(0.,arc*arc-edge*edge)),distanceToSurface=arc-projected;
