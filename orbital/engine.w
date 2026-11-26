@@ -1863,7 +1863,7 @@ unit(f32,i32,f32,f32) tick = fn(dt,keys,look_x,look_y) {
                 else{if(alignment_stage==2 && seat_clock==0.0){seat_clock=0.001;}
                 else{if(alignment_stage==3 && transfer_clock==0.0){transfer_clock=0.001;}
                 else{if(alignment_stage==6){if(lock_kind==0){lock_kind=2;lock_clock=0.001;};}
-                else{if(alignment_stage==4){mode=3;mark=2;vx=-0.49;vz=0.76;};};};};};};
+                else{if(alignment_stage==4){mode=3;mark=2;vx=0.47;vy=0.12;vz=0.0;};};};};};};
             }else{
                 mode=3;mark=2;
                 if(deck==0){vz=-0.19;}else{
@@ -1962,6 +1962,13 @@ unit(f32,i32,f32,f32) tick = fn(dt,keys,look_x,look_y) {
         station.RailShaft trailing_shaft=station.rail_shaft(station_leg-1);
         if(pilot_z>last_bar-0.64&&pilot_x>=trailing_shaft.min_x-0.65&&pilot_x<=trailing_shaft.max_x+0.65){
             steer_cue=if(pilot_y> -1.24){hud.Steering::rail_descend}else{hud.Steering::rail_pass};
+        };
+    };
+    if(deck==1&&mode==0&&alignment_stage==5&&reach==0.0){
+        f32 scaffold_depth=rail_depth(1);
+        station.RailShaft scaffold=station.rail_shaft(1);
+        if(pilot_z<scaffold_depth+0.66){
+            steer_cue=if(pilot_x<scaffold.max_x+0.66){hud.Steering::scaffold_outboard}else{hud.Steering::scaffold_along};
         };
     };
     state[18]=hud.guidance_code(steer_cue);

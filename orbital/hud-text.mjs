@@ -4,7 +4,7 @@ const holding="Holding station.";
 const rails=["Airlock rail","Scaffold rail","Cargo brace"];
 const initial="Use gentle forward thrust toward the lit rail. Counterthrust to slow.";
 const approach=rail=>"Approach the "+rail.toLowerCase();
-const findHatch=side=>["Return to the airlock",`Look ${side} to find the round hatch. Let the push carry you.`,`Look ${side}`,`Look ${side} to find hatch`];
+const findHatch=side=>["Return to the airlock",`Look ${side} to find the round hatch. Slow down before gripping.`,`Look ${side}`,`Look ${side} to find hatch`];
 const messages=[
  (rail,showTouch)=>[approach(rail),initial,"Too far",showTouch?"Left half: thrust · Right half: look":"Drift to lit rail"],
  ["Pushing off","Push away from the rail, then pass underneath it.","Pushing off"],
@@ -28,7 +28,7 @@ const messages=[
  ["Closing cradle keepers","The cradle is securing the seated load.","Closing keepers","Closing keepers"],
  ["Opening robot grip","The cradle is locked. The robot can release the load.","Opening grip","Opening grip"],
  ["Cargo transfer complete","Release the console and return to the round airlock hatch.","Release & return"],
- ["Return to the airlock","Ride the push back toward the round hatch, then counterthrust.","Out of reach","Drift to round hatch"],
+ ["Return to the airlock","Thrust toward the round hatch, then counterthrust to slow.","Out of reach","Drift to round hatch"],
  findHatch("right"),findHatch("left"),
  ["Taking the airlock handle",holding,"Gripping handle"],
  ["Airlock handle in reach","Grip the amber locking bar.","Grip hatch"],
@@ -52,7 +52,9 @@ const messages=[
  ["Ease toward the hatch","Use a short thrust pulse to close the last gap, then match speed.","Out of reach","Pulse toward the hatch"],
  ["Ease toward the console","Use a short thrust pulse to close the last gap, then match speed.","Out of reach","Pulse toward the console"],
  ["Descend below the rail","Thrust down to clear the rail before moving toward the next one.","Rail ahead","Thrust down"],
- ["Pass beneath the rail","Thrust forward beneath the rail, then rise toward the next one.","Rail ahead","Thrust forward"]
+ ["Pass beneath the rail","Thrust forward beneath the rail, then rise toward the next one.","Rail ahead","Thrust forward"],
+ ["Clear the end of the scaffold","Move away from the station to clear the end of the rail.","Scaffold ahead","Move outboard"],
+ ["Pass the end of the scaffold","Move along the station past the end of the rail, then head for the hatch.","Scaffold ahead","Pass the rail end"]
 ];
 const sections=["TRAINING 01 / HANDRAIL","EVA / 1 OF 3","EVA / 2 OF 3","EVA / 3 OF 3","EVA / CARGO ALIGNMENT","EVA / AIRLOCK RETURN","ORBIT / REENTRY"];
 const arrow=["+","+","+","+","→","←","↑","↓"];

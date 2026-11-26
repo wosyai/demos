@@ -520,13 +520,43 @@ assert.ok(hasVertex(room,2.17,.13,-7.13)&&hasVertex(room,...armVertex(14,2.20,.2
 for(let i=0;i<60;i++)step(64);
 assert.equal(roomLoads,countBeforeLatch+25,'the handoff publishes only a bounded fifteen world poses');
 assert.equal(state[19],4,'held transfer does not push off');
-step();step(64);until(()=>state[19]===5,0);
-assert.equal(state[18],0,"release never advertises a stale console speed cue as the hatch");
+step();step(64);
+assert.ok(state[5]>.40&&state[7]===0,"console pushes outboard instead of into the scaffold");
+until(()=>state[19]===5,0);
+assert.equal(state[18],12,"hatch phase selects the actual scaffold bypass, not stale console speed");
 assert.equal(state[20],5,'hatch guidance is selected after release');
-step();assert.equal(state[18],9,'the still-offscreen hatch gets a left cue before counterthrust');
+hudIs("Clear the end of the scaffold",false);
 step(64);assert.equal(state[9],0,'cargo is too far from hatch to grip');
 assert.equal(state[10],0);
-until(()=>state[18]===3,0,480);
+function returnStaging(x,y,z){
+ for(let i=0;i<1000;i++){
+  const limit=v=>Math.max(-.5,Math.min(.5,v));
+  const ax=limit((x-state[0])*1.5-state[5]*3.15),az=limit((z-state[2])*1.5-state[7]*3.15);
+  const sn=Math.sin(state[3]),cs=Math.cos(state[3]),forward=ax*sn-az*cs;
+  engine.set_thrust(ax*cs+az*sn,forward);
+  const up=(y-state[1])*1.5-state[6]*3.3-forward*Math.sin(state[4]);
+  step((up>.055?16:up<-.055?32:0)|256);
+  if(i>25&&Math.hypot(state[0]-x,state[1]-y,state[2]-z)<.10&&Math.hypot(...state.slice(5,8))<.08){
+   engine.set_thrust(0,0);return;
+  }
+ }
+ assert.fail('ordinary scaffold bypass must reach author target '+[x,y,z]);
+}
+returnStaging(1.97,.30,-4.17);
+assert.equal(state[18],13,"move along the station after clearing the physical rail end");
+hudIs("Pass the end of the scaffold",false);
+returnStaging(1.94,.22,-2.24);
+assert.notEqual(state[18],13);
+returnStaging(.89,.02,-2.24);
+for(let i=0;i<350&&state[18]!==3;i++){
+ const dx=-.39-state[0],dy=-.025-state[1],dz=-1.86-state[2],m=Math.hypot(dx,dy,dz);
+ const ax=.48*dx/m-state[5],az=.48*dz/m-state[7];
+ const sn=Math.sin(state[3]),cs=Math.cos(state[3]);
+ engine.set_thrust((ax*cs+az*sn)*1.9,(ax*sn-az*cs)*1.9);
+ step();
+}
+engine.set_thrust(0,0);
+assert.equal(state[18],3,"actual closing drift triggers hatch counterthrust beyond grip reach");
 const hatchDistance=()=>Math.hypot(state[0]+.39,state[1]+.025,state[2]+1.86);
 assert.ok(hatchDistance()>.65&&hatchDistance()<1.20,'return cue precedes the .424 m grip volume without advertising maneuver at cast-off');
 hudIs("Match speed at the hatch",false);
