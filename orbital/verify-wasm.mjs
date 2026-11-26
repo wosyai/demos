@@ -589,15 +589,15 @@ assert.ok(hint().tip.startsWith(hint().short),"directional approach pulse reache
 let sawPulse=hint().short.includes("ulse");
 const limitPulse=(n)=>Math.max(-.6,Math.min(.6,n));
 for(let i=0;i<450&&state[10]!==1;i++){
- const dx=-.39-state[0],dy=-.025-state[1],dz=-2.16-state[2];
+ const dx=-.46-state[0],dy=-.025-state[1],dz=-2.23-state[2];
  const aimX=-.94-state[0],aimY=-.14-state[1],aimZ=-2.48-state[2];
- const yaw=Math.atan2(aimX,-aimZ),pitch=Math.asin(aimY/Math.hypot(aimX,aimY,aimZ));
+ const yaw=Math.atan2(aimX,-aimZ),pitch=Math.max(-.165,Math.min(.165,Math.asin(aimY/Math.hypot(aimX,aimY,aimZ))));
  const ax=limitPulse(dx*2-state[5]*2.8),az=limitPulse(dz*2-state[7]*2.8);
  const localF=ax*Math.sin(state[3])-az*Math.cos(state[3]);
  const localR=ax*Math.cos(state[3])+az*Math.sin(state[3]);
  engine.set_thrust(localR,localF);
  const ay=dy*2-state[6]*2.8-localF*Math.sin(state[4]);
- step(Math.abs(ay)>.13?(ay>0?16:32)|256:0,yaw-state[3],pitch-state[4]);
+ step(Math.abs(ay)>.055?(ay>0?16:32)|256:0,yaw-state[3],pitch-state[4]);
  if(state[18]===10){sawPulse=true;assert.ok(hint().short.includes("ulse"));}
 }
 engine.set_thrust(0,0);

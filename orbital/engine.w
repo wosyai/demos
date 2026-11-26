@@ -1856,13 +1856,14 @@ unit(f32,i32,f32,f32) tick = fn(dt,keys,look_x,look_y) {
     if(for_hatch && !nearby && (ahead<=0.0 || side_error>ahead*ahead*0.41)){travel_hint=if(lateral>=0.0){hud.Steering::hatch_right}else{hud.Steering::hatch_left};};
     bool aligned=ahead>0.0 && side_error<ahead*ahead*(if(for_alignment || for_hatch){0.105}else{0.49}) && height_error<ahead*ahead*(if(for_alignment || for_hatch){0.13}else{0.50});
     bool slow=speed_sq<(if(for_alignment || for_hatch){0.063}else{2.25});
+    f32 hatch_rear_swing=if(vz>0.0){vz*0.052}else{0.0};
+    f32 hatch_shaft_face=rail_depth(0)-station.rail_radius;
+    bool hatch_safe_side=pilot_z+hatch_rear_swing<=hatch_shaft_face-0.447;
+    bool hatch_level=body_pitch>=-0.20&&body_pitch<=0.20&&pitch>=-0.20&&pitch<=0.20;
+    bool hatch_square=body_yaw>=-1.46&&body_yaw<=-0.55&&yaw>=-1.46&&yaw<=-0.55;
+    bool hatch_height=pilot_y-abs_cell(vy)*0.052>=-0.13&&pilot_y+abs_cell(vy)*0.052<=0.12;
     bool physical_hatch=if(!for_hatch||mode!=0){true}else{
-        f32 rear_swing=if(vz>0.0){vz*0.052}else{0.0};
-        f32 shaft_face=rail_depth(0)-station.rail_radius;
-        bool safe_side=pilot_z+rear_swing<=shaft_face-0.447;
-        bool settled_body=body_pitch>=-0.20&&body_pitch<=0.20&&body_yaw>=-1.46&&body_yaw<=-0.55
-            &&pilot_y>=-0.13&&pilot_y<=0.12;
-        if(safe_side&&settled_body){
+        if(hatch_safe_side&&hatch_level&&hatch_square&&hatch_height){
             avatar_kinematics.hatch_in_reach(
                 avatar_kinematics.v(core.float_extend<f64>(pilot_x),core.float_extend<f64>(pilot_y),core.float_extend<f64>(pilot_z)),
                 avatar_kinematics.v(core.float_extend<f64>(arm_x()),core.float_extend<f64>(arm_y()),core.float_extend<f64>(arm_z())),
@@ -1966,10 +1967,16 @@ unit(f32,i32,f32,f32) tick = fn(dt,keys,look_x,look_y) {
             if(slow && !aligned && (nearby || (for_alignment&&!far_from_station()))){steer_cue=aim_hint;};
             if((!nearby||!physical_hatch) && slow && aligned && distance_sq<1.44){
                 steer_cue=if(for_hatch){hud.Steering::ease_hatch}else{hud.Steering::ease_console};
-                f32 ax0=dock_x-pilot_x;f32 ay0=dock_y-pilot_y;f32 az0=dock_z-pilot_z;
+                f32 ax0=(if(for_hatch){-0.46}else{dock_x})-pilot_x;
+                f32 ay0=dock_y-pilot_y;
+                f32 az0=(if(for_hatch){-2.23}else{dock_z})-pilot_z;
                 f32 forward0=ax0*sine(yaw)-az0*cosine(yaw);
                 arrival_pulse=hud.counter(-ax0*cosine(yaw)-az0*sine(yaw),-forward0*cosine(pitch)-ay0*sine(pitch),
                     forward0*sine(pitch)-ay0*cosine(pitch));
+            };
+            if(for_hatch&&nearby&&slow&&aligned&&hatch_safe_side&&!physical_hatch){
+                if(!hatch_level){steer_cue=hud.Steering::hatch_level;};
+                if(hatch_level&&!hatch_square){steer_cue=hud.Steering::hatch_square;};
             };
         };
     };

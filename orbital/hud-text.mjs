@@ -54,7 +54,9 @@ const messages=[
  ["Descend below the rail","Thrust down to clear the rail before moving toward the next one.","Rail ahead","Thrust down"],
  ["Pass beneath the rail","Thrust forward beneath the rail, then rise toward the next one.","Rail ahead","Thrust forward"],
  ["Clear the end of the scaffold","Move away from the station to clear the end of the rail.","Scaffold ahead","Move outboard"],
- ["Pass the end of the scaffold","Move along the station past the end of the rail, then head for the hatch.","Scaffold ahead","Pass the rail end"]
+ ["Pass the end of the scaffold","Move along the station past the end of the rail, then head for the hatch.","Scaffold ahead","Pass the rail end"],
+ ["Level out to grip","Keep the handle in view while bringing your look closer to level. Let the suit settle.","Level out","Bring your look level"],
+ ["Square up to the hatch","Keep facing the handle until the suit lines up with it.","Line up","Face the handle"]
 ];
 const sections=["TRAINING 01 / HANDRAIL","EVA / 1 OF 3","EVA / 2 OF 3","EVA / 3 OF 3","EVA / CARGO ALIGNMENT","EVA / AIRLOCK RETURN","ORBIT / REENTRY"];
 const arrow=["+","+","+","+","→","←","↑","↓"];
