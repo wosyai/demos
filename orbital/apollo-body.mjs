@@ -296,6 +296,7 @@ precision highp float;
 uniform vec3 sunDirection;
 uniform vec3 eye;
 uniform bool firstPerson;
+uniform bool stockEyeSeat;
 uniform int interiorOptic;
 uniform float plume;
 flat in vec4 surfaceColor;
@@ -317,7 +318,7 @@ void main(){
     pix=vec4(mix(vec3(.85,.96,1.),vec3(.19,.57,.88),tex.x),a);
     return;
  }
- if(firstPerson && distance(world,eye)<.20)discard;
+ if(firstPerson && !stockEyeSeat && distance(world,eye)<.20)discard;
  if(interiorOptic>0){
    float incidence=abs(dot(normalize(eye-world),normalize(n)));
    float alpha=interiorOptic==2 ? .12 : .065*smoothstep(.58,.97,1.-incidence);
@@ -447,7 +448,7 @@ export async function loadApolloBody(gl,url,rig,sunVisibility){
 
 function renderAvatar(gl,pose,meshes,hasEquipment=false,sunVisibility,wall=null){
  const p=program(gl,sunVisibility);
- const U=Object.fromEntries(['eye','basis','optics','roll','sunDirection','firstPerson','plume','interiorOptic','baseColor','baked','mapped','albedo'].map(n=>[n,gl.getUniformLocation(p,n)]));
+ const U=Object.fromEntries(['eye','basis','optics','roll','sunDirection','firstPerson','stockEyeSeat','plume','interiorOptic','baseColor','baked','mapped','albedo'].map(n=>[n,gl.getUniformLocation(p,n)]));
  const S=sunVisibility?Object.fromEntries(['stationSun','sunMap','detailedShadow','renderFraction','earthLighting'].map(n=>[n,gl.getUniformLocation(p,n)])):null;
  const unlitEarth=new Float32Array(4);
  const UBO=3, TEX=8, palette=gl.createBuffer();
@@ -458,6 +459,7 @@ function renderAvatar(gl,pose,meshes,hasEquipment=false,sunVisibility,wall=null)
  gl.bindVertexArray(null);
  let last=null,visor=null;
  return {
+  stockEyeSeat:Boolean(wall),
   draw(frame,{camera, optics, thirdPerson=false, sunDirection=[.5674,.611,.5521], roll=[1,0],stationSun=false,earthLighting,shadowDetail=false,renderFraction=1,...opts}){
    last=pose.solve(frame,opts);visor=null;
    gl.useProgram(p);gl.uniform3fv(U.eye,camera.eye);
@@ -475,6 +477,7 @@ function renderAvatar(gl,pose,meshes,hasEquipment=false,sunVisibility,wall=null)
    gl.bindBuffer(gl.UNIFORM_BUFFER,palette);gl.bufferSubData(gl.UNIFORM_BUFFER,0,last.palette);
    gl.bindBufferBase(gl.UNIFORM_BUFFER,UBO,palette);gl.activeTexture(gl.TEXTURE0+TEX);
    const fullInterior=!thirdPerson&&wall;
+   gl.uniform1i(U.stockEyeSeat,Number(Boolean(fullInterior)&&frame[32]!==1));
    gl.uniform1i(U.interiorOptic,0);
    for(const m of meshes){
     if(fullInterior){

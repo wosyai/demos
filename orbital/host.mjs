@@ -647,6 +647,14 @@ function updateWaypoint(){
  }
  if(edge!==lastWaypointEdge){waypoint.textContent=waypointSymbol[edge];lastWaypointEdge=edge;}
 }
+const forwardMarker=$("reticle");
+let lastMarkerX=0,lastMarkerY=0,lastMarkerOpacity=1;
+function updateForwardMarker(){
+ const x=engine.forward_marker(0), y=engine.forward_marker(1), opacity=engine.forward_marker(2);
+ if(x!==lastMarkerX){forwardMarker.style.left=x===0?"":(50+50*x)+"%";lastMarkerX=x;}
+ if(y!==lastMarkerY){forwardMarker.style.top=y===0?"":(50-50*y)+"%";lastMarkerY=y;}
+ if(opacity!==lastMarkerOpacity){forwardMarker.style.opacity=opacity===1?"":opacity;lastMarkerOpacity=opacity;}
+}
 let glow=null;
 function render(alpha) {
  if(!frame)return;
@@ -655,8 +663,8 @@ function render(alpha) {
  if(w!==canvas.width || h!==canvas.height){canvas.width=w;canvas.height=h;}
  gl.viewport(0,0,w,h);
  // Synchronous Wosy presentation packet; GL consumes the borrowed row before its next write.
- engine.project_visual(alpha,w/h,Number(Boolean(apolloBody)));
- updateWaypoint();
+ engine.project_visual(alpha,w/h,apolloBody?.stockEyeSeat?2:Number(Boolean(apolloBody)));
+ updateWaypoint();updateForwardMarker();
  const pose=visual.subarray(0,38),camera={eye:visual.subarray(38,41),yaw:visual[41],pitch:visual[42]};
  const [x,y,z]=camera.eye,{yaw:heading,pitch}=camera,drawBody=visual[43]===1;
  const optics=visual.subarray(44,46),roll=visual.subarray(46,48);
