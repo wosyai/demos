@@ -85,23 +85,31 @@ Hit(station.Part,art.Axes,art.Vec,art.Vec,art.Vec,art.Vec,f64) solid=fn(p,body,f
         }else{none(dt)}
     }else{none(dt)}
 };
-i32(bool) count=fn(wing){if(wing){station.solar_count*5}else{station.catwalk_count}};
-station.Part(bool,i32) member_part=fn(wing,i){if(wing){station.at(station.solar_member(i))}else{station.catwalk_collision(i)}};
-Hit(bool,i32,art.Axes,art.Vec,art.Vec,art.Vec,art.Vec,f64,Hit) parts=fn(wing,i,body,from,v,half,actor,dt,best){
-    if(i==count(wing)){best}else{
-        Hit found=solid(member_part(wing,i),body,from,v,half,actor,dt);
-        Hit earlier=if(found.active&&(!best.active||found.time<best.time)){found}else{best};
-        parts(wing,i+1,body,from,v,half,actor,dt,earlier)
+i32(i32) count=fn(family){
+    if(family==1){station.solar_count*5}else{
+        if(family==2){if(station.radiator_first>=0){station.radiator_count}else{0}}else{station.catwalk_count}
     }
 };
-Hit(bool,i32,art.Axes,art.Vec,art.Vec,f64,Hit) swept=fn(wing,id,axes,origin,v,dt,best){
+station.Part(i32,i32) member_part=fn(family,i){
+    if(family==1){station.at(station.solar_member(i))}else{
+        if(family==2){station.radiator_collision(i)}else{station.catwalk_collision(i)}
+    }
+};
+Hit(i32,i32,art.Axes,art.Vec,art.Vec,art.Vec,art.Vec,f64,Hit) parts=fn(family,i,body,from,v,half,actor,dt,best){
+    if(i==count(family)){best}else{
+        Hit found=solid(member_part(family,i),body,from,v,half,actor,dt);
+        Hit earlier=if(found.active&&(!best.active||found.time<best.time)){found}else{best};
+        parts(family,i+1,body,from,v,half,actor,dt,earlier)
+    }
+};
+Hit(i32,i32,art.Axes,art.Vec,art.Vec,f64,Hit) swept=fn(family,id,axes,origin,v,dt,best){
     if(id==10){best}else{
         Probe p=register(id);art.Vec from=art.add(origin,rotate(axes,p.local));
         art.Vec half=art.v(extent(axes.forward.x,axes.up.x,axes.right.x,p.half)+0.003,
             extent(axes.forward.y,axes.up.y,axes.right.y,p.half)+0.003,
             extent(axes.forward.z,axes.up.z,axes.right.z,p.half)+0.003);
-        Hit found=parts(wing,0,axes,from,v,half,p.half,dt,best);
-        swept(wing,id+1,axes,origin,v,dt,found)
+        Hit found=parts(family,0,axes,from,v,half,p.half,dt,best);
+        swept(family,id+1,axes,origin,v,dt,found)
     }
 };
 f64(f64,f64,f64) polygon_radius=fn(y,z,arc){
@@ -198,23 +206,29 @@ bool(art.Vec,art.Vec) outside_catwalk=fn(origin,endpoint){
     hi(origin.y,endpoint.y)< -3.20||lo(origin.y,endpoint.y)>3.85||hi(origin.x,endpoint.x)< -3.70
         ||lo(origin.x,endpoint.x)>1.50||hi(origin.z,endpoint.z)< -5.45||lo(origin.z,endpoint.z)>0.0
 };
+bool(art.Vec,art.Vec) outside_radiator=fn(origin,endpoint){
+    hi(origin.y,endpoint.y)< -0.86||lo(origin.y,endpoint.y)>3.26||hi(origin.x,endpoint.x)< -12.32
+        ||lo(origin.x,endpoint.x)> -4.89||hi(origin.z,endpoint.z)< -7.40||lo(origin.z,endpoint.z)>2.04
+};
 Hit(f32,f32,f32,f32,f32,f32,f32,f32,f32,i32) station_sweep=fn(x,y,z,vx,vy,vz,yaw,pitch,step,releasing){
     f64 dt=f64v(step);art.Vec from=art.v(f64v(x),f64v(y),f64v(z));art.Vec v=art.v(f64v(vx),f64v(vy),f64v(vz));
     art.Vec endpoint=art.add(from,art.mul(v,dt));
-    bool solar_in=count(true)>0&&!outside_solar(from,endpoint);
+    bool solar_in=count(1)>0&&!outside_solar(from,endpoint);
     bool local_in=!outside_catwalk(from,endpoint);
     bool rail_in=!outside_rails(from,endpoint);
-    if(!solar_in&&!local_in&&!rail_in){none(dt)}
+    bool radiator_in=count(2)>0&&!outside_radiator(from,endpoint);
+    if(!solar_in&&!local_in&&!rail_in&&!radiator_in){none(dt)}
     else{
         art.Axes body=art.facing(f64v(yaw),f64v(pitch));
-        Hit wing_hit=if(solar_in){swept(true,0,body,from,v,dt,none(dt))}else{none(dt)};
-        Hit box_hit=if(local_in){swept(false,0,body,from,v,dt,wing_hit)}else{wing_hit};
-        if(rail_in){swept_rails(0,releasing,body,from,v,dt,box_hit)}else{box_hit}
+        Hit wing_hit=if(solar_in){swept(1,0,body,from,v,dt,none(dt))}else{none(dt)};
+        Hit box_hit=if(local_in){swept(0,0,body,from,v,dt,wing_hit)}else{wing_hit};
+        Hit trays=if(radiator_in){swept(2,0,body,from,v,dt,box_hit)}else{box_hit};
+        if(rail_in){swept_rails(0,releasing,body,from,v,dt,trays)}else{trays}
     }
 };
-bool(bool,i32,art.Axes,art.Vec,art.Vec,f64) orientation_parts=fn(wing,i,body,from,actor,padding){
-    if(i==count(wing)){true}else{
-        station.Part p=member_part(wing,i);
+bool(i32,i32,art.Axes,art.Vec,art.Vec,f64) orientation_parts=fn(family,i,body,from,actor,padding){
+    if(i==count(family)){true}else{
+        station.Part p=member_part(family,i);
         f64 ha=f64v(p.l)*0.5;
         art.Vec center=art.v(f64v(p.x),f64v(p.y),f64v(p.z)+ha);
         art.Vec half=art.v(f64v(p.u),f64v(p.v),ha);
@@ -226,31 +240,33 @@ bool(bool,i32,art.Axes,art.Vec,art.Vec,f64) orientation_parts=fn(wing,i,body,fro
         bool overlaps=if(broad){
             Sweep test=intervals(0,body,offset,art.v(0.0,0.0,0.0),actor,half,0.0,padding,start);test.possible
         }else{false};
-        !overlaps&&orientation_parts(wing,i+1,body,from,actor,padding)
+        !overlaps&&orientation_parts(family,i+1,body,from,actor,padding)
     }
 };
-bool(bool,i32,art.Axes,art.Vec,f64) orientation_probes=fn(wing,i,body,origin,angle){
+bool(i32,i32,art.Axes,art.Vec,f64) orientation_probes=fn(family,i,body,origin,angle){
     if(i==10){true}else{
         Probe p=register(i);
         f64 bound=(art.length(p.local)+art.length(p.half))*angle;
-        orientation_parts(wing,0,body,art.add(origin,rotate(body,p.local)),p.half,bound)
-            &&orientation_probes(wing,i+1,body,origin,angle)
+        orientation_parts(family,0,body,art.add(origin,rotate(body,p.local)),p.half,bound)
+            &&orientation_probes(family,i+1,body,origin,angle)
     }
 };
-bool(bool,art.Vec,f64,f64,f64,f64,i32) rotation_clear=fn(wing,origin,byaw,bpitch,dyaw,dpitch,depth){
+bool(i32,art.Vec,f64,f64,f64,f64,i32) rotation_clear=fn(family,origin,byaw,bpitch,dyaw,dpitch,depth){
     f64 mid_yaw=byaw+dyaw*0.5;f64 mid_pitch=bpitch+dpitch*0.5;
     f64 bound=(math.abs(dyaw)+math.abs(dpitch))*0.5;
-    if(orientation_probes(wing,0,art.facing(mid_yaw,mid_pitch),origin,bound)){true}
-    else{depth>0&&rotation_clear(wing,origin,byaw,bpitch,dyaw*0.5,dpitch*0.5,depth-1)
-        &&rotation_clear(wing,origin,mid_yaw,mid_pitch,dyaw*0.5,dpitch*0.5,depth-1)}
+    if(orientation_probes(family,0,art.facing(mid_yaw,mid_pitch),origin,bound)){true}
+    else{depth>0&&rotation_clear(family,origin,byaw,bpitch,dyaw*0.5,dpitch*0.5,depth-1)
+        &&rotation_clear(family,origin,mid_yaw,mid_pitch,dyaw*0.5,dpitch*0.5,depth-1)}
 };
 bool(f32,f32,f32,f32,f32,f32,f32) turn_clear=fn(x,y,z,yaw,pitch,dyaw,dpitch){
     art.Vec origin=art.v(f64v(x),f64v(y),f64v(z));
     if(dyaw==0.0&&dpitch==0.0){true}else{
-        bool wing_safe=if(count(true)==0||outside_solar(origin,origin)){true}
-            else{rotation_clear(true,origin,f64v(yaw),f64v(pitch),f64v(dyaw),f64v(dpitch),4)};
-        wing_safe&&(if(outside_catwalk(origin,origin)){true}
-            else{rotation_clear(false,origin,f64v(yaw),f64v(pitch),f64v(dyaw),f64v(dpitch),4)})
+        bool wing_safe=if(count(1)==0||outside_solar(origin,origin)){true}
+            else{rotation_clear(1,origin,f64v(yaw),f64v(pitch),f64v(dyaw),f64v(dpitch),4)};
+        bool trays_safe=if(count(2)==0||outside_radiator(origin,origin)){true}
+            else{rotation_clear(2,origin,f64v(yaw),f64v(pitch),f64v(dyaw),f64v(dpitch),4)};
+        wing_safe&&trays_safe&&(if(outside_catwalk(origin,origin)){true}
+            else{rotation_clear(0,origin,f64v(yaw),f64v(pitch),f64v(dyaw),f64v(dpitch),4)})
     }
 };
 %%end

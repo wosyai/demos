@@ -935,6 +935,26 @@ for(const [x,solid] of [[-14,true],[-11.50,false]]){
 }
 console.log('EVA flight: descended on the power blanket and through the open adjacent channel.');
 
+for(const [z,plate] of [[-.43,true],[1.34,false]]){
+ engine.select_deck(1);engine.tick(0,0,0,0);
+ reachPoint([1,5,1.3]);reachPoint([-8.55,4.4,1.34]);
+ if(plate)reachPoint([-8.55,4.4,z]);
+ engine.set_thrust(0,0);
+ let first;
+ for(let i=0;i<105;i++){
+  engine.tick(.032,32,0,0);
+  if(state[26]&&!first)first=[...state.slice(0,8)];
+ }
+ assert.equal(Boolean(first),plate);
+ if(plate){
+  assert.ok(first[1]>2.70&&first[1]<3.12,'contact reaches the boots before the eye');
+  assert.ok(first[6]>.25,'an inward radiator impact reverses the normal speed');
+  assert.ok(state[1]>2.70,'the body stays above the radiator under sustained inward thrust');
+ }else assert.ok(state[1]<0,'the genuine open end of the radiator remains passable');
+}
+console.log('EVA radiator trays: boot-first rebound, sustained body separation, and open end passed.');
+
+
 engine.select_deck(1);step(0,0,0,0);
 until(()=>state[18]===2,4,120);
 hudIs("Approach the airlock rail",false);

@@ -99,7 +99,10 @@ unit(f32,f32) wing=fn(x,z){
     plank(x,2.64,z,4.95,0.13,0.095,1);
     plank(x,2.64,z+5.62,4.95,0.13,0.095,1);
 };
-unit(i32) radiator=fn(i){if(i<5){
+i32 radiator_first=-1;
+i32 radiator_count=5;
+Part(i32) radiator_collision=fn(i){at(radiator_first+i)};
+unit(i32) radiator=fn(i){if(i<radiator_count){
     f32 z= -5.4+core.sint_to_float<f32>(i)*1.12;
     plank(-10.32,1.14,z,3.43,0.12,0.96,6);radiator(i+1);
 };};
@@ -159,7 +162,7 @@ unit() build=fn{
     tube(1,1,-9.70,-0.30,-5.80,0.13,1.42,1.0);
     tube(1,3,-7.20,-0.30,-5.80,0.16,1.40,1.0);
     plank(-10.0,-0.16,-4.54,0.19,1.36,0.24,1);
-    plank(-10.12,1.02,-5.56,0.16,0.17,5.83,1);radiator(0);portholes(0);
+    plank(-10.12,1.02,-5.56,0.16,0.17,5.83,1);radiator_first=total;radiator(0);portholes(0);
     plank(-17.0,1.94,-9.92,23.72,0.13,0.43,1);plank(-17.0,3.13,-9.92,23.72,0.13,0.43,1);
     lattice(0);
     tube(2,1,-4.69,0.98,-9.7,1.64,0.47,1.0);
