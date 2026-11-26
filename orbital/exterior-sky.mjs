@@ -4,7 +4,6 @@ uniform sampler2D starMap;
 uniform float earthAngle;
 uniform sampler2D moonMap;
 uniform int moonReady;
-uniform vec2 moonPixelFootprint;
 uniform highp sampler2DArray earthFine;
 uniform int earthPages[9];
 uniform float earthTexelAngle;
@@ -36,24 +35,11 @@ vec3 orbitalMoon(vec3 backdrop,vec3 ray,vec3 sun) {
   vec2 disk=vec2(dot(ray,right),dot(ray,up))/${profile[18].toFixed(8)};
   float face=sqrt(max(0.,1.-dot(disk,disk)));
   vec3 normal=normalize(right*disk.x+up*disk.y-M*face);
-  vec3 rock=vec3(.59,128./255.,128./255.);
-  if(moonReady==1){
-    // Projection provides an upper bound on one pixel's angular footprint.
-    // A little negative bias keeps crater slopes at the current disk scale
-    // without reading level zero's individual texels from a fraction raster.
-    float atlasFootprint=max(moonPixelFootprint.x,moonPixelFootprint.y)*
-      float(textureSize(moonMap,0).x)*.495/${profile[18].toFixed(8)};
-    float lod=clamp(log2(max(1.,atlasFootprint))-.75,0.,4.);
-    rock=textureLod(moonMap,vec2(.5)+vec2(disk.x,-disk.y)*.495,lod).rgb;
-  }
+  vec3 rock=moonReady==1?textureLod(moonMap,vec2(.5)+vec2(disk.x,-disk.y)*.495,0.).rgb:vec3(.59,128./255.,128./255.);
   vec2 bump=(rock.gb-128./255.)*1.12;
   vec3 stoneNormal=normalize(normal+right*bump.x+up*bump.y);
-  float incidence=max(0.,dot(stoneNormal,sun));
-  float emission=max(0.,dot(stoneNormal,-ray));
-  // A bounded Lommel–Seeliger/Lambert mix distinguishes regolith facing
-  // the viewer from slopes at the edge of the real illuminated crescent.
-  float reflectance=mix(incidence,incidence/(incidence+emission+.12),.55);
-  float reliefLight=sqrt(.8*reflectance)*smoothstep(-.10,.04,dot(normal,sun));
+  float incision=dot(stoneNormal,sun);
+  float reliefLight=sqrt(max(0.,incision))*smoothstep(-.10,.04,dot(normal,sun));
   vec3 lunar=rock.r*(vec3(.100,.113,.133)*(.7+.3*face)+vec3(1.19,1.12,1.00)*reliefLight);
   return mix(backdrop,lunar,cover);
 }
@@ -76,8 +62,7 @@ vec3 orbitalExterior(vec3 ray, vec3 backdrop, vec3 centerDir, float earthSinRadi
   float glareWing=max(0.,1.-s2*.32/.049)/(1.+beyond*410.);
   float glareCut=1.-smoothstep(.016,.049,s2);
   vec3 glare=(vec3(.40,.24,.13)*glareWing+vec3(${Array.from(profile.subarray(33,36),v=>v.toFixed(4)).join(",")})*glareWing*glareWing*glareWing)*glareCut;
-  float photosphereDepth=sqrt(max(0.,1.-s2/discRadius2));
-  vec3 limbDark=1.-(1.-photosphereDepth)*vec3(${Array.from(profile.subarray(37,40),v=>v.toFixed(4)).join(",")});
+  float limbDark=.88+.12*sqrt(max(0.,1.-s2/discRadius2));
   // Composite the opaque photosphere over optical scatter. Adding saturated
   // inner glare to the disk would erase its limb darkening before tone clamp.
   vec3 disk=vec3(${Array.from(profile.subarray(30,33),v=>v.toFixed(4)).join(",")})*limbDark;

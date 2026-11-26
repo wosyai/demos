@@ -527,7 +527,7 @@ function program(a,b) {
  }
  gl.linkProgram(p);
  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(p));
- return {p, equipmentId:gl.getUniformLocation(p,"equipmentId"), equipmentLow:gl.getUniformLocation(p,"equipmentLow"), equipmentHigh:gl.getUniformLocation(p,"equipmentHigh"), depthClip:gl.getUniformLocation(p,"depthClip"), eye:gl.getUniformLocation(p,"eye"), basis:gl.getUniformLocation(p,"basis"), optics:gl.getUniformLocation(p,"optics"), roll:gl.getUniformLocation(p,"roll"), eva:gl.getUniformLocation(p,"eva"), photo:gl.getUniformLocation(p,"photo"), earth:gl.getUniformLocation(p,"earthMap"),starMap:gl.getUniformLocation(p,"starMap"),starReady:gl.getUniformLocation(p,"starReady"),moonMap:gl.getUniformLocation(p,"moonMap"),moonReady:gl.getUniformLocation(p,"moonReady"),moonPixelFootprint:gl.getUniformLocation(p,"moonPixelFootprint"),upgradedSky:gl.getUniformLocation(p,"upgradedSky"),orbitCenter:gl.getUniformLocation(p,"orbitCenter"),earthAngle:gl.getUniformLocation(p,"earthAngle"), backdrop:gl.getUniformLocation(p,"backdrop"), sunMap:gl.getUniformLocation(p,"sunMap"),armPose:gl.getUniformLocation(p,"armPose"),armSurfaceReady:gl.getUniformLocation(p,"armSurfaceReady"),panelStampReady:gl.getUniformLocation(p,"panelStampReady"),pressureStampReady:gl.getUniformLocation(p,"pressureStampReady"),fasciaStampReady:gl.getUniformLocation(p,"fasciaStampReady"), renderFraction:gl.getUniformLocation(p,"renderFraction"),surfaceTile:gl.getUniformLocation(p,"surfaceTile"), routeLens:gl.getUniformLocation(p,"routeLens"), routeReach:gl.getUniformLocation(p,"routeReach"), detailedShadow:gl.getUniformLocation(p,"detailedShadow"),lightingUpgrade:gl.getUniformLocation(p,"lightingUpgrade"),practicalLighting:gl.getUniformLocation(p,"practicalLighting"),earthLighting:gl.getUniformLocation(p,"earthLighting"),gripContact:gl.getUniformLocation(p,"gripContact"),gripRadius:gl.getUniformLocation(p,"gripRadius")};
+ return {p, equipmentId:gl.getUniformLocation(p,"equipmentId"), equipmentLow:gl.getUniformLocation(p,"equipmentLow"), equipmentHigh:gl.getUniformLocation(p,"equipmentHigh"), depthClip:gl.getUniformLocation(p,"depthClip"), eye:gl.getUniformLocation(p,"eye"), basis:gl.getUniformLocation(p,"basis"), optics:gl.getUniformLocation(p,"optics"), roll:gl.getUniformLocation(p,"roll"), eva:gl.getUniformLocation(p,"eva"), photo:gl.getUniformLocation(p,"photo"), earth:gl.getUniformLocation(p,"earthMap"),starMap:gl.getUniformLocation(p,"starMap"),starReady:gl.getUniformLocation(p,"starReady"),moonMap:gl.getUniformLocation(p,"moonMap"),moonReady:gl.getUniformLocation(p,"moonReady"),upgradedSky:gl.getUniformLocation(p,"upgradedSky"),orbitCenter:gl.getUniformLocation(p,"orbitCenter"),earthAngle:gl.getUniformLocation(p,"earthAngle"), backdrop:gl.getUniformLocation(p,"backdrop"), sunMap:gl.getUniformLocation(p,"sunMap"),armPose:gl.getUniformLocation(p,"armPose"),armSurfaceReady:gl.getUniformLocation(p,"armSurfaceReady"),panelStampReady:gl.getUniformLocation(p,"panelStampReady"),pressureStampReady:gl.getUniformLocation(p,"pressureStampReady"),fasciaStampReady:gl.getUniformLocation(p,"fasciaStampReady"), renderFraction:gl.getUniformLocation(p,"renderFraction"),surfaceTile:gl.getUniformLocation(p,"surfaceTile"), routeLens:gl.getUniformLocation(p,"routeLens"), routeReach:gl.getUniformLocation(p,"routeReach"), detailedShadow:gl.getUniformLocation(p,"detailedShadow"),lightingUpgrade:gl.getUniformLocation(p,"lightingUpgrade"),practicalLighting:gl.getUniformLocation(p,"practicalLighting"),earthLighting:gl.getUniformLocation(p,"earthLighting"),gripContact:gl.getUniformLocation(p,"gripContact"),gripRadius:gl.getUniformLocation(p,"gripRadius")};
 }
 const coarseShadow=matchMedia("(pointer:coarse)").matches;
 const maxShadow=gl?gl.getParameter(gl.MAX_TEXTURE_SIZE):1024;
@@ -629,14 +629,14 @@ function drawFallbackArm(program,eva,pose){
 }
 let skyFbo,skyTexture,skyW=0,skyH=0,skyDetailEpoch=0;
 let fineEarth;
-function bindOrbit(frame,w,h,optics){
+function bindOrbit(frame){
  fineEarth.bind();
  gl.activeTexture(gl.TEXTURE1);gl.bindTexture(gl.TEXTURE_2D,earthTexture);gl.uniform1i(space.earth,1);gl.uniform1i(space.photo,earthReady);
  gl.activeTexture(gl.TEXTURE7);gl.bindTexture(gl.TEXTURE_2D,starTexture);gl.uniform1i(space.starMap,7);gl.uniform1i(space.starReady,starReady);
- gl.activeTexture(gl.TEXTURE9);gl.bindTexture(gl.TEXTURE_2D,moonTexture);gl.uniform1i(space.moonMap,9);gl.uniform1i(space.moonReady,moonReady);gl.uniform2f(space.moonPixelFootprint,2/(w*optics[0]),2/(h*optics[1]));
+ gl.activeTexture(gl.TEXTURE9);gl.bindTexture(gl.TEXTURE_2D,moonTexture);gl.uniform1i(space.moonMap,9);gl.uniform1i(space.moonReady,moonReady);
  gl.uniform1i(space.upgradedSky,Number(upgradedSky));gl.uniform1f(space.earthAngle,frame.spin);gl.uniform4fv(space.orbitCenter,frame.center);
 }
-function bakeBackdrop(bind,w,h,orbit,optics){
+function bakeBackdrop(bind,w,h,orbit){
  if(engine.sky_plan(w,h,Number(upgradedSky),earthReady,starReady,moonReady,skyDetailEpoch)===0)return;
  const wide=skyW!==w || skyH!==h;
  if(wide){skyW=w;skyH=h;}
@@ -644,7 +644,7 @@ function bakeBackdrop(bind,w,h,orbit,optics){
  if(wide)gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA8,w,h,0,gl.RGBA,gl.UNSIGNED_BYTE,null);
  gl.bindFramebuffer(gl.FRAMEBUFFER,skyFbo);
  gl.disable(gl.DEPTH_TEST);bind(space);
- bindOrbit(orbit,w,h,optics);
+ bindOrbit(orbit);
  gl.bindVertexArray(null);gl.drawArrays(gl.TRIANGLES,0,3);
  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
 
@@ -712,7 +712,7 @@ function render(alpha) {
   gl.uniform2fv(o.optics,optics);
   gl.uniform1i(o.eva,Number(eva));gl.uniform1f(o.renderFraction,fraction);gl.uniform2fv(o.roll,roll);
  }
- if(holdingAngle)bakeBackdrop(bind,w,h,orbit,optics);
+ if(holdingAngle)bakeBackdrop(bind,w,h,orbit);
  gl.clear(gl.DEPTH_BUFFER_BIT);
  gl.enable(gl.DEPTH_TEST);bind(scene);gl.uniform2fv(scene.depthClip,depthClip);
  bindEquipment(gl,scene,equipmentRow,active&&!thirdPerson);
@@ -752,7 +752,7 @@ function render(alpha) {
    gl.useProgram(skyCopy.p);
    gl.activeTexture(gl.TEXTURE3);gl.bindTexture(gl.TEXTURE_2D,skyTexture);gl.uniform1i(skyCopy.backdrop,3);
  }else{
-   bind(space);bindOrbit(orbit,w,h,optics);
+   bind(space);bindOrbit(orbit);
  }
  if(stationView){gl.depthRange(1,1);gl.depthFunc(gl.LEQUAL);}
  gl.bindVertexArray(null);gl.drawArrays(gl.TRIANGLES,0,3);gl.depthMask(true);
@@ -1029,7 +1029,7 @@ try{
    indexed:uploadIndexed,hands:uploadHands,
    avatar_rig(p,n){rigRow=new Float64Array(engine.memory.buffer,p,n);},
    material_art(p,n){if(n!==113)throw Error("Unexpected station material profile");materialArt=new Float64Array(engine.memory.buffer,p,n);},
-   sky_art(p,n){if(n!==40)throw Error("Unexpected celestial profile");skyArt=new Float64Array(engine.memory.buffer,p,n);},
+   sky_art(p,n){if(n!==37)throw Error("Unexpected celestial profile");skyArt=new Float64Array(engine.memory.buffer,p,n);},
    hud_view(p,n){if(n!==15)throw Error("Unexpected HUD projection");hudRow=new Float64Array(engine.memory.buffer,p,n);},
    render_budget(p,n){if(n!==3)throw Error("Unexpected renderer plan");renderPlan=new Float64Array(engine.memory.buffer,p,n);},
    earth_tiles(p,n){if(n!==19)throw Error("Unexpected globe tile projection");tileRow=new Float64Array(engine.memory.buffer,p,n);},
@@ -1171,7 +1171,6 @@ try{
   moon.onload=()=>{
    gl.activeTexture(gl.TEXTURE9);gl.bindTexture(gl.TEXTURE_2D,moonTexture);
    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,moon);
-   gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR_MIPMAP_LINEAR);gl.generateMipmap(gl.TEXTURE_2D);
    moonReady=1;worldVersion++;
   };
   moon.src=new URL("./moon-relief.webp?v=1",import.meta.url).href;

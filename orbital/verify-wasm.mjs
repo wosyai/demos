@@ -53,7 +53,7 @@ engine=new WebAssembly.Instance(wasm,{orbital:{
  },hands(p,n){hand=read(p,n);handLoads++;},
  avatar_rig(p,n){assert.equal(p%8,0);rigRow=new Float64Array(engine.memory.buffer,p,n);},
  material_art(p,n){assert.equal(n,113);assert.equal(p%8,0);materialArt=new Float64Array(engine.memory.buffer,p,n).slice();},
- sky_art(p,n){assert.equal(n,40);assert.equal(p%8,0);skyArt=new Float64Array(engine.memory.buffer,p,n).slice();},
+ sky_art(p,n){assert.equal(n,37);assert.equal(p%8,0);skyArt=new Float64Array(engine.memory.buffer,p,n).slice();},
  hud_view(p,n){assert.equal(n,15);assert.equal(p%8,0);hudView=new Float64Array(engine.memory.buffer,p,n).slice();},
  render_budget(p,n){assert.equal(n,3);assert.equal(p%8,0);rendererPlan=new Float64Array(engine.memory.buffer,p,n).slice();},
  earth_tiles(p,n){assert.equal(n,19);assert.equal(p%8,0);earthTiles=new Float64Array(engine.memory.buffer,p,n).slice();},
@@ -1134,12 +1134,9 @@ for(const altitudeKm of [390,260,80]){
 console.log('Wosy Earth atmosphere: fixed physical column at physical orbit radii with the original showcase disc.');
 
 
-assert.deepEqual([...skyArt.slice(30,36)],[1,.97,.90,.38,.27,.16]);
+assert.deepEqual([...skyArt.slice(30,36)],[1,.97,.90,.46,.34,.23]);
 const solarRadiusSq=skyArt[19];
-const oldLimb=(scale)=>.88+.12*Math.sqrt(Math.max(0,1-scale**2));
-const limbCoefficients=[...skyArt.slice(37,40)];
-assert.deepEqual(limbCoefficients,[.15,.24,.34]);
-const limb=(i,scale)=>1-(1-Math.sqrt(Math.max(0,1-scale**2)))*limbCoefficients[i];
+const limb=(scale)=>.88+.12*Math.sqrt(Math.max(0,1-scale**2));
 const glow=(scale,inner)=>{
  const s2=scale**2*solarRadiusSq;
  const g=Math.max(0,1-s2*.32/.049)/(1+Math.max(0,s2-solarRadiusSq)*410);
@@ -1148,14 +1145,12 @@ const glow=(scale,inner)=>{
 };
 const disk=[...skyArt.slice(30,33)],newHalo=[...skyArt.slice(33,36)],oldHalo=[1.02,.75,.47];
 for(const scale of [0,.45,.80,.97]){
- assert.ok(glow(scale,oldHalo).every((x,i)=>x+[1,.94,.81][i]*oldLimb(scale)>1),'original core clamps all three channels white');
- assert.ok(disk.every((x,i)=>x*limb(i,scale)<=1),'photosphere retains its authored profile');
+ assert.ok(glow(scale,oldHalo).every((x,i)=>x+[1,.94,.81][i]*limb(scale)>1),'original core clamps all three channels white');
+ assert.ok(disk.every(x=>x*limb(scale)<=1),'photosphere retains its authored profile');
 }
-assert.deepEqual(disk.map((x,i)=>x*limb(i,0)),disk,'solar center unchanged');
-assert.ok(disk[1]-disk[1]*limb(1,.97)>.17);
-assert.ok(limb(0,.97)>limb(1,.97)&&limb(1,.97)>limb(2,.97),'blue wavelengths fall off fastest at the edge');
+assert.ok(disk[1]-disk[1]*limb(.97)>.08);
 for(const i of [0,1,2]){
- assert.ok(glow(1,newHalo)[i]<disk[i]*limb(i,1),'the closest halo is fainter than the photosphere edge');
+ assert.ok(glow(1,newHalo)[i]<disk[i]*limb(1),'the closest halo is fainter than the photosphere edge');
  assert.ok(glow(1.15,newHalo)[i]>glow(1.5,newHalo)[i]&&glow(1.5,newHalo)[i]>glow(2,newHalo)[i]);
  assert.ok(Math.abs(glow(4,newHalo)[i]-glow(4,oldHalo)[i])<.002);
 }
