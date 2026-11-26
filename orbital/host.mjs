@@ -712,6 +712,7 @@ function render(alpha) {
    bind(space);bindOrbit(orbit);
  }
  gl.bindVertexArray(null);gl.drawArrays(gl.TRIANGLES,0,3);gl.depthMask(true);
+ if(body)apolloBody.drawInteriorVisor();
  if(heated){
   if(!glow){engine.reentry_shell();glow=reentryGlow(gl,entryMesh);}
   engine.reentry_visual();
