@@ -67,10 +67,14 @@ vec3 orbitalExterior(vec3 ray, vec3 backdrop, vec3 centerDir, float earthSinRadi
 
   // Closest approach: the ground can eclipse low air while leaving
   // higher air illuminated. Keep the aerosol belt tighter than blue air.
+  if(arc<=0.)return clamp(result,0.,1.);
   vec3 tangent=arc*ray-C;
   float tangentDist=max(length(tangent),.000001);
-  float altitude=max(0.,tangentDist-radius);
-  if(arc<=0.||(arc<edge-aa&&altitude>.043))return clamp(result,0.,1.);
+  // Measure optical column in reference Earth-radius units. Changing
+  // apparent angular size changes direction, not the atmosphere's scale.
+  const float atmosphereAnchor=${profile[29].toFixed(12)};
+  float altitude=max(0.,tangentDist-radius)*(atmosphereAnchor/radius);
+  if(arc<edge-aa&&altitude>.043)return clamp(result,0.,1.);
   float tangentSun=dot(tangent,S)/tangentDist;
   float groundHorizon=-sqrt(max(0.,1.-radius*radius/(tangentDist*tangentDist)));
   float sunClear=tangentSun-groundHorizon;

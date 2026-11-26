@@ -2029,7 +2029,7 @@ unit(f64,f64,i32) project_visual=fn(alpha,aspect,avatar){
     presentation[49]=0.64/n0*near-x/n*orbit_blend;
     presentation[50]=-1.11/n0*near-(6761000.0+y)/n*orbit_blend;
     presentation[51]=-0.48/n0*near-z/n*orbit_blend;
-    presentation[52]=0.7962254705797849*near+6371000.0/(6371000.0+projection.clamp(presentation[28],0.0,1.0e30))*orbit_blend;
+    presentation[52]=sky_art.reference_disc()*near+6371000.0/(6371000.0+projection.clamp(presentation[28],0.0,1.0e30))*orbit_blend;
     presentation[53]=if(chase_blend>0.0&&chase_blend<1.0){1.0}else{0.0};
     presentation[54]=projection.cos(yaw_out);presentation[55]=projection.sin(yaw_out);
     presentation[56]=projection.cos(pitch_out);presentation[57]=projection.sin(pitch_out);

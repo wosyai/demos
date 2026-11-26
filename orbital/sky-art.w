@@ -1,11 +1,12 @@
 %%start
 math = namespace orbital "presentation.w";
 bridge = extern wasm "orbital" { unsafe unit(*?u8,i32) sky_art; };
-f64[29] packet=[
+f64() reference_disc=fn{0.7962254705797849};
+f64[30] packet=[
     0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
     0.0,0.3,-5.0,6.4,14.0,
     0.76,0.57,-0.31,0.00372906,0.06104854,0.0009869,
-    0.8124226,-0.5092981,0.2838750,0.5136543,0.8555399,0.0648896,-0.2759145,0.0930958,0.9566631
+    0.8124226,-0.5092981,0.2838750,0.5136543,0.8555399,0.0648896,-0.2759145,0.0930958,0.9566631,0.0
 ];
 unit() publish=fn{
     f64 n=math.norm(0.48,0.35,0.80);
@@ -15,6 +16,7 @@ unit() publish=fn{
     packet[0]=sx;packet[1]=sy;packet[2]=sz;
     packet[3]=xx;packet[4]=0.0;packet[5]=xz;
     packet[6]=sy*xz;packet[7]=sz*xx-sx*xz;packet[8]=-sy*xx;
-    unsafe {bridge.sky_art(core.pointer_cast<*?u8>(&?packet[0]),29);};
+    packet[29]=reference_disc();
+    unsafe {bridge.sky_art(core.pointer_cast<*?u8>(&?packet[0]),30);};
 };
 %%end

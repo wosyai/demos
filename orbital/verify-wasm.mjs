@@ -53,7 +53,7 @@ engine=new WebAssembly.Instance(wasm,{orbital:{
  },hands(p,n){hand=read(p,n);handLoads++;},
  avatar_rig(p,n){assert.equal(p%8,0);rigRow=new Float64Array(engine.memory.buffer,p,n);},
  material_art(p,n){assert.equal(n,79);assert.equal(p%8,0);materialArt=new Float64Array(engine.memory.buffer,p,n).slice();},
- sky_art(p,n){assert.equal(n,29);assert.equal(p%8,0);skyArt=new Float64Array(engine.memory.buffer,p,n).slice();},
+ sky_art(p,n){assert.equal(n,30);assert.equal(p%8,0);skyArt=new Float64Array(engine.memory.buffer,p,n).slice();},
  hud_view(p,n){assert.equal(n,8);assert.equal(p%8,0);hudView=new Float64Array(engine.memory.buffer,p,n).slice();},
  render_budget(p,n){assert.equal(n,3);assert.equal(p%8,0);rendererPlan=new Float64Array(engine.memory.buffer,p,n).slice();},
  earth_tiles(p,n){assert.equal(n,19);assert.equal(p%8,0);earthTiles=new Float64Array(engine.memory.buffer,p,n).slice();},
@@ -677,6 +677,7 @@ assert.equal(createHash('sha256').update(Buffer.from(entryMesh.buffer)).digest('
  'reentry shell retains the exact prior winding and all F32 vertex lanes');
 function checkEntryPresentation(){
  const q=visualOf(.4,390/844);
+ assert.ok(Math.abs(q[52]-6371000/(6371000+q[28]))<1e-13,'actual reentry trajectory uses physical radius');
  const [x,y,z,heat,load]=[0,1,2,3,4].map(engine.entry_flow);
  const warm=heat>.01;
  assert.equal(q[58],heat);assert.equal(q[59],Number(warm&&load<1));
@@ -1020,3 +1021,18 @@ mmuProbe[8]=.23;
 assert.equal(rig.controls(mmuProbe)[0].fit,0);
 assert.equal(rig.controls(mmuProbe)[1].fit,1);
 console.log('Wosy MMU: cached authored profiles and bounded left station handoff; right remains on its control.');
+
+
+const atmosphereAnchor=skyArt[29];
+assert.equal(atmosphereAnchor,0.7962254705797849);
+engine.select_deck(1);engine.tick(0,0,0,0);
+assert.equal(visualOf(1,390/844)[52],atmosphereAnchor,'default station keeps the exact authored Earth disc');
+for(const altitudeKm of [390,260,80]){
+ const physicalRadius=6371/(6371+altitudeKm);
+ for(const heightKm of [0,8,25,55,100,225]){
+  const limb=(physicalRadius*(1+heightKm/6371)-physicalRadius)*(atmosphereAnchor/physicalRadius);
+  assert.ok(Math.abs(limb-heightKm/6371*atmosphereAnchor)<1e-14);
+  assert.ok(Math.abs(Math.exp(-limb*305)-Math.exp(-heightKm/6371*atmosphereAnchor*305))<1e-12);
+ }
+}
+console.log('Wosy Earth atmosphere: fixed physical column at physical orbit radii with the original showcase disc.');

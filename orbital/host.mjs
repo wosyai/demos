@@ -1,7 +1,7 @@
 import {hudText,flightStatusText} from "./hud-text.mjs?v=8";
 import {reentryGlow} from "./reentry-glow.mjs?v=2";
 import {earthDetail} from "./earth-detail.mjs?v=3";
-import {exteriorSky} from "./exterior-sky.mjs?v=6";
+import {exteriorSky} from "./exterior-sky.mjs?v=7";
 import {loadApolloBody,loadProceduralSuit} from "./apollo-body.mjs?v=18";
 import {bindAvatarRig} from "./avatar-rig.mjs?v=2";
 let avatarRig,rigRow;
@@ -898,14 +898,14 @@ function shadowBuffer(size){
  }
 try{
  if(!gl)throw Error("WebGL 2 is required to render the station.");
- const response=await fetch(new URL("./orbital.wasm?v=65",import.meta.url));
+ const response=await fetch(new URL("./orbital.wasm?v=66",import.meta.url));
  if(!response.ok)throw Error("The station engine could not be downloaded.");
  const {instance}=await WebAssembly.instantiate(await response.arrayBuffer(),{
   orbital:{
    indexed:uploadIndexed,hands:uploadHands,
    avatar_rig(p,n){rigRow=new Float64Array(engine.memory.buffer,p,n);},
    material_art(p,n){if(n!==79)throw Error("Unexpected station material profile");materialArt=new Float64Array(engine.memory.buffer,p,n);},
-   sky_art(p,n){if(n!==29)throw Error("Unexpected celestial profile");skyArt=new Float64Array(engine.memory.buffer,p,n);},
+   sky_art(p,n){if(n!==30)throw Error("Unexpected celestial profile");skyArt=new Float64Array(engine.memory.buffer,p,n);},
    hud_view(p,n){if(n!==8)throw Error("Unexpected HUD projection");hudRow=new Float64Array(engine.memory.buffer,p,n);},
    render_budget(p,n){if(n!==3)throw Error("Unexpected renderer plan");renderPlan=new Float64Array(engine.memory.buffer,p,n);},
    earth_tiles(p,n){if(n!==19)throw Error("Unexpected globe tile projection");tileRow=new Float64Array(engine.memory.buffer,p,n);},
