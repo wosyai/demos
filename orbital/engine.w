@@ -30,7 +30,7 @@ f32[8][16][16][16][5] mesh = [page2,page2,page2,page2,page2];
 f32[38] state = [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0];
 f32[38] prior_state=state;
 bool present_history=false;
-f64[60] presentation=[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0];
+f64[64] presentation=[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0];
 bool third_person=false;
 f64 chase_blend=0.0;
 bool presentation_paused=false;
@@ -1952,6 +1952,36 @@ unit(u64,bool,bool,f64) project_frame=fn(i,blend,snap,alpha){
         project_frame(i+1,blend,snap,alpha);
     };
 };
+unit() project_waypoint=fn{
+    f64 route=presentation[20];
+    presentation[60]=0.0;presentation[61]=0.0;presentation[62]=0.0;presentation[63]=0.0;
+    if(route>0.0&&!far_from_station()){
+        f32 rail_z=rail_depth(if(route==1.0){0}else{1})+0.103+0.003;
+        f32 lens_x=if(route<3.0){0.20}else{if(route==3.0){-0.08}else{if(route==4.0){1.18}else{-0.972}}};
+        f32 lens_y=if(route<3.0){-0.4895}else{if(route==3.0){-0.2185}else{if(route==4.0){-0.2665}else{0.0795}}};
+        f32 lens_z=if(route<3.0){rail_z}else{if(route==3.0){-5.063+0.003}else{if(route==4.0){-4.84+0.003}else{-2.471}}};
+        f64 dx=core.float_extend<f64>(lens_x)-presentation[38];
+        f64 dy=core.float_extend<f64>(lens_y)-presentation[39];
+        f64 dz=core.float_extend<f64>(lens_z)-presentation[40];
+        f64 qx=presentation[54]*dx+presentation[55]*dz;
+        f64 qz=-presentation[55]*dx+presentation[54]*dz;
+        f64 waypoint_view_y=presentation[56]*dy+presentation[57]*qz;
+        f64 depth=presentation[57]*dy-presentation[56]*qz;
+        f64 px=(presentation[46]*qx+presentation[47]*waypoint_view_y)*presentation[44];
+        f64 py=(-presentation[47]*qx+presentation[46]*waypoint_view_y)*presentation[45];
+        f64 extent=if(projection.abs(px)>projection.abs(py)){projection.abs(px)}else{projection.abs(py)};
+        presentation[60]=route;
+        if(depth>=0.05&&extent<=depth){
+            presentation[61]=px/depth;presentation[62]=py/depth;
+        }else{
+            bool horizontal=projection.abs(px)>=projection.abs(py);
+            presentation[63]=if(horizontal){if(px>=0.0){1.0}else{2.0}}else{if(py>=0.0){3.0}else{4.0}};
+            if(extent>0.00000001){
+                presentation[61]=px/extent*0.86;presentation[62]=py/extent*0.86;
+            }else{presentation[61]=0.86;};
+        };
+    };
+};
 unit(f64,f64,i32) project_visual=fn(alpha,aspect,avatar){
     bool blend=present_history&&state[15]==prior_state[15]&&state[32]==prior_state[32];
     bool snap=projection.discrete_contact(state[19])||projection.discrete_contact(prior_state[19]);
@@ -2004,7 +2034,8 @@ unit(f64,f64,i32) project_visual=fn(alpha,aspect,avatar){
     presentation[56]=projection.cos(pitch_out);presentation[57]=projection.sin(pitch_out);
     presentation[58]=if(entry&&state[29]==1.0){core.float_extend<f64>(heat)}else{0.0};
     presentation[59]=if(presentation[58]>0.01&&heat_load<1.0){1.0}else{0.0};
-    unsafe {host.visual(core.pointer_cast<*?u8>(&?presentation[0]),60);};
+    project_waypoint();
+    unsafe {host.visual(core.pointer_cast<*?u8>(&?presentation[0]),64);};
 };
 i32(f64,f64) globe_tiles=fn(now,height){
     bool scanned=globe.scan(now,height,presentation[49],presentation[50],presentation[51],presentation[52],presentation[48],
@@ -2098,7 +2129,7 @@ i32 draw_epoch=-1;
 i32 draw_width=0;
 i32 draw_height=0;
 f64 draw_spin=0.0;
-f64[60] last_view=presentation;
+f64[64] last_view=presentation;
 u64[10] motion_lanes=[21,22,23,24,25,33,34,35,36,43];
 bool(u64) matching_movement=fn(i){
     if(i==10){true}else{
@@ -2128,7 +2159,7 @@ i32(i32,i32,i32,i32,i32) draw_plan=fn(epoch,width,height,avatar,sky){
 bool cached_sky=false;
 i32 cached_width=0;i32 cached_height=0;
 i32 cached_photo=0;i32 cached_star=0;i32 cached_moon=0;i32 cached_tiles=0;
-f64[60] cached_projection=presentation;
+f64[64] cached_projection=presentation;
 bool(u64) keep_planet=fn(i){
     if(i==53){true}else{projection.abs(presentation[i]-cached_projection[i])<0.0006&&keep_planet(i+1)}
 };

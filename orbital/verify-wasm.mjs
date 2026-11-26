@@ -59,7 +59,7 @@ engine=new WebAssembly.Instance(wasm,{orbital:{
  earth_tiles(p,n){assert.equal(n,19);assert.equal(p%8,0);earthTiles=new Float64Array(engine.memory.buffer,p,n).slice();},
  entry_shell(p,n){assert.equal(n,6144);entryMesh=read(p,n);},
  entry_visual(p,n){assert.equal(n,14);assert.equal(p%8,0);entrySample=new Float64Array(engine.memory.buffer,p,n).slice();},
- visual(p,n){assert.equal(n,60);assert.equal(p%8,0);visual=new Float64Array(engine.memory.buffer,p,n).slice();},
+ visual(p,n){assert.equal(n,64);assert.equal(p%8,0);visual=new Float64Array(engine.memory.buffer,p,n).slice();},
  frame(p,n){
   assert.equal(n,38);assert.equal(engine.scenery_motion(10),0);
   if(stagedRoom){room=stagedRoom;stagedRoom=undefined;roomLoads++;}
@@ -83,6 +83,36 @@ function visualOf(alpha,aspect,hasAvatar=1){
  assert.ok(visual?.every(Number.isFinite),'projection publishes finite, aligned values synchronously');
  return visual;
 }
+const waypointChecks=new Set();
+const routeGeometry=[
+ [.2,-.4895,-1.484],[.2,-.4895,-3.324],[-.08,-.2185,-5.060],[1.18,-.2665,-4.837],[-.972,.0795,-2.471],
+];
+function validateWaypoint(){
+ const id=state[20];if(!id||waypointChecks.has(id))return;
+ waypointChecks.add(id);
+ const target=routeGeometry[id-1],material=1.09+id/100;
+ const vertices=[];
+ for(let i=0;i<room.length;i+=8)if(Math.abs(room[i+7]-material)<1e-5)vertices.push([...room.slice(i,i+3)]);
+ assert.ok(vertices.length>=6,"registered lens is an actual attributed station surface");
+ for(let axis=0;axis<3;axis++){
+  const coords=vertices.map(v=>v[axis]);
+  assert.ok(target[axis]>=Math.min(...coords)-1e-5&&target[axis]<=Math.max(...coords)+1e-5);
+ }
+ for(const [width,height] of [[390,844],[1280,720]])for(const hasAvatar of [0,1]){
+  const v=visualOf(1,width/height,hasAvatar);
+  const [dx,dy,dz]=target.map((q,i)=>q-v[38+i]),[cy,sy,cp,sp]=v.slice(54,58);
+  // Reference shader toEye, then its homogeneous clip coordinates.
+  const a=[cy*dx+sy*dz,dy,-sy*dx+cy*dz];
+  const b=[a[0],cp*a[1]+sp*a[2],-sp*a[1]+cp*a[2]];
+  const x=(v[46]*b[0]+v[47]*b[1])*v[44],y=(-v[47]*b[0]+v[46]*b[1])*v[45],w=-b[2];
+  const extent=Math.max(Math.abs(x),Math.abs(y));
+  const visible=w>=.05&&extent<=w;
+  const scale=visible?1/w:.86/extent;
+  assert.equal(v[60],id);
+  assert.ok(Math.abs(v[61]-x*scale)<2e-6&&Math.abs(v[62]-y*scale)<2e-6,"marker projects exact material point");
+  assert.equal(v[63],visible?0:Math.abs(x)>=Math.abs(y)?(x>=0?1:2):(y>=0?3:4));
+ }
+}
 const captureFrames=[];
 const statusIs=(expected)=>{engine.hud_view();assert.equal(flightStatusText(hudView[7]),expected);};
 const hint=()=>{const code=engine.hud_view();assert.equal(code,engine.hud_code());return hudText(code,state[16],Boolean(hudView[5]),hudView[6]);};
@@ -92,6 +122,7 @@ function hudIs(objective,interact,marker="+"){
 }
 const step=(keys=0,yaw=0,pitch=0,dt=1/60)=>{
  engine.tick(dt,keys,yaw,pitch);
+ validateWaypoint();
  if(state[15]===1&&state[8]>.004&&[1,2,3].includes(state[9]))captureFrames.push([...state]);
 };
 const until=(test,keys,cap=400)=>{for(let i=0;i<cap&&!test();i++)step(keys);assert.ok(test(),'state did not arrive '+[...state]);};
@@ -964,3 +995,6 @@ assert.equal(engine.input_status()&2,0,'explicit safety loss clears Coast even w
 engine.input_advance(17,1);
 assert.equal(state[30],1);
 console.log('Wosy Coast: ordinary pause preserves warp intent, not held input or elapsed time; cancel and safety clear still work.');
+
+assert.deepEqual([...waypointChecks].sort(),[1,2,3,4,5],"all five world waypoints were exercised along the real mission");
+console.log("Wosy waypoint: five authored station markers projected through actual camera optics in portrait and desktop.");

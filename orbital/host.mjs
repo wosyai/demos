@@ -578,6 +578,19 @@ function bakeBackdrop(bind,w,h,orbit){
  gl.bindFramebuffer(gl.FRAMEBUFFER,null);
 
 }
+const waypoint=$("waypoint"),waypointSymbol=["◇","▸","◂","▴","▾"];
+let lastWaypoint=0,lastWaypointX=0,lastWaypointY=0,lastWaypointEdge=0;
+function updateWaypoint(){
+ const route=active?visual[60]:0;
+ if(route!==lastWaypoint){waypoint.hidden=route===0;lastWaypoint=route;}
+ if(!route)return;
+ const x=visual[61],y=visual[62],edge=visual[63];
+ if(x!==lastWaypointX||y!==lastWaypointY){
+  waypoint.style.left=(50+50*x)+"%";waypoint.style.top=(50-50*y)+"%";
+  lastWaypointX=x;lastWaypointY=y;
+ }
+ if(edge!==lastWaypointEdge){waypoint.textContent=waypointSymbol[edge];lastWaypointEdge=edge;}
+}
 let glow=null;
 function render(alpha) {
  if(!frame)return;
@@ -587,6 +600,7 @@ function render(alpha) {
  gl.viewport(0,0,w,h);
  // Synchronous Wosy presentation packet; GL consumes the borrowed row before its next write.
  engine.project_visual(alpha,w/h,Number(Boolean(apolloBody)));
+ updateWaypoint();
  const pose=visual.subarray(0,38),camera={eye:visual.subarray(38,41),yaw:visual[41],pitch:visual[42]};
  const [x,y,z]=camera.eye,{yaw:heading,pitch}=camera,drawBody=visual[43]===1;
  const optics=visual.subarray(44,46),roll=visual.subarray(46,48);
@@ -875,7 +889,7 @@ function shadowBuffer(size){
  }
 try{
  if(!gl)throw Error("WebGL 2 is required to render the station.");
- const response=await fetch(new URL("./orbital.wasm?v=62",import.meta.url));
+ const response=await fetch(new URL("./orbital.wasm?v=63",import.meta.url));
  if(!response.ok)throw Error("The station engine could not be downloaded.");
  const {instance}=await WebAssembly.instantiate(await response.arrayBuffer(),{
   orbital:{
@@ -888,7 +902,7 @@ try{
    earth_tiles(p,n){if(n!==19)throw Error("Unexpected globe tile projection");tileRow=new Float64Array(engine.memory.buffer,p,n);},
    entry_shell(p,n){if(n!==6144)throw Error("Unexpected entry shell");entryMesh=new Float32Array(engine.memory.buffer,p,n);},
    entry_visual(p,n){if(n!==14)throw Error("Unexpected entry projection");entrySample=new Float64Array(engine.memory.buffer,p,n);},
-   visual(p,n){if(n!==60)throw Error("Unexpected station projection");visual=new Float64Array(engine.memory.buffer,p,n);},
+   visual(p,n){if(n!==64)throw Error("Unexpected station projection");visual=new Float64Array(engine.memory.buffer,p,n);},
    frame(p,n){if(n!==38)throw Error("Unexpected station frame");frame=new Float32Array(engine.memory.buffer,p,n).slice();}
   },
   wasi_snapshot_preview1:{proc_exit(n){throw Error("Station exited: "+n);}}
