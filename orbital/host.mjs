@@ -776,6 +776,7 @@ function hud(){
  lastCanCoast=view.coast;
  const thirdPerson=engine.camera_mode(0)===1;
  const coastButton=$("coast");
+ $("push-off").hidden=!active||!view.canPush;
  coastButton.hidden=!active||!view.coast||thirdPerson;
  if(active&&!view.coast)engine.input_action(2);
  coastButton.setAttribute("aria-pressed",String(Boolean(engine.input_status()&2)));
@@ -953,6 +954,7 @@ window.addEventListener("keydown",e=>{
    if(!e.repeat){const r=canvas.getBoundingClientRect();tryEquipment(r.left+r.width/2,r.top+r.height/2);}
    return;
  }
+ if(e.code==="Space"&&e.target===$("push-off"))return;
  const slot=browserKeys.get(e.code);if(slot!==undefined){e.preventDefault();engine.input_key(slot,1);}
 });
 window.addEventListener("keyup",e=>{const slot=browserKeys.get(e.code);if(slot!==undefined)engine?.input_key(slot,0);});
@@ -972,6 +974,7 @@ function enter(which){
  active=true;last=performance.now();$("intro").hidden=true;hud();
 }
 $("camera").onclick=()=>{if(active&&apolloBody&&frame[15]===1){engine.camera_mode(1);worldVersion++;hud();}};
+$("push-off").onclick=()=>{if(active&&!$("push-off").hidden)engine.input_action(3);};
 $("coast").onclick=()=>{if(active&&!$("coast").hidden)engine.input_action(1);};
 $("reset").onclick=()=>{if(engine)enter(frame[32]===1?2:frame[15]);};
 function restartExercise(){enter(frame[32]===1?2:frame[15]);}

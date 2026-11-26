@@ -1808,6 +1808,7 @@ i32() hud_code = fn{
     };
     code
 };
+bool() rail_push_ready=fn{mode==2&&(deck==0||(station_leg<2&&alignment_stage==0))};
 unit(f32,i32,f32,f32) tick = fn(dt,keys,look_x,look_y) {
     prior_state=state;present_history=dt>0.0;
     prior_head_offset=anchored_head_offset;
@@ -1896,7 +1897,8 @@ unit(f32,i32,f32,f32) tick = fn(dt,keys,look_x,look_y) {
         }else{false}
     };
     reach=if(nearby&&aligned&&slow&&physical_hatch){1.0}else{0.0};
-    if((keys&64)!=0 && latch==0){
+    bool push=(keys&1024)!=0;
+    if((keys&64)!=0 && latch==0 && (!push||rail_push_ready())){
         if(mode==0 && reach==1.0 && !atmosphere){mode=1;mark=1;timer=0.0;carry=pilot_x;carry_y=pilot_y;carry_z=pilot_z;dock_yaw=yaw;dock_pitch=pitch;dock_vx=vx;dock_vy=vy;dock_vz=vz;};
         if(mode==2){
             if(deck==1 && station_leg==2){
@@ -1908,7 +1910,7 @@ unit(f32,i32,f32,f32) tick = fn(dt,keys,look_x,look_y) {
                 else{if(alignment_stage==4){mode=3;mark=2;vx=0.47;vy=0.12;vz=0.0;};};};};};};
             }else{
                 mode=3;mark=2;
-                if(deck==0){vz=-0.19;}else{
+                if(push){if(deck==0){vz=-0.19;}else{
                     f64 from_y=core.float_extend<f64>(pilot_y-station.rail_y);
                     f64 from_z=core.float_extend<f64>(pilot_z-rail_depth(station_leg));
                     f64 normal_len=projection.norm(from_y,from_z,0.0);
@@ -1916,7 +1918,7 @@ unit(f32,i32,f32,f32) tick = fn(dt,keys,look_x,look_y) {
                     f64 normal_z=if(normal_len>0.00001){from_z/normal_len}else{1.0};
                     vy=core.float_trunc<f32>(normal_y*0.22-normal_z*0.48);
                     vz=core.float_trunc<f32>(normal_z*0.22+normal_y*0.48);
-                };
+                };};
             };
         };
     };
@@ -2236,7 +2238,9 @@ unit() reentry_visual=fn{
 f64 pending_time=0.0;
 bool did_tick=false;
 unit(i32,i32) input_key=fn(slot,held){control.key(slot,held);};
-unit(i32) input_action=fn(command){control.action(command);};
+unit(i32) input_action=fn(command){
+    if(command!=3||rail_push_ready()){control.action(command);};
+};
 unit() input_clear=fn{control.clear();};
 unit(i32) input_release=fn(zone){control.release(zone);};
 unit(f64,f64,i32) input_pointer=fn(dx,dy,touch){control.pointer(dx,dy,touch);};

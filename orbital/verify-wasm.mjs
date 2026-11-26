@@ -171,7 +171,7 @@ assert.deepEqual(contact.slice(5,10),[0,0,0,1,2]);
 const box = (m) => [0,1,2].map(i=>{const a=m.filter((_,j)=>j%8===i);return [Math.min(...a),Math.max(...a)];});
 assert.notDeepEqual(box(initial.slice(38)),box(contact.slice(38)),'contact has its own authored hand volume');
 const [x,y,z]=box(contact.slice(38));assert.ok(x[0]<.745 && x[1]>.745 && y[1]>-.21 && z[0]<-1.94 && z[1]>-1.94,'contact mesh wraps the handrail');
-step();step(64);assert.equal(state[9],3);assert.equal(state[11],2);assert.ok(state[7]<0);statusIs("PUSHING OFF");
+step();step(1088);assert.equal(state[9],3);assert.equal(state[11],2);assert.ok(state[7]<0);statusIs("RELEASING");
 const before=state[2];until(()=>state[9]===0,0);assert.ok(state[2]<before);
 reset();assert.deepEqual(capture(),initial,'reset restores exact initial pose');
 until(()=>state[7]<-.65,4);statusIs("THRUST");
@@ -293,7 +293,7 @@ const heldUploads=handLoads;
 for(let i=0;i<85;i++)step(64|16|2);assert.deepEqual(capture(),evaContact);
 assert.equal(handLoads,heldUploads,'a still grip does not re-upload meshes or invalidate cached shadows');
 step();
-step(64);assert.equal(state[11],2);assert.ok(state[6]<0&&state[7]>0,"release follows the outward and downward rail face");
+step(1088);assert.equal(state[11],2);assert.ok(state[6]<0&&state[7]>0,"release follows the outward and downward rail face");
 until(()=>state[9]===0,0);
 assert.equal(state[16],1);assert.equal(state[17],0);assert.equal(state[20],2);
 step(64);assert.equal(state[9],0,'cannot trigger the next rail as soon as released');step();
@@ -307,7 +307,7 @@ assert.equal(state[4].toFixed(2),'-0.13');
 const scaffoldBatches=roomLoads;
 for(let i=0;i<8;i++)step(64);
 assert.equal(roomLoads,scaffoldBatches,'looking out at the cargo never republishes the stationary world');
-step();step(64);until(()=>state[9]===0,0);
+step();step(1088);until(()=>state[9]===0,0);
 assert.equal(state[16],2);
 underRail(1,2);
 step(64);until(()=>state[9]===2,64);
@@ -1170,3 +1170,20 @@ assert.equal(state[9],0,'zero, disjoint equipment and negative identity are all 
 engine.equipment_activate(1);engine.input_advance(17,1);
 assert.equal(state[9],1,'the current eligible identity enters the existing grasp');
 console.log('Wosy equipment authorization: wrong, absent and current target controls passed.');
+
+
+for(const deck of [0,1]){
+ engine.select_deck(deck);step(0);
+ until(()=>state[10]===1,260);
+ engine.input_action(3);engine.input_advance(17,1);
+ assert.equal(state[9],0,'an unavailable Push off must not capture a reachable rail');
+ step(64);until(()=>state[9]===2,64);step(0);
+ const held=[...state.slice(0,8)];
+ engine.input_action(0);engine.input_advance(17,1);
+ assert.equal(state[9],3);
+ assert.deepEqual([...state.slice(0,3)],[...held.slice(0,3)],'passive letting go cannot reposition the player');
+ assert.equal(Math.hypot(...state.slice(5,8)),0,'passive letting go imparts no impulse');
+ until(()=>state[9]===0,0);
+ assert.ok(Math.hypot(...state.slice(5,8))<.005,'passive rail release retains only ambient motion');
+}
+console.log('Orbital WASM: passive training and EVA rail release is stationary at onset; unavailable explicit push cannot capture a rail.');

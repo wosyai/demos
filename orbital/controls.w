@@ -1,7 +1,7 @@
 %%start
 math = namespace orbital "presentation.w";
 i32 physical=0;
-bool queued=false;
+i32 queued=0;
 bool pressed=false;
 bool coasting=false;
 bool seen=false;
@@ -26,12 +26,12 @@ unit(i32,i32) key=fn(slot,held){
     };
 };
 unit(i32) action=fn(command){
-    if(command==0){queued=true;};
+    if(queued==0){if(command==0){queued=64;};if(command==3){queued=1088;};};
     if(command==1){coasting=!coasting;};
     if(command==2){coasting=false;};
 };
 unit() clear_momentary=fn{
-    physical=0;queued=false;pressed=false;dx=0.0;dy=0.0;
+    physical=0;queued=0;pressed=false;dx=0.0;dy=0.0;
     thrust_x=0.0;thrust_y=0.0;head_x=0.0;head_y=0.0;
 };
 unit() clear=fn{clear_momentary();coasting=false;};
@@ -66,10 +66,11 @@ i32() command_mask=fn{
     if(coasting){mask|512}else{mask}
 };
 i32() contact_pulse=fn{
-    bool edge=queued&&!pressed;
-    if(edge){queued=false;};
+    bool edge=queued!=0&&!pressed;
+    i32 intent=if(edge){queued}else{0};
+    if(edge){queued=0;};
     pressed=edge;
-    if(edge){64}else{0}
+    intent
 };
 f64(i32) axis=fn(lane){
     f64 keyed_x=digital(8,2);f64 keyed_y=digital(32,128);

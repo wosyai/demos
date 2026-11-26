@@ -7,8 +7,8 @@ const approach=rail=>"Approach the "+rail.toLowerCase();
 const findHatch=side=>["Return to the airlock",`Look ${side} to find the round hatch. Slow down before gripping.`,`Look ${side}`,`Look ${side} to find hatch`];
 const messages=[
  (rail,showTouch)=>[approach(rail),initial,"Too far",showTouch?"Left half: thrust · Right half: look":"Drift to lit rail"],
- ["Pushing off","Push away from the rail, then pass underneath it.","Pushing off"],
- rail=>[rail+" secured","Open your hand to push away from the rail.","Release & push"],
+ ["Letting go","Clear the rail before flying onward.","Letting go"],
+ rail=>[rail+" secured","Let go to stay put, or use Push off to travel under the rail.","Let go"],
  ["Gripping the rail","Your drift is arrested.","Grip rail"],
  rail=>[rail+" in reach","Grip to stop drifting.","Grip rail"],
  rail=>[approach(rail),"Look toward the lit rail.","Face rail","Look toward rail"],
@@ -40,8 +40,8 @@ const messages=[
  ["Approach the amber rail","Tap forward thrust. Tap opposite thrust to slow down.","Grip rail"],
  ["Handrail in reach","Grip to stop drifting.","Grip rail"],
  ["Gripping the handrail","Your drift is arrested.","Grip rail"],
- ["Rail secured","Release the rail to push off.","Release & push"],
- ["Exercise complete","You pushed off. Reset to practice again.","Grip rail"],
+ ["Rail secured","Let go to stay put, or use Push off to drift away.","Let go"],
+ ["Exercise complete","Rail released. Reset to practice again.","Grip rail"],
  ["Low-perigee orbit","Reentry scenario. This orbit descends into the upper atmosphere. Use Coast ×120 to approach the interface.","Station not in this exercise","Observe the orbit with Coast ×120"],
  ["Separated from station","Velocity persists. Aim back toward the station and counterthrust, or coast at 120×.","Station out of reach","Counterthrust to return"],
  ["Separated from station","Coasting at 120×. Thrust resumes normal time.","Station out of reach","Thrust returns to 1×"],
@@ -89,16 +89,16 @@ export function hudText(code,leg,showFirstLookHint,copyIntent){
  if(copyIntent===3){tip="Propellant depleted. Existing drift continues.";short="Propellant depleted";}
  return {objective,tip,action,short,section:sections[(code>>>16)&7],
    aim:Boolean(aim),route,marker:route?(aim===4?"❯":"❮"):arrow[aim],
-   interact:Boolean(code&1024),console:Boolean(code&2048),coast:Boolean(code&4096),far:Boolean(code&8192),burn:Boolean(code&32768)};
+   interact:Boolean(code&1024),canPush:(code&63)===2||(code&63)===36,console:Boolean(code&2048),coast:Boolean(code&4096),far:Boolean(code&8192),burn:Boolean(code&32768)};
 }
 
-const flightStatuses=["FREE FLOAT","DRIFT","ANCHORED","TAKING HOLD","PUSHING OFF","THRUST","HULL CONTACT"];
+const flightStatuses=["FREE FLOAT","DRIFT","ANCHORED","TAKING HOLD","RELEASING","THRUST","HULL CONTACT"];
 export function flightStatusText(status){return flightStatuses[status];}
 
 const equipmentNames=["","rail","rail","rail","cargo pin","console handle","hatch handle"];
 const equipmentActions={
  "Grip rail":"grip it","Grip handle":"grip it","Grip hatch":"grip it",
- "Release & push":"release and push off","Seat cargo lock":"seat it",
+ "Let go":"let go","Seat cargo lock":"seat it",
  "Drift to align":"release and drift to the console","Set alignment":"lower the cargo",
  "Transfer cargo":"transfer the load","Release & return":"release and return to the hatch",
  "Lock airlock":"lock the hatch"
