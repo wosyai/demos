@@ -161,6 +161,23 @@ i32(i32) copy_intent=fn(code){
     if(intent==CopyIntent::empty_tank){3}else{if(intent==CopyIntent::arrival_pulse){2}
     else{if(intent==CopyIntent::counterthrust){1}else{0}}}
 };
+i32(i32,i32,bool) presentation_field=fn(code,lane,push_ready){
+    i32 message=code&63;
+    i32 section=(code>>16)&7;
+    i32 aim=(code>>6)&7;
+    bool route=(code&512)!=0;
+    i32 marker=if(route){if(aim==4){8}else{9}}else{aim};
+    i32 action=if(message==15&&aim>=4){aim-3}else{0};
+    i32 thrust=(code>>19)&63;
+    i32 vertical=if((thrust&1)!=0){-1}else{if((thrust&2)!=0){1}else{0}};
+    i32 along=if((thrust&4)!=0){-1}else{if((thrust&8)!=0){1}else{0}};
+    i32 side=if((thrust&16)!=0){-1}else{if((thrust&32)!=0){1}else{0}};
+    i32 flags=flag(aim!=0)|(flag(route)<<1)|(flag((code&1024)!=0)<<2)|(flag((code&2048)!=0)<<3)
+        |(flag((code&4096)!=0)<<4)|(flag((code&8192)!=0)<<5)|(flag((code&32768)!=0)<<6)
+        |(flag(push_ready&&(code&1024)!=0)<<7);
+    if(lane==0){message}else{if(lane==1){section}else{if(lane==2){marker}else{if(lane==3){action}
+        else{if(lane==4){vertical}else{if(lane==5){along}else{if(lane==6){side}else{flags}}}}}}}
+};
 i32(i32,i32,i32) equipment=fn(code,deck,leg){
     if((code&1024)==0||((code>>16)&7)>5){0}else{
         i32 section=(code>>16)&7;

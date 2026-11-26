@@ -1,4 +1,4 @@
-// The order is Orbital's hud_code message contract. This module only renders English copy.
+// Indices are resolved Wosy HUD presentation values. This module only localizes text and glyphs.
 const matchSpeed="Tap thrust opposite your drift. Releasing thrust does not stop you.";
 const holding="Holding station.";
 const rails=["Airlock rail","Scaffold rail","Cargo brace"];
@@ -59,37 +59,31 @@ const messages=[
  ["Square up to the hatch","Keep facing the handle until the suit lines up with it.","Line up","Face the handle"]
 ];
 const sections=["TRAINING 01 / HANDRAIL","EVA / 1 OF 3","EVA / 2 OF 3","EVA / 3 OF 3","EVA / CARGO ALIGNMENT","EVA / AIRLOCK RETURN","ORBIT / REENTRY"];
-const arrow=["+","+","+","+","→","←","↑","↓"];
-function counter(face){
- if(face&1)return "Aim below drift";
- if(face&2)return "Aim above drift";
- const along=face&4?"back":face&8?"forward":"",side=face&16?"left":face&32?"right":"";
- return "Thrust "+[along,side].filter(Boolean).join(" + ");
+const markers=["+","+","+","+","→","←","↑","↓","❯","❮"];
+const signedAim=["","Look right","Look left","Look up","Look down"];
+function counter(vertical,along,side,action){
+ if(vertical)return "Aim "+(vertical<0?"below":"above")+" drift";
+ return action+" "+[along<0?"back":along>0?"forward":"",side<0?"left":side>0?"right":""].filter(Boolean).join(" + ");
 }
-export function hudText(code,leg,showFirstLookHint,copyIntent){
- const entry=messages[code&63], aim=(code>>>6)&7, route=Boolean(code&512);
- let [objective,tip,action,short=""]=typeof entry==="function"?entry(rails[leg],showFirstLookHint):entry;
- if((code&63)===15&&aim>=4){
-  action=["Look right","Look left","Look up","Look down"][aim-4];
- }
+export function hudText(row,leg){
+ const [, , , , ,showFirstLookHint,copyIntent]=row;
+ const [message,section,marker,aimAction,vertical,along,side,flags]=row.subarray(15);
+ const entry=messages[message];
+ let [objective,tip,action,short=""]=typeof entry==="function"?entry(rails[leg],Boolean(showFirstLookHint)):entry;
+ if(aimAction)action=signedAim[aimAction];
  if(copyIntent===1){
-  const direction=code>>>19;
-  short=counter(direction);
-  if(direction&63){
-   tip=(direction&3?short+", then thrust.":short+" to slow down.")+" Releasing thrust does not stop you.";
-  }
+  short=counter(vertical,along,side,"Thrust");
+  if(vertical||along||side)tip=(vertical?short+", then thrust.":short+" to slow down.")+" Releasing thrust does not stop you.";
  }
  if(copyIntent===2){
-  const local=code>>>19;
-  if(local&1)short="Aim down, then pulse";
-  else if(local&2)short="Aim up, then pulse";
-  else if(local&60)short=counter(local).replace("Thrust ","Pulse ");
+  if(vertical)short=vertical<0?"Aim down, then pulse":"Aim up, then pulse";
+  else if(along||side)short=counter(0,along,side,"Pulse");
   tip=short+". Use a short pulse, then match speed.";
  }
  if(copyIntent===3){tip="Propellant depleted. Existing drift continues.";short="Propellant depleted";}
- return {objective,tip,action,short,section:sections[(code>>>16)&7],
-   aim:Boolean(aim),route,marker:route?(aim===4?"❯":"❮"):arrow[aim],
-   interact:Boolean(code&1024),canPush:(code&63)===2||(code&63)===35,console:Boolean(code&2048),coast:Boolean(code&4096),far:Boolean(code&8192),burn:Boolean(code&32768)};
+ return {objective,tip,action,short,section:sections[section],marker:markers[marker],
+  aim:Boolean(flags&1),route:Boolean(flags&2),interact:Boolean(flags&4),console:Boolean(flags&8),
+  coast:Boolean(flags&16),far:Boolean(flags&32),burn:Boolean(flags&64),canPush:Boolean(flags&128)};
 }
 
 const flightStatuses=["FREE FLOAT","DRIFT","ANCHORED","TAKING HOLD","RELEASING","THRUST","HULL CONTACT"];

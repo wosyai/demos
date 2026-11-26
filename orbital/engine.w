@@ -2284,7 +2284,10 @@ unit(f64,i32,i32,i32) quality_adapt=fn(period,live,full,software){
 };
 unit(f64,f64,f64,i32,i32) quality_plan=fn(w,h,dpr,full,software){render_policy.plan(w,h,dpr,full==1,software==1);};
 i32(i32,i32,i32,i32) quality_shadow=fn(full,hardware,coarse,maximum){render_policy.shadow(full==1,hardware==1,coarse==1,maximum)};
-f64[15] hud_view_row=[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0];
+f64[23] hud_view_row=[
+    0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
+    0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+];
 unit(i32) equipment_activate=fn(target){
     if(target!=0&&target==hud.equipment(hud_code(),deck,station_leg)){control.action(0);};
 };
@@ -2317,7 +2320,16 @@ i32() hud_view=fn{
         hud_view_row[13]=hud.target_geometry(target,4,anchor_y,anchor_z);
         hud_view_row[14]=hud.target_geometry(target,5,anchor_y,anchor_z);
     };
-    unsafe {host.hud_view(core.pointer_cast<*?u8>(&?hud_view_row[0]),15);};
+    bool push_ready=rail_push_ready();
+    hud_view_row[15]=core.sint_to_float<f64>(hud.presentation_field(code,0,push_ready));
+    hud_view_row[16]=core.sint_to_float<f64>(hud.presentation_field(code,1,push_ready));
+    hud_view_row[17]=core.sint_to_float<f64>(hud.presentation_field(code,2,push_ready));
+    hud_view_row[18]=core.sint_to_float<f64>(hud.presentation_field(code,3,push_ready));
+    hud_view_row[19]=core.sint_to_float<f64>(hud.presentation_field(code,4,push_ready));
+    hud_view_row[20]=core.sint_to_float<f64>(hud.presentation_field(code,5,push_ready));
+    hud_view_row[21]=core.sint_to_float<f64>(hud.presentation_field(code,6,push_ready));
+    hud_view_row[22]=core.sint_to_float<f64>(hud.presentation_field(code,7,push_ready));
+    unsafe {host.hud_view(core.pointer_cast<*?u8>(&?hud_view_row[0]),23);};
     code
 };
 unit() celestial_profile=fn{sky_art.publish();};

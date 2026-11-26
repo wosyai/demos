@@ -54,7 +54,7 @@ engine=new WebAssembly.Instance(wasm,{orbital:{
  avatar_rig(p,n){assert.equal(p%8,0);rigRow=new Float64Array(engine.memory.buffer,p,n);},
  material_art(p,n){assert.equal(n,113);assert.equal(p%8,0);materialArt=new Float64Array(engine.memory.buffer,p,n).slice();},
  sky_art(p,n){assert.equal(n,37);assert.equal(p%8,0);skyArt=new Float64Array(engine.memory.buffer,p,n).slice();},
- hud_view(p,n){assert.equal(n,15);assert.equal(p%8,0);hudView=new Float64Array(engine.memory.buffer,p,n).slice();},
+ hud_view(p,n){assert.equal(n,23);assert.equal(p%8,0);hudView=new Float64Array(engine.memory.buffer,p,n).slice();},
  render_budget(p,n){assert.equal(n,3);assert.equal(p%8,0);rendererPlan=new Float64Array(engine.memory.buffer,p,n).slice();},
  earth_tiles(p,n){assert.equal(n,19);assert.equal(p%8,0);earthTiles=new Float64Array(engine.memory.buffer,p,n).slice();},
  entry_shell(p,n){assert.equal(n,6144);entryMesh=read(p,n);},
@@ -115,7 +115,17 @@ function validateWaypoint(){
 }
 const captureFrames=[];
 const statusIs=(expected)=>{engine.hud_view();assert.equal(flightStatusText(hudView[7]),expected);};
-const hint=()=>{const code=engine.hud_view();assert.equal(code,engine.hud_code());return hudText(code,state[16],Boolean(hudView[5]),hudView[6]);};
+function hint(){
+ const code=engine.hud_view();assert.equal(code,engine.hud_code());
+ // Historical packet is test-only oracle; production host resolves no Wosy game decisions.
+ const message=code&63,aim=(code>>>6)&7,route=Boolean(code&512),dir=code>>>19;
+ const signed=(neg,pos)=>dir&neg?-1:dir&pos?1:0;
+ const legacyFlags=Boolean(aim)+route*2+Boolean(code&1024)*4+Boolean(code&2048)*8+
+  Boolean(code&4096)*16+Boolean(code&8192)*32+Boolean(code&32768)*64+(message===2||message===35?128:0);
+ assert.deepEqual([...hudView.slice(15)],[message,(code>>>16)&7,route?(aim===4?8:9):aim,
+  message===15&&aim>=4?aim-3:0,signed(1,2),signed(4,8),signed(16,32),legacyFlags]);
+ return hudText(hudView,state[16]);
+}
 function hudIs(objective,interact,marker="+"){
  const view=hint();
  assert.equal(view.objective,objective);assert.equal(view.interact,interact);assert.equal(view.marker,marker);

@@ -695,7 +695,7 @@ function render(alpha) {
  if(eva&&upgradedSky&&earthReady&&active)fineEarth.update(h);
  const draw=engine.draw_plan(worldVersion,w,h,Number(Boolean(apolloBody)),Number(upgradedSky));
  if(draw===0)return;
- if(hudRow)equipmentRow.set(hudRow);
+ if(hudRow)equipmentRow.set(hudRow.subarray(0,15));
  const holdingAngle=draw===2;
  if(eva&&shadowDirty){
    shadowDirty=false;
@@ -767,9 +767,9 @@ function render(alpha) {
 let lastEquipmentId=0,lastHudActive=false,lastCanCoast=false;
 function hud(){
  const eva=frame[15]===1;
- const hudCode=engine.hud_view();
- const [speed,driftAngle,showDrift,isEntry,lost,firstLookHint,copyIntent,flightStatus]=hudRow;
- const view=hudText(hudCode,frame[16],Boolean(firstLookHint),copyIntent);
+ engine.hud_view();
+ const [speed,driftAngle,showDrift,isEntry,lost,,,flightStatus]=hudRow;
+ const view=hudText(hudRow,frame[16]);
  if(hudRow[8]!==lastEquipmentId||active!==lastHudActive){
   lastEquipmentId=hudRow[8];lastHudActive=active;worldVersion++;
  }
@@ -1033,7 +1033,7 @@ try{
    avatar_rig(p,n){rigRow=new Float64Array(engine.memory.buffer,p,n);},
    material_art(p,n){if(n!==113)throw Error("Unexpected station material profile");materialArt=new Float64Array(engine.memory.buffer,p,n);},
    sky_art(p,n){if(n!==37)throw Error("Unexpected celestial profile");skyArt=new Float64Array(engine.memory.buffer,p,n);},
-   hud_view(p,n){if(n!==15)throw Error("Unexpected HUD projection");hudRow=new Float64Array(engine.memory.buffer,p,n);},
+   hud_view(p,n){if(n!==23)throw Error("Unexpected HUD projection");hudRow=new Float64Array(engine.memory.buffer,p,n);},
    render_budget(p,n){if(n!==3)throw Error("Unexpected renderer plan");renderPlan=new Float64Array(engine.memory.buffer,p,n);},
    earth_tiles(p,n){if(n!==19)throw Error("Unexpected globe tile projection");tileRow=new Float64Array(engine.memory.buffer,p,n);},
    entry_shell(p,n){if(n!==6144)throw Error("Unexpected entry shell");entryMesh=new Float32Array(engine.memory.buffer,p,n);},
