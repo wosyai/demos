@@ -1373,8 +1373,6 @@ f32 body_yaw=0.0; f32 body_pitch=0.0;
 f32 hold_yaw=0.0;f32 hold_pitch=0.0;
 f32 anchored_head_offset=0.0;
 f32 prior_head_offset=0.0;
-f32 free_look_offset=0.0;
-f32 prior_free_look_offset=0.0;
 f64 forward_marker_x=0.0;
 f64 forward_marker_y=0.0;
 f64 forward_marker_opacity=1.0;
@@ -1599,7 +1597,7 @@ unit(f32) descend_atmosphere=fn(d){
 unit() reset = fn {
     present_history=false;
     anchored_head_offset=0.0;prior_head_offset=0.0;anchored_head_pitch=0.0;
-    free_look_offset=0.0;prior_free_look_offset=0.0;forward_marker_handoff=false;
+    forward_marker_handoff=false;
     if(deck==0){third_person=false;chase_blend=0.0;};
     pilot_x=0.0; pilot_y=0.0; pilot_z=0.37;vx=0.0;vy=0.0;vz=0.0;yaw=if(deck==0){0.13}else{-0.03};pitch=if(deck==0){-0.035}else{-0.095};timer=0.0;
     if(reentry_exercise){
@@ -1753,7 +1751,6 @@ i32() hud_code = fn{
 unit(f32,i32,f32,f32) tick = fn(dt,keys,look_x,look_y) {
     prior_state=state;present_history=dt>0.0;
     prior_head_offset=anchored_head_offset;
-    prior_free_look_offset=free_look_offset;
     bool before_anchored=deck==1&&!reentry_exercise&&mode==2;
     if(!ready){if(deck==0){draw();}else{eva_room();};ready=true;};
     f32 d=limit(dt,0.0,0.032);
@@ -1956,19 +1953,16 @@ unit(f32,i32,f32,f32) tick = fn(dt,keys,look_x,look_y) {
             anchored_head_pitch=pitch;
         }else{
             f32 head_input=limit(look_y,-2.20*d,2.20*d);
-            anchored_head_pitch=limit(anchored_head_pitch+head_input,body_pitch-0.86,body_pitch+0.37);
+            f32 visor_side=wrap_yaw(yaw-body_yaw);
+            f32 aperture_t=limit((abs_cell(visor_side)-0.22)/0.15,0.0,1.0);
+            f32 visor_drop=0.45-0.03*aperture_t*aperture_t*(3.0-2.0*aperture_t);
+            anchored_head_pitch=limit(anchored_head_pitch+head_input,body_pitch-visor_drop,body_pitch+0.37);
             anchored_head_pitch=limit(anchored_head_pitch,-1.48,1.48);
         };
         anchored_head_offset=anchored_head_pitch-pitch;
     }else{
         anchored_head_offset=anchored_head_offset-limit(anchored_head_offset,-1.8*d,1.8*d);
     };
-    f32 free_glance_goal=0.0;
-    if(deck==1&&!reentry_exercise&&mode==0&&grip<=0.00001&&command_sq<=0.0001){
-        f32 free_glance_deep=limit((0.0-pitch-0.97)/0.40,0.0,1.0);
-        free_glance_goal=limit(body_pitch-0.58-pitch,-0.49,0.0)*free_glance_deep*free_glance_deep*(3.0-2.0*free_glance_deep);
-    };
-    free_look_offset=free_look_offset+limit(free_glance_goal-free_look_offset,-2.0*d,2.0*d);
     state[3]=yaw;state[4]=pitch;
     state[21]=body_yaw;state[22]=body_pitch;
     state[23]=thrust_x;state[24]=thrust_y;state[25]=thrust_z;
@@ -2042,7 +2036,7 @@ unit(f64,f64,i32) project_visual=fn(alpha,aspect,avatar){
     f64 target=if(chase){1.0}else{0.0};
     if(!presentation_paused){
         if(chase_blend!=target&&(chase_blend==0.0||chase_blend==1.0)){
-            forward_marker_handoff=body&&avatar==2&&!entry&&(free_look_offset!=0.0||prior_free_look_offset!=0.0);
+            forward_marker_handoff=body&&avatar==2&&!entry&&head_tilt!=tilt;
         };
         if(projection.abs(chase_blend-target)>0.005){chase_blend=chase_blend+(target-chase_blend)*0.22;}else{chase_blend=target;};
         if(chase_blend==0.0||chase_blend==1.0){forward_marker_handoff=false;};
@@ -2065,33 +2059,19 @@ unit(f64,f64,i32) project_visual=fn(alpha,aspect,avatar){
         pitch_out=tilt+(pitch_goal-tilt)*chase_blend;
     };
     if(head_tilt!=tilt){pitch_out=pitch_out+(head_tilt-tilt)*(1.0-chase_blend);};
-    f64 actual_free_glance=0.0;
     if(body&&avatar==2&&!entry&&chase_blend<1.0){
-        f64 extra_glance=core.float_extend<f64>(free_look_offset);
-        if(blend){
-            f64 glance_prev=core.float_extend<f64>(prior_free_look_offset);
-            extra_glance=glance_prev+(extra_glance-glance_prev)*alpha;
-        };
-        f64 glance=extra_glance*(1.0-chase_blend);
-        if(glance!=0.0){
-            f64 bounded_look=projection.clamp(head_tilt+glance,presentation[22]-0.86,presentation[22]+0.60);
-            actual_free_glance=bounded_look-head_tilt;
-            pitch_out=pitch_out+actual_free_glance;head_tilt=bounded_look;
-            presentation[4]=head_tilt;
-        };
-        f64 down=projection.clamp((0.0-head_tilt-0.32)/0.74,0.0,1.0);
-        f64 seat=(0.205+0.055*down*down*(3.0-2.0*down))*(1.0-chase_blend);
-        f64 body_tilt=presentation[22];f64 body_heading=presentation[21];
-        f64 ft=projection.cos(body_tilt);
-        f64 ex=projection.sin(body_heading)*ft*seat;
-        f64 ey=projection.sin(body_tilt)*seat;
-        f64 ez=-projection.cos(body_heading)*ft*seat;
-        f64 cleared=core.float_extend<f64>(camera_clip(core.float_trunc<f32>(x),core.float_trunc<f32>(y),core.float_trunc<f32>(z),core.float_trunc<f32>(x+ex),core.float_trunc<f32>(y+ey),core.float_trunc<f32>(z+ez)));
-        cx=cx+ex*cleared;cy=cy+ey*cleared;cz=cz+ez*cleared;
+        avatar_kinematics.Vec delta_eye=avatar_kinematics.apollo_eye_delta(presentation[21],presentation[22],heading,head_tilt);
+        f64 ex=delta_eye.x*(1.0-chase_blend);
+        f64 ey=delta_eye.y*(1.0-chase_blend);
+        f64 ez=delta_eye.z*(1.0-chase_blend);
+        cx=cx+ex;cy=cy+ey;cz=cz+ez;
     };
     bool exterior_avatar=body&&(chase||chase_blend>0.03)&&projection.norm(cx-x,cy-y,cz-z)>0.8;
     f64 relief=if(eva&&aspect<0.72){1.40+0.45*projection.clamp((aspect-0.49)/0.23,0.0,1.0)}else{1.90};
     f64 focus=projection.clamp((if(eva){relief}else{1.8})*aspect,0.0,if(eva){1.42}else{1.45});
+    if(body&&avatar==2&&!entry&&focus<0.92){
+        focus=focus+(0.92-focus)*(1.0-chase_blend);
+    };
     f64 orbit_blend=if(entry||state[29]==1.0){1.0}else{projection.clamp((projection.norm(x,y,z)-1000.0)/18000.0,0.0,1.0)};
     f64 near=1.0-orbit_blend;
     f64 n=projection.norm(x,6761000.0+y,z);
@@ -2114,7 +2094,7 @@ unit(f64,f64,i32) project_visual=fn(alpha,aspect,avatar){
     presentation[59]=if(presentation[58]>0.01&&heat_load<1.0){1.0}else{0.0};
     project_waypoint();
     forward_marker_x=0.0;forward_marker_y=0.0;forward_marker_opacity=1.0;
-    bool project_forward=chase_blend==0.0&&actual_free_glance!=0.0;
+    bool project_forward=chase_blend==0.0&&head_tilt!=tilt;
     if(body&&avatar==2&&!entry&&forward_marker_handoff){
         if(chase_blend<0.68){
             project_forward=true;
@@ -2247,6 +2227,7 @@ i32(i32,i32,i32,i32,i32) draw_plan=fn(epoch,width,height,avatar,sky){
     bool evolving=!presentation_paused&&presentation[59]==1.0;
     bool same=drew_view&&draw_epoch==epoch&&draw_width==width&&draw_height==height&&
         last_view[41]==presentation[41]&&last_view[42]==presentation[42]&&
+        last_view[44]==presentation[44]&&last_view[45]==presentation[45]&&
         projection.abs(last_view[38]-presentation[38])<0.00002&&projection.abs(last_view[39]-presentation[39])<0.00002&&
         projection.abs(last_view[40]-presentation[40])<0.00002&&last_view[8]==presentation[8]&&last_view[20]==presentation[20]&&
         last_view[10]==presentation[10]&&drew_avatar==equipped&&(!equipped||matching_movement(0))&&!sky_moved&&!evolving;
@@ -2272,6 +2253,7 @@ i32(i32,i32,i32,i32,i32,i32,i32) sky_plan=fn(width,height,upgraded,photo,stars,m
         projection.abs(cached_projection[41]-presentation[41])<0.001&&
         projection.abs(cached_projection[42]-presentation[42])<0.001&&
         cached_projection[15]==presentation[15]&&cached_photo==photo&&cached_projection[47]==presentation[47]&&
+        cached_projection[44]==presentation[44]&&cached_projection[45]==presentation[45]&&
         cached_tiles==tile_epoch&&(!orbit_needed||(cached_star==stars&&cached_moon==moon&&
             projection.abs(cached_projection[48]-presentation[48])<0.0006&&keep_planet(49)));
     if(same){0}else{

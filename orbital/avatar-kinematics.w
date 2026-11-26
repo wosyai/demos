@@ -19,6 +19,15 @@ Axes(f64,f64) facing=fn(yaw,pitch){
     f64 sy=math.sin(yaw);f64 cy=math.cos(yaw);f64 sp=math.sin(pitch);f64 cp=math.cos(pitch);
     Axes value={.forward=v(sy*cp,sp,-cy*cp);.up=v(-sy*sp,cp,cy*sp);.right=v(cy,0.0,sy);};value
 };
+Vec(f64,f64,f64,f64) apollo_eye_delta=fn(byaw,bpitch,hyaw,hpitch){
+    Axes torso=facing(byaw,bpitch);Axes gaze=facing(hyaw,hpitch);
+    Vec hinge=add(mul(torso.forward,0.115),mul(torso.up,-0.097));
+    Vec rest=add(mul(torso.forward,0.090),mul(torso.up,0.100));
+    Vec bend=cross(torso.forward,gaze.forward);
+    Vec first=cross(bend,rest);
+    f64 denom=1.0+dot(torso.forward,gaze.forward);
+    Vec optical_result=if(denom<0.000001){hinge}else{add(hinge,add(rest,add(first,mul(cross(bend,first),1.0/denom))))};optical_result
+};
 Vec(Vec,f64,f64,f64) radial=fn(center,x,r,theta){add(center,v(x,r*math.cos(theta),r*math.sin(theta)))};
 Grip(Vec,Vec,f64,f64,bool) grip=fn(eye,anchor,weight,stage,valid){
     bool active=valid&&weight>=0.004;

@@ -56,10 +56,11 @@ vec3 loadNormal(float code){
  if(n.z<0.)n.xy=(1.-abs(v.yx))*sign(v.xy+1e-6);
  return normalize(n);
 }
+uniform float clipBias;
 void main(){
  vec3 actual=assetPoint(pos);
  vec3 p=toEye(actual);
- gl_Position=vec4(p.x*optics.x,p.y*optics.y,-1.002*p.z-.10,-p.z);
+ gl_Position=vec4(p.x*optics.x,p.y*optics.y,-1.002*p.z-clipBias,-p.z);
  surface=color.rgb;world=actual;material=armPose.w<0.?mat:vec2(.92,.181);
  fittedNormal=armPose.w<0.?(mat.x<0.?loadNormal(mat.x):vec3(0.)):mix(openNormal,closedNormal,armPose.w);
  uint uvHigh=uint(round(color.a*255.));
@@ -517,7 +518,7 @@ function program(a,b) {
  }
  gl.linkProgram(p);
  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(p));
- return {p, eye:gl.getUniformLocation(p,"eye"), basis:gl.getUniformLocation(p,"basis"), optics:gl.getUniformLocation(p,"optics"), roll:gl.getUniformLocation(p,"roll"), eva:gl.getUniformLocation(p,"eva"), photo:gl.getUniformLocation(p,"photo"), earth:gl.getUniformLocation(p,"earthMap"),starMap:gl.getUniformLocation(p,"starMap"),starReady:gl.getUniformLocation(p,"starReady"),moonMap:gl.getUniformLocation(p,"moonMap"),moonReady:gl.getUniformLocation(p,"moonReady"),upgradedSky:gl.getUniformLocation(p,"upgradedSky"),orbitCenter:gl.getUniformLocation(p,"orbitCenter"),earthAngle:gl.getUniformLocation(p,"earthAngle"), backdrop:gl.getUniformLocation(p,"backdrop"), sunMap:gl.getUniformLocation(p,"sunMap"),armPose:gl.getUniformLocation(p,"armPose"),armSurfaceReady:gl.getUniformLocation(p,"armSurfaceReady"),panelStampReady:gl.getUniformLocation(p,"panelStampReady"),pressureStampReady:gl.getUniformLocation(p,"pressureStampReady"),fasciaStampReady:gl.getUniformLocation(p,"fasciaStampReady"), renderFraction:gl.getUniformLocation(p,"renderFraction"),surfaceTile:gl.getUniformLocation(p,"surfaceTile"), routeLens:gl.getUniformLocation(p,"routeLens"), routeReach:gl.getUniformLocation(p,"routeReach"), detailedShadow:gl.getUniformLocation(p,"detailedShadow"),lightingUpgrade:gl.getUniformLocation(p,"lightingUpgrade"),practicalLighting:gl.getUniformLocation(p,"practicalLighting"),earthLighting:gl.getUniformLocation(p,"earthLighting"),gripContact:gl.getUniformLocation(p,"gripContact"),gripRadius:gl.getUniformLocation(p,"gripRadius")};
+ return {p, clipBias:gl.getUniformLocation(p,"clipBias"), eye:gl.getUniformLocation(p,"eye"), basis:gl.getUniformLocation(p,"basis"), optics:gl.getUniformLocation(p,"optics"), roll:gl.getUniformLocation(p,"roll"), eva:gl.getUniformLocation(p,"eva"), photo:gl.getUniformLocation(p,"photo"), earth:gl.getUniformLocation(p,"earthMap"),starMap:gl.getUniformLocation(p,"starMap"),starReady:gl.getUniformLocation(p,"starReady"),moonMap:gl.getUniformLocation(p,"moonMap"),moonReady:gl.getUniformLocation(p,"moonReady"),upgradedSky:gl.getUniformLocation(p,"upgradedSky"),orbitCenter:gl.getUniformLocation(p,"orbitCenter"),earthAngle:gl.getUniformLocation(p,"earthAngle"), backdrop:gl.getUniformLocation(p,"backdrop"), sunMap:gl.getUniformLocation(p,"sunMap"),armPose:gl.getUniformLocation(p,"armPose"),armSurfaceReady:gl.getUniformLocation(p,"armSurfaceReady"),panelStampReady:gl.getUniformLocation(p,"panelStampReady"),pressureStampReady:gl.getUniformLocation(p,"pressureStampReady"),fasciaStampReady:gl.getUniformLocation(p,"fasciaStampReady"), renderFraction:gl.getUniformLocation(p,"renderFraction"),surfaceTile:gl.getUniformLocation(p,"surfaceTile"), routeLens:gl.getUniformLocation(p,"routeLens"), routeReach:gl.getUniformLocation(p,"routeReach"), detailedShadow:gl.getUniformLocation(p,"detailedShadow"),lightingUpgrade:gl.getUniformLocation(p,"lightingUpgrade"),practicalLighting:gl.getUniformLocation(p,"practicalLighting"),earthLighting:gl.getUniformLocation(p,"earthLighting"),gripContact:gl.getUniformLocation(p,"gripContact"),gripRadius:gl.getUniformLocation(p,"gripRadius")};
 }
 const coarseShadow=matchMedia("(pointer:coarse)").matches;
 const maxShadow=gl?gl.getParameter(gl.MAX_TEXTURE_SIZE):1024;
@@ -670,6 +671,9 @@ function render(alpha) {
  const optics=visual.subarray(44,46),roll=visual.subarray(46,48);
  const orbit={spin:visual[48],center:visual.subarray(49,53)};
  const eva=pose[15]===1,body=eva&&apolloBody,entry=pose[32]===1;
+ // Share the exact depth mapping between the station and stock suit so that
+ // the original visor/near shell occludes naturally from the registered eye.
+ const clipBias=apolloBody?.stockEyeSeat&&eva&&!entry&&!drawBody ? .01998 : .10;
  const heated=visual[58]>.01;
  if(eva&&upgradedSky&&earthReady&&active)fineEarth.update(h);
  const draw=engine.draw_plan(worldVersion,w,h,Number(Boolean(apolloBody)),Number(upgradedSky));
@@ -692,7 +696,7 @@ function render(alpha) {
  }
  if(holdingAngle)bakeBackdrop(bind,w,h,orbit);
  gl.clear(gl.DEPTH_BUFFER_BIT);
- gl.enable(gl.DEPTH_TEST);bind(scene);
+ gl.enable(gl.DEPTH_TEST);bind(scene);gl.uniform1f(scene.clipBias,clipBias);
  gl.uniform1i(scene.practicalLighting,Number(upgradedPractical));gl.uniform1i(scene.lightingUpgrade,Number(upgradedSky));gl.uniform4fv(scene.earthLighting,orbit.center);
  // Both suit solvers use this same Wosy-derived rail anchor; shade only in contact.
  const grip=body?avatarRig.stationGrip(pose):null;
@@ -708,7 +712,7 @@ function render(alpha) {
   const relative=entry?{...camera,eye:camera.eye.map((n,i)=>n-pose[i])}:camera;
   let suitPose=pose;
   if(entry){suitPose=pose.slice();suitPose[0]=0;suitPose[1]=0;suitPose[2]=0;}
-  apolloBody.draw(suitPose,{camera:relative,optics,thirdPerson:drawBody,roll,sunDirection:orbitalSun,contact:grip,stationSun:apolloModelActive&&!entry,earthLighting:upgradedSky?orbit.center:null,shadowDetail:detailed,renderFraction:fraction});
+  apolloBody.draw(suitPose,{camera:relative,optics,thirdPerson:drawBody,roll,sunDirection:orbitalSun,contact:grip,stationSun:apolloModelActive&&!entry,earthLighting:upgradedSky?orbit.center:null,shadowDetail:detailed,renderFraction:fraction,clipBias});
  }
  // The background lies behind the mesh; early depth rejects the sky and globe
  // across the station rather than shading those pixels and drawing over them.

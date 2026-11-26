@@ -1,4 +1,3 @@
-import {originalHelmetWall,originalShellJoint} from "./helmet-interior.mjs";
 const add=(a,b)=>a.map((x,i)=>x+b[i]), sub=(a,b)=>a.map((x,i)=>x-b[i]);
 const mul=(v,k)=>v.map(x=>x*k), dot=(a,b)=>a.reduce((s,x,i)=>s+x*b[i],0);
 const cross=(a,b)=>[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];
@@ -278,6 +277,7 @@ uniform vec3 eye;
 uniform vec4 basis;
 uniform vec2 optics;
 uniform vec2 roll;
+uniform float clipBias;
 out vec2 tex;
 out vec3 n;
 out vec3 world;
@@ -288,7 +288,7 @@ void main(){
  vec3 p=world-eye;
  vec3 q=vec3(basis.x*p.x+basis.y*p.z,p.y,-basis.y*p.x+basis.x*p.z);
  vec3 a=vec3(q.x,basis.z*q.y+basis.w*q.z,-basis.w*q.y+basis.z*q.z);
- gl_Position=vec4((roll.x*a.x+roll.y*a.y)*optics.x,(-roll.y*a.x+roll.x*a.y)*optics.y,-1.002*a.z-.1,-a.z);
+ gl_Position=vec4((roll.x*a.x+roll.y*a.y)*optics.x,(-roll.y*a.x+roll.x*a.y)*optics.y,-1.002*a.z-clipBias,-a.z);
  tex=uv;n=mat3(skin)*normal;surfacePoint=pos;surfaceColor=baked?bakedColor:baseColor;
 }`;
 const fragment=sunVisibility=>`#version 300 es
@@ -321,7 +321,7 @@ void main(){
  if(firstPerson && !stockEyeSeat && distance(world,eye)<.20)discard;
  if(interiorOptic>0){
    float incidence=abs(dot(normalize(eye-world),normalize(n)));
-   float alpha=interiorOptic==2 ? .12 : .065*smoothstep(.58,.97,1.-incidence);
+   float alpha=.065*smoothstep(.58,.97,1.-incidence);
    pix=vec4(mix(vec3(.22,.30,.34),surfaceColor.rgb,.23),alpha);
    return;
  }
@@ -376,33 +376,15 @@ function firstPersonSleeve(asset,part,indices){
  }
  return new indices.constructor(keep);
 }
-function bindHelmetWall(gl,template,wall){
- const {v,i}=wall;
- const vao=gl.createVertexArray();gl.bindVertexArray(vao);
- gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());gl.bufferData(gl.ARRAY_BUFFER,v,gl.STATIC_DRAW);
- for(const [loc,n,offset] of [[0,3,0],[1,3,12],[2,2,24]]){
-  gl.enableVertexAttribArray(loc);gl.vertexAttribPointer(loc,n,gl.FLOAT,false,32,offset);
- }
- const joints=new Uint8Array(v.length/2),weights=new Float32Array(v.length/2);
- for(let k=0;k<joints.length;k+=4){joints[k]=originalShellJoint;weights[k]=1;}
- gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());gl.bufferData(gl.ARRAY_BUFFER,joints,gl.STATIC_DRAW);
- gl.enableVertexAttribArray(3);gl.vertexAttribIPointer(3,4,gl.UNSIGNED_BYTE,0,0);
- gl.bindBuffer(gl.ARRAY_BUFFER,gl.createBuffer());gl.bufferData(gl.ARRAY_BUFFER,weights,gl.STATIC_DRAW);
- gl.enableVertexAttribArray(4);gl.vertexAttribPointer(4,4,gl.FLOAT,false,0,0);
- const elements=gl.createBuffer();gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,elements);gl.bufferData(gl.ELEMENT_ARRAY_BUFFER,i,gl.STATIC_DRAW);
- return {...template,vao,elements,len:i.length,kind:gl.UNSIGNED_SHORT};
-}
-
 export async function loadApolloBody(gl,url,rig,sunVisibility){
  const response=await fetch(url);
  if(!response.ok)throw Error('Apollo mesh: '+response.status);
  const raw=await response.arrayBuffer();
- // The supplemental geometry is registered only to this exact stock skin.
+ // The Wosy eye registration belongs only to this exact original skin.
  const hash=await globalThis.crypto?.subtle?.digest("SHA-256",raw).catch(()=>null);
  const known=hash&&Array.from(new Uint8Array(hash),x=>x.toString(16).padStart(2,"0")).join("")===
    "eb11bcc9a7c4817035dddc5cb6f85e979e4ea2cce9f283761e03f6a6012c79c1";
  const asset=openApolloGLB(raw), pose=new ApolloPose(asset,rig);
- let wall=null;
  const textures=[];
  const TEX=8;
  for(let i=0;i<asset.json.images.length;i++){
@@ -438,17 +420,14 @@ export async function loadApolloBody(gl,url,rig,sunVisibility){
    const tex=mat.baseColorTexture?textures[asset.json.textures[mat.baseColorTexture.index].source]:null;
    const mesh={name:node.name,vao,first:sleeveParts.has(node.name),elements,nearElements,nearCount,len:indices.length,kind:indices instanceof Uint16Array?gl.UNSIGNED_SHORT:gl.UNSIGNED_INT,tex,color:mat.baseColorFactor??[1,1,1,1]};
    meshes.push(mesh);
-   if(known&&mesh.name==="helmet_shell"&&indices.length===1428&&
-      asset.json.nodes[asset.json.skins[0].joints[originalShellJoint]]?.name==="Chest")
-    wall=bindHelmetWall(gl,mesh,originalHelmetWall());
   }
  }
- return renderAvatar(gl,pose,meshes,false,sunVisibility,wall);
+ return renderAvatar(gl,pose,meshes,false,sunVisibility,Boolean(known));
 }
 
-function renderAvatar(gl,pose,meshes,hasEquipment=false,sunVisibility,wall=null){
+function renderAvatar(gl,pose,meshes,hasEquipment=false,sunVisibility,stock=false){
  const p=program(gl,sunVisibility);
- const U=Object.fromEntries(['eye','basis','optics','roll','sunDirection','firstPerson','stockEyeSeat','plume','interiorOptic','baseColor','baked','mapped','albedo'].map(n=>[n,gl.getUniformLocation(p,n)]));
+ const U=Object.fromEntries(['eye','basis','optics','roll','clipBias','sunDirection','firstPerson','stockEyeSeat','plume','interiorOptic','baseColor','baked','mapped','albedo'].map(n=>[n,gl.getUniformLocation(p,n)]));
  const S=sunVisibility?Object.fromEntries(['stationSun','sunMap','detailedShadow','renderFraction','earthLighting'].map(n=>[n,gl.getUniformLocation(p,n)])):null;
  const unlitEarth=new Float32Array(4);
  const UBO=3, TEX=8, palette=gl.createBuffer();
@@ -459,8 +438,8 @@ function renderAvatar(gl,pose,meshes,hasEquipment=false,sunVisibility,wall=null)
  gl.bindVertexArray(null);
  let last=null,visor=null;
  return {
-  stockEyeSeat:Boolean(wall),
-  draw(frame,{camera, optics, thirdPerson=false, sunDirection=[.5674,.611,.5521], roll=[1,0],stationSun=false,earthLighting,shadowDetail=false,renderFraction=1,...opts}){
+  stockEyeSeat:stock,
+  draw(frame,{camera, optics, thirdPerson=false, sunDirection=[.5674,.611,.5521], roll=[1,0],stationSun=false,earthLighting,shadowDetail=false,renderFraction=1,clipBias=.1,...opts}){
    last=pose.solve(frame,opts);visor=null;
    gl.useProgram(p);gl.uniform3fv(U.eye,camera.eye);
    if(S){
@@ -472,17 +451,16 @@ function renderAvatar(gl,pose,meshes,hasEquipment=false,sunVisibility,wall=null)
     }
    }
    gl.uniform4f(U.basis,Math.cos(camera.yaw),Math.sin(camera.yaw),Math.cos(camera.pitch),Math.sin(camera.pitch));
-   gl.uniform2fv(U.optics,optics);gl.uniform2fv(U.roll,roll);gl.uniform3fv(U.sunDirection,sunDirection);
+   gl.uniform1f(U.clipBias,clipBias);gl.uniform2fv(U.optics,optics);gl.uniform2fv(U.roll,roll);gl.uniform3fv(U.sunDirection,sunDirection);
    gl.uniform1i(U.albedo,TEX);gl.uniform1f(U.plume,0);gl.uniform1i(U.firstPerson,!thirdPerson);
    gl.bindBuffer(gl.UNIFORM_BUFFER,palette);gl.bufferSubData(gl.UNIFORM_BUFFER,0,last.palette);
    gl.bindBufferBase(gl.UNIFORM_BUFFER,UBO,palette);gl.activeTexture(gl.TEXTURE0+TEX);
-   const fullInterior=!thirdPerson&&wall;
+   const fullInterior=!thirdPerson&&stock&&frame[32]!==1;
    gl.uniform1i(U.stockEyeSeat,Number(Boolean(fullInterior)&&frame[32]!==1));
    gl.uniform1i(U.interiorOptic,0);
    for(const m of meshes){
     if(fullInterior){
      if(m.name==="helmet_visor"){visor=m;continue;}
-     if(m.name==="helmet_shell"||m.name==="helmet_visor_assembly"||m.name==="helmet_neck_ring")continue;
     }else if(!thirdPerson&&!m.first)continue;
     gl.bindVertexArray(m.vao);
     if(m.tex)gl.bindTexture(gl.TEXTURE_2D,m.tex);
@@ -517,12 +495,9 @@ function renderAvatar(gl,pose,meshes,hasEquipment=false,sunVisibility,wall=null)
    if(!visor)return;
    gl.useProgram(p);gl.uniform1i(U.baked,0);gl.uniform1f(U.plume,0);
    gl.depthMask(false);gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);
-   for(let pass=1;pass<=2;pass++){
-    const m=pass===1?visor:wall;
-    gl.bindVertexArray(m.vao);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,m.elements);
-    gl.uniform1i(U.interiorOptic,pass);gl.uniform4fv(U.baseColor,m.color);
-    gl.drawElements(gl.TRIANGLES,m.len,m.kind,0);
-   }
+   gl.bindVertexArray(visor.vao);gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER,visor.elements);
+   gl.uniform1i(U.interiorOptic,1);gl.uniform4fv(U.baseColor,visor.color);
+   gl.drawElements(gl.TRIANGLES,visor.len,visor.kind,0);
    gl.disable(gl.BLEND);gl.depthMask(true);gl.uniform1i(U.interiorOptic,0);gl.bindVertexArray(null);
   },
   diagnostics:()=>last?.joints,
