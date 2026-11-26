@@ -548,12 +548,18 @@ hudIs("Pass the end of the scaffold",false);
 returnStaging(1.94,.22,-2.24);
 assert.notEqual(state[18],13);
 returnStaging(.89,.02,-2.24);
+function aimReturn(){
+ const x=-.94-state[0],y=-.14-state[1],z=state[2]+2.48;
+ return [Math.atan2(x,z)-state[3],Math.atan2(y,Math.hypot(x,z))-state[4]];
+}
+for(let i=0;i<65;i++)step(0,...aimReturn());
 for(let i=0;i<350&&state[18]!==3;i++){
  const dx=-.39-state[0],dy=-.025-state[1],dz=-1.86-state[2],m=Math.hypot(dx,dy,dz);
- const ax=.48*dx/m-state[5],az=.48*dz/m-state[7];
- const sn=Math.sin(state[3]),cs=Math.cos(state[3]);
- engine.set_thrust((ax*cs+az*sn)*1.9,(ax*sn-az*cs)*1.9);
- step();
+ const ax=.53*dx/m-state[5],az=.53*dz/m-state[7];
+ const sn=Math.sin(state[3]),cs=Math.cos(state[3]),forward=(ax*sn-az*cs)*1.8;
+ const up=(dy*2-state[6]*2.8)-forward*Math.sin(state[4]);
+ engine.set_thrust((ax*cs+az*sn)*1.8,forward);
+ step(up>.12?16:up<-.12?32:0,...aimReturn());
 }
 engine.set_thrust(0,0);
 assert.equal(state[18],3,"actual closing drift triggers hatch counterthrust beyond grip reach");
