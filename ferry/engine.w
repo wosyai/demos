@@ -1624,7 +1624,11 @@ f32(i32,i32,i32) route_value = fn(key,row,column) {
     else { if (route==5) { 7 } else { if (route==6 || route==7) { 4 } else { 0 } } } } } };
     if (key<=0 || leg>=route_count) { 0.0 }
     else {
-        if (row==-1 && column==0) { float_i(route_count-start) }
+        if (row==-1 && column==0) {
+            i32 count=route_count-start;
+            core.require(count>=2 && count<=10, { .stdout = ""; .stderr = "guided route has fewer than two or more than ten points"; .code = 1; .files = []; });
+            float_i(count)
+        }
         else {
             if (row<0 || row>=route_count-start || column<0 || column>1) { 0.0 }
             else {

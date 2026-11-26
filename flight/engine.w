@@ -2769,8 +2769,22 @@ unit(i32,f32) frame = fn(mail_status,wreck_alpha) {
 	i32 gate = next_gate[0];
 	display[33] = float_i(gate);
 	display[34] = if (gate < 3) { clamp(float_i(gate_deadline(gate)-stage_tick[0])/30.0,0.0,31.0) } else { 0.0 };
-	display[35] = if (ring_celebrating()) { 1.0 } else { 0.0 };
-	display[36] = if (wreck_playing()) { 1.0 } else { if (following) { 2.0 } else { 0.0 } };
+	i32 ring_celebration_code = if (ring_celebrating()) { 1 } else { 0 };
+	i32 replay_view_code = if (wreck_playing()) { 1 } else { if (following) { 2 } else { 0 } };
+	core.require(ring_celebration_code >= 0 && ring_celebration_code <= 1, {
+		.stdout = "";
+		.stderr = "Flight frame ring celebration code must be 0 or 1";
+		.code = 1;
+		.files = [];
+	});
+	core.require(replay_view_code >= 0 && replay_view_code <= 2, {
+		.stdout = "";
+		.stderr = "Flight frame replay view code must be 0, 1 or 2";
+		.code = 1;
+		.files = [];
+	});
+	display[35] = float_i(ring_celebration_code);
+	display[36] = float_i(replay_view_code);
 	display[37] = presented_pose[0].x;
 	display[38] = presented_pose[0].y;
 	display[39] = presented_pose[0].z;

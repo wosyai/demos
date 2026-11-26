@@ -1141,6 +1141,11 @@ unit(i32, i32, i32) mesh_lighthouse_parts = fn(part, chunk_x, chunk_z) {
 	};
 };
 
+unit(i32, i32, i32) publish_chunk = fn(count, x, z) {
+	core.require(x >= -32 && x < 40 && z >= -32 && z < 40, { .stdout = ""; .stderr = "terrain mesh chunk outside the streamed world"; .code = 1; .files = []; });
+	unsafe { host.mesh(core.pointer_cast<*?u8>(&?vertices[0][0][0][0][0]), count, x, z); };
+};
+
 i32(i32, i32) rebuild_chunk = fn(chunk_x, chunk_z) {
 	write_position = 0;
 	fill_halo(0, chunk_x * 12, chunk_z * 12);
@@ -1148,7 +1153,7 @@ i32(i32, i32) rebuild_chunk = fn(chunk_x, chunk_z) {
 	if (loose_count > 0) { mesh_loose(0, chunk_x, chunk_z); };
 	if (archipelago_hunt) { mesh_lighthouse_parts(0, chunk_x, chunk_z); };
 	i32 count = write_position;
-	unsafe { host.mesh(core.pointer_cast<*?u8>(&?vertices[0][0][0][0][0]), count, chunk_x, chunk_z); };
+	publish_chunk(count, chunk_x, chunk_z);
 	count
 };
 
@@ -1321,7 +1326,7 @@ bool(i32, i32, i32, i32, bool) terrain_resident = fn(x, z, center_x, center_z, i
 unit(i32, i32, i32, i32, i32, bool) retire_terrain_row = fn(x, z, east, next_x, next_z, keep_adventure) {
 	if (x <= east) {
 		if (!terrain_resident(x, z, next_x, next_z, keep_adventure)) {
-			unsafe { host.mesh(core.pointer_cast<*?u8>(&?vertices[0][0][0][0][0]), 0, x, z); };
+			publish_chunk(0, x, z);
 		};
 		retire_terrain_row(x + 1, z, east, next_x, next_z, keep_adventure);
 	};

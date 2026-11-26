@@ -1387,6 +1387,10 @@ unit(i32,i32) upload_actuators=fn(mask,id){
         if(mask%2!=0){
             room_partial=id+1;
             u64 i=core.int_extend<u64>(id);
+            core.require(motion_base[i]>=0&&motion_unique[i]>0&&motion_unique[i]<=motion_size[i]&&
+                motion_base[i]+motion_unique[i]<=20480&&motion_first[i]>=0&&motion_size[i]>0&&
+                motion_size[i]%3==0&&motion_first[i]%3==0&&motion_first[i]+motion_size[i]<=20480,
+                {.stdout="";.stderr="Orbital indexed actuator span";.code=73;.files=[];});
             packing.transmit(id+2,motion_base[i],motion_unique[i],motion_first[i],motion_size[i]);
         };
         upload_actuators(mask/2,id+1);
@@ -1954,7 +1958,11 @@ unit(f32,i32,f32,f32) tick = fn(dt,keys,look_x,look_y) {
                 if(!cargo_locked){if(lock_kind==0){lock_kind=1;lock_clock=0.001;};}
                 else{if(alignment_stage==0){mode=3;mark=2;vx=0.36;vz=0.035;}
                 else{if(alignment_stage==2 && seat_clock==0.0){seat_clock=0.001;}
-                else{if(alignment_stage==3 && transfer_clock==0.0){transfer_clock=0.001;}
+                else{if(alignment_stage==3 && transfer_clock==0.0){
+                    core.require(cargo_locked&&seat_pose==6,
+                        {.stdout="";.stderr="Orbital cargo transfer requires a locked pin and seated cradle";.code=74;.files=[];});
+                    transfer_clock=0.001;
+                }
                 else{if(alignment_stage==6){if(lock_kind==0){lock_kind=2;lock_clock=0.001;};}
                 else{if(alignment_stage==4){mode=3;mark=2;vx=0.47;vy=0.12;vz=0.0;};};};};};};
             }else{if(first_exterior_rail()&&!push){

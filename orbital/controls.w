@@ -15,7 +15,10 @@ i32(u64) binding=fn(physical_slot){
 };
 i32(i32,i32) logical=fn(i,mask){
     if(i<12){
-        i32 b=if((physical&(1<<i))!=0){binding(core.int_extend<u64>(i))}else{0};
+        i32 b=if((physical&(1<<i))!=0){
+            core.require(i>=0&&i<12, {.stdout="";.stderr="Orbital control slot out of range";.code=71;.files=[];});
+            binding(core.int_extend<u64>(i))
+        }else{0};
         logical(i+1,mask|b)
     }else{mask}
 };
