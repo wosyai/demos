@@ -106,14 +106,16 @@ vec3 orbitalExterior(vec3 ray, vec3 backdrop, vec3 centerDir, float earthSinRadi
       +vec3(.43,.13,.022)*twilight;
   // Outside the silhouette, the denser aerosol band is paler and shallower
   // than molecular blue. Both use the same tangent altitude and ground eclipse.
-  float lowerColumn=column*column;
+  float lowerColumn=column*column*column;
   float sunForward=max(angle,0.);
   float forward2=sunForward*sunForward;
   vec3 aerosol=mix(vec3(.005,.011,.028),vec3(.77,.84,.91),daylight)
       +vec3(.49,.125,.018)*twilight;
-  vec3 lowBand=aerosol*lowerColumn*(.34+.18*forward2*forward2);
-  float highColumn=sqrt(column)*(1.-smoothstep(.017,.037,altitude));
-  vec3 highBand=rayleigh*(.42*column)+vec3(.025,.105,.31)*highColumn*daylight*daylight;
+  vec3 lowBand=aerosol*lowerColumn*(.68+.16*forward2*forward2);
+  // The lower column hides some blue volume along its densest tangent.
+  // Above that layer the molecular lobe is exposed, then fades into space.
+  float highColumn=sqrt(column)*(1.-.78*column)*(1.-smoothstep(.018,.041,altitude));
+  vec3 highBand=rayleigh*(.28*column)+vec3(.035,.20,.74)*highColumn*daylight*daylight;
   result+=(lowBand+highBand)*scatter*(1.-occult);
 
   if(arc>=edge-aa){
