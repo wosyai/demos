@@ -53,7 +53,7 @@ engine=new WebAssembly.Instance(wasm,{orbital:{
  },hands(p,n){hand=read(p,n);handLoads++;},
  avatar_rig(p,n){assert.equal(p%8,0);rigRow=new Float64Array(engine.memory.buffer,p,n);},
  material_art(p,n){assert.equal(n,103);assert.equal(p%8,0);materialArt=new Float64Array(engine.memory.buffer,p,n).slice();},
- sky_art(p,n){assert.equal(n,30);assert.equal(p%8,0);skyArt=new Float64Array(engine.memory.buffer,p,n).slice();},
+ sky_art(p,n){assert.equal(n,36);assert.equal(p%8,0);skyArt=new Float64Array(engine.memory.buffer,p,n).slice();},
  hud_view(p,n){assert.equal(n,8);assert.equal(p%8,0);hudView=new Float64Array(engine.memory.buffer,p,n).slice();},
  render_budget(p,n){assert.equal(n,3);assert.equal(p%8,0);rendererPlan=new Float64Array(engine.memory.buffer,p,n).slice();},
  earth_tiles(p,n){assert.equal(n,19);assert.equal(p%8,0);earthTiles=new Float64Array(engine.memory.buffer,p,n).slice();},
@@ -1045,3 +1045,26 @@ for(const altitudeKm of [390,260,80]){
  }
 }
 console.log('Wosy Earth atmosphere: fixed physical column at physical orbit radii with the original showcase disc.');
+
+
+assert.deepEqual([...skyArt.slice(30)],[1,.97,.90,.46,.34,.23]);
+const solarRadiusSq=skyArt[19];
+const limb=(scale)=>.88+.12*Math.sqrt(Math.max(0,1-scale**2));
+const glow=(scale,inner)=>{
+ const s2=scale**2*solarRadiusSq;
+ const g=Math.max(0,1-s2*.32/.049)/(1+Math.max(0,s2-solarRadiusSq)*410);
+ const t=Math.min(1,Math.max(0,(s2-.016)/(.049-.016)));
+ return [.40,.24,.13].map((x,i)=>(x*g+inner[i]*g**3)*(1-t*t*(3-2*t)));
+};
+const disk=[...skyArt.slice(30,33)],newHalo=[...skyArt.slice(33,36)],oldHalo=[1.02,.75,.47];
+for(const scale of [0,.45,.80,.97]){
+ assert.ok(glow(scale,oldHalo).every((x,i)=>x+[1,.94,.81][i]*limb(scale)>1),'original core clamps all three channels white');
+ assert.ok(disk.every(x=>x*limb(scale)<=1),'photosphere retains its authored profile');
+}
+assert.ok(disk[1]-disk[1]*limb(.97)>.08);
+for(const i of [0,1,2]){
+ assert.ok(glow(1,newHalo)[i]<disk[i]*limb(1),'the closest halo is fainter than the photosphere edge');
+ assert.ok(glow(1.15,newHalo)[i]>glow(1.5,newHalo)[i]&&glow(1.5,newHalo)[i]>glow(2,newHalo)[i]);
+ assert.ok(Math.abs(glow(4,newHalo)[i]-glow(4,oldHalo)[i])<.002);
+}
+console.log('Wosy Sun: same angular disk and independently readable radial core; broad corona remains bounded.');

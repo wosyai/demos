@@ -61,9 +61,12 @@ vec3 orbitalExterior(vec3 ray, vec3 backdrop, vec3 centerDir, float earthSinRadi
   // Two analytic scales from one reciprocal: broad warm corona, bright inner glare.
   float glareWing=max(0.,1.-s2*.32/.049)/(1.+beyond*410.);
   float glareCut=1.-smoothstep(.016,.049,s2);
-  vec3 glare=(vec3(.40,.24,.13)*glareWing+vec3(1.02,.75,.47)*glareWing*glareWing*glareWing)*glareCut;
+  vec3 glare=(vec3(.40,.24,.13)*glareWing+vec3(${Array.from(profile.subarray(33,36),v=>v.toFixed(4)).join(",")})*glareWing*glareWing*glareWing)*glareCut;
   float limbDark=.88+.12*sqrt(max(0.,1.-s2/discRadius2));
-  vec3 result=orbitalMoon(backdrop,ray,S)+vec3(1.,.94,.81)*disc*limbDark+glare;
+  // Composite the opaque photosphere over optical scatter. Adding saturated
+  // inner glare to the disk would erase its limb darkening before tone clamp.
+  vec3 disk=vec3(${Array.from(profile.subarray(30,33),v=>v.toFixed(4)).join(",")})*limbDark;
+  vec3 result=mix(orbitalMoon(backdrop,ray,S)+glare,disk,disc);
 
   // Closest approach: the ground can eclipse low air while leaving
   // higher air illuminated. Keep the aerosol belt tighter than blue air.
