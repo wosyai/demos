@@ -54,7 +54,7 @@ engine=new WebAssembly.Instance(wasm,{orbital:{
  avatar_rig(p,n){assert.equal(p%8,0);rigRow=new Float64Array(engine.memory.buffer,p,n);},
  material_art(p,n){assert.equal(n,113);assert.equal(p%8,0);materialArt=new Float64Array(engine.memory.buffer,p,n).slice();},
  sky_art(p,n){assert.equal(n,37);assert.equal(p%8,0);skyArt=new Float64Array(engine.memory.buffer,p,n).slice();},
- hud_view(p,n){assert.equal(n,8);assert.equal(p%8,0);hudView=new Float64Array(engine.memory.buffer,p,n).slice();},
+ hud_view(p,n){assert.equal(n,15);assert.equal(p%8,0);hudView=new Float64Array(engine.memory.buffer,p,n).slice();},
  render_budget(p,n){assert.equal(n,3);assert.equal(p%8,0);rendererPlan=new Float64Array(engine.memory.buffer,p,n).slice();},
  earth_tiles(p,n){assert.equal(n,19);assert.equal(p%8,0);earthTiles=new Float64Array(engine.memory.buffer,p,n).slice();},
  entry_shell(p,n){assert.equal(n,6144);entryMesh=read(p,n);},
@@ -1006,9 +1006,12 @@ engine.select_deck(1);engine.tick(0,0,0,0);
 engine.input_clear();assert.equal(engine.input_advance(100,0),0);
 engine.input_key(0,1);engine.input_key(1,1);engine.input_key(0,0);
 engine.input_advance(17,1);
-assert.ok(state[23]<-.1,'one key alias remains active when another is released');
-engine.input_key(1,0);engine.input_advance(17,1);
-assert.equal(Math.hypot(...state.slice(23,26)),0,'releasing the second alias removes drive');
+assert.equal(Math.hypot(...state.slice(23,26)),0,'held look arrow does not command thrust');
+assert.ok(state[35]<0,'left arrow commands the right controller');
+engine.input_key(1,0);engine.input_key(0,1);engine.input_advance(17,1);
+assert.ok(state[23]<-.1,'A commands left translation');
+assert.equal(state[35],0,'left translation does not command right look');
+engine.input_key(0,0);
 engine.input_stick(0,390,0,-20);engine.input_stick(1,390,32,-16);
 engine.input_advance(17,1);
 assert.ok(state[34]>0&&state[35]>0&&state[36]>0&&Math.hypot(...state.slice(23,26))>.1);
@@ -1016,7 +1019,7 @@ assert.equal(engine.input_status()&13,13,'look used, active gesture and a fixed 
 engine.input_clear();engine.input_advance(17,1);
 assert.deepEqual([...state.slice(33,37)],[0,0,0,0]);
 assert.equal(engine.input_status()&1,1,'input clearing does not erase the learned HUD interaction');
-console.log('Wosy input: fixed pacing, keyboard alias lifetime, dual touch, release, and learned HUD state passed.');
+console.log('Wosy input: fixed pacing, independent keyboard thrust/look, dual touch, release, and learned HUD state passed.');
 
 assert.equal(engine.quality_shadow(1,1,0,4096),3584*2+1);
 assert.equal(engine.quality_shadow(1,1,1,1536),1536*2+1);
@@ -1152,3 +1155,18 @@ for(const i of [0,1,2]){
  assert.ok(Math.abs(glow(4,newHalo)[i]-glow(4,oldHalo)[i])<.002);
 }
 console.log('Wosy Sun: same angular disk and independently readable radial core; broad corona remains bounded.');
+
+engine.input_clear();engine.input_advance(0,0);
+engine.select_deck(0);engine.tick(0,0,0,0);
+engine.hud_view();assert.equal(hudView[8],0,'unreachable training equipment has no selectable identity');
+engine.equipment_activate(1);engine.input_advance(17,1);
+assert.equal(state[9],0,'unreachable target identity cannot queue an action');
+until(()=>state[10]===1,260);
+engine.hud_view();assert.equal(hudView[8],1);
+assert.ok(hudView[9]<hudView[12]&&hudView[10]<hudView[13]&&hudView[11]<hudView[14]);
+engine.equipment_activate(0);engine.equipment_activate(2);engine.equipment_activate(-1);
+engine.input_advance(17,1);
+assert.equal(state[9],0,'zero, disjoint equipment and negative identity are all rejected');
+engine.equipment_activate(1);engine.input_advance(17,1);
+assert.equal(state[9],1,'the current eligible identity enters the existing grasp');
+console.log('Wosy equipment authorization: wrong, absent and current target controls passed.');

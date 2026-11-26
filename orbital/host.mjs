@@ -1,4 +1,5 @@
-import {hudText,flightStatusText} from "./hud-text.mjs?v=8";
+import {targetSurface,pickFragment,bindEquipment,equipmentPicker} from "./equipment-pick.mjs";
+import {hudText,flightStatusText,equipmentInstruction} from "./hud-text.mjs?v=8";
 import {reentryGlow} from "./reentry-glow.mjs?v=2";
 import {earthDetail} from "./earth-detail.mjs?v=3";
 import {exteriorSky} from "./exterior-sky.mjs?v=9";
@@ -18,6 +19,8 @@ const rendererInfo=gl?.getExtension("WEBGL_debug_renderer_info");
 const rendererLabel=rendererInfo?String(gl.getParameter(rendererInfo.UNMASKED_RENDERER_WEBGL)):"";
 const rasterSoftware=/swiftshader|llvmpipe|swrast|software|warp|basic render driver/i.test(rendererLabel);
 const detailHardware=Boolean(rendererLabel&&!rasterSoftware);
+// An infinite far plane preserves the physical station silhouette as it shrinks.
+const stockStationDepth=[1,.02],bodyStationDepth=[1,2*.10/2.002];
 const view = `
 uniform vec3 eye;
 uniform vec4 basis;
@@ -384,6 +387,12 @@ in vec2 armUV;
 out vec4 pix;
 ${view}
 ${exteriorMaterial(sun,material)}
+${targetSurface}
+vec3 equipmentLight(vec3 lit,vec3 n){
+ if(!equipmentSurface())return lit;
+ float rim=1.-abs(dot(n,normalize(eye-world)));
+ return mix(lit,vec3(.17,.93,.86),.30+.60*rim*rim);
+}
 void main(){
  vec3 worldDx=dFdx(world),worldDy=dFdy(world);
  vec3 normal=normalize(cross(worldDx,worldDy));
@@ -396,7 +405,7 @@ void main(){
    }
    if(dot(fittedNormal,fittedNormal)>.2)normal=normalize(fittedNormal);
    if(dot(normal,eye-world)<0.)normal=-normal;
-   pix=vec4(sunColor(normal,worldDx,worldDy),1.);return;
+   pix=vec4(equipmentLight(sunColor(normal,worldDx,worldDy),normal),1.);return;
  }
  float overhead=smoothstep(-1.2,1.52,world.y);
  float local=smoothstep(.0,1.,.65+.35*cos((world.z+9.4)*3.53));
@@ -407,7 +416,7 @@ void main(){
  float haze=smoothstep(4.,14.,distance(world,eye));
  vec3 col=surface*(light+.18*angle)*material.x+surface*material.y*.64;
  col=mix(col,vec3(.056,.115,.137),haze*.37);
- pix=vec4(pow(clamp(col,0.,1.),vec3(.79)),1.);
+ pix=vec4(equipmentLight(pow(clamp(col,0.,1.),vec3(.79)),normal),1.);
 }`;
 const svs=`#version 300 es
 out vec2 screen;
@@ -518,7 +527,7 @@ function program(a,b) {
  }
  gl.linkProgram(p);
  if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw Error(gl.getProgramInfoLog(p));
- return {p, depthClip:gl.getUniformLocation(p,"depthClip"), eye:gl.getUniformLocation(p,"eye"), basis:gl.getUniformLocation(p,"basis"), optics:gl.getUniformLocation(p,"optics"), roll:gl.getUniformLocation(p,"roll"), eva:gl.getUniformLocation(p,"eva"), photo:gl.getUniformLocation(p,"photo"), earth:gl.getUniformLocation(p,"earthMap"),starMap:gl.getUniformLocation(p,"starMap"),starReady:gl.getUniformLocation(p,"starReady"),moonMap:gl.getUniformLocation(p,"moonMap"),moonReady:gl.getUniformLocation(p,"moonReady"),upgradedSky:gl.getUniformLocation(p,"upgradedSky"),orbitCenter:gl.getUniformLocation(p,"orbitCenter"),earthAngle:gl.getUniformLocation(p,"earthAngle"), backdrop:gl.getUniformLocation(p,"backdrop"), sunMap:gl.getUniformLocation(p,"sunMap"),armPose:gl.getUniformLocation(p,"armPose"),armSurfaceReady:gl.getUniformLocation(p,"armSurfaceReady"),panelStampReady:gl.getUniformLocation(p,"panelStampReady"),pressureStampReady:gl.getUniformLocation(p,"pressureStampReady"),fasciaStampReady:gl.getUniformLocation(p,"fasciaStampReady"), renderFraction:gl.getUniformLocation(p,"renderFraction"),surfaceTile:gl.getUniformLocation(p,"surfaceTile"), routeLens:gl.getUniformLocation(p,"routeLens"), routeReach:gl.getUniformLocation(p,"routeReach"), detailedShadow:gl.getUniformLocation(p,"detailedShadow"),lightingUpgrade:gl.getUniformLocation(p,"lightingUpgrade"),practicalLighting:gl.getUniformLocation(p,"practicalLighting"),earthLighting:gl.getUniformLocation(p,"earthLighting"),gripContact:gl.getUniformLocation(p,"gripContact"),gripRadius:gl.getUniformLocation(p,"gripRadius")};
+ return {p, equipmentId:gl.getUniformLocation(p,"equipmentId"), equipmentLow:gl.getUniformLocation(p,"equipmentLow"), equipmentHigh:gl.getUniformLocation(p,"equipmentHigh"), depthClip:gl.getUniformLocation(p,"depthClip"), eye:gl.getUniformLocation(p,"eye"), basis:gl.getUniformLocation(p,"basis"), optics:gl.getUniformLocation(p,"optics"), roll:gl.getUniformLocation(p,"roll"), eva:gl.getUniformLocation(p,"eva"), photo:gl.getUniformLocation(p,"photo"), earth:gl.getUniformLocation(p,"earthMap"),starMap:gl.getUniformLocation(p,"starMap"),starReady:gl.getUniformLocation(p,"starReady"),moonMap:gl.getUniformLocation(p,"moonMap"),moonReady:gl.getUniformLocation(p,"moonReady"),upgradedSky:gl.getUniformLocation(p,"upgradedSky"),orbitCenter:gl.getUniformLocation(p,"orbitCenter"),earthAngle:gl.getUniformLocation(p,"earthAngle"), backdrop:gl.getUniformLocation(p,"backdrop"), sunMap:gl.getUniformLocation(p,"sunMap"),armPose:gl.getUniformLocation(p,"armPose"),armSurfaceReady:gl.getUniformLocation(p,"armSurfaceReady"),panelStampReady:gl.getUniformLocation(p,"panelStampReady"),pressureStampReady:gl.getUniformLocation(p,"pressureStampReady"),fasciaStampReady:gl.getUniformLocation(p,"fasciaStampReady"), renderFraction:gl.getUniformLocation(p,"renderFraction"),surfaceTile:gl.getUniformLocation(p,"surfaceTile"), routeLens:gl.getUniformLocation(p,"routeLens"), routeReach:gl.getUniformLocation(p,"routeReach"), detailedShadow:gl.getUniformLocation(p,"detailedShadow"),lightingUpgrade:gl.getUniformLocation(p,"lightingUpgrade"),practicalLighting:gl.getUniformLocation(p,"practicalLighting"),earthLighting:gl.getUniformLocation(p,"earthLighting"),gripContact:gl.getUniformLocation(p,"gripContact"),gripRadius:gl.getUniformLocation(p,"gripRadius")};
 }
 const coarseShadow=matchMedia("(pointer:coarse)").matches;
 const maxShadow=gl?gl.getParameter(gl.MAX_TEXTURE_SIZE):1024;
@@ -543,7 +552,8 @@ let apolloBody=null,apolloModelActive=false;
 // [27] pre-grip speed², [28..32] altitude/entry/time/fuel/scenario,
 // [33..36] translational and rotational controller commands, [37] simulated orbital seconds.
 const sticks={move:{id:null,zone:0},look:{id:null,zone:1}};
-let actionTouch=null,suppressTouchClick=false;
+let lastPickCamera=null,pickEquipment=null,pickFrame=null;
+const equipmentRow=new Float32Array(15);
 const browserKeys=new Map(["KeyA","ArrowLeft","KeyD","ArrowRight","KeyW","ArrowUp","KeyS","ArrowDown","Space","KeyC","ShiftLeft","ShiftRight"].map((code,slot)=>[code,slot]));
 function batch() {
  const vao=gl.createVertexArray(), buffer=gl.createBuffer();
@@ -605,11 +615,15 @@ function meshes(program,eva,pose,onlyStatic=false){
  if(room.indices)gl.drawElements(gl.TRIANGLES,room.num,gl.UNSIGNED_SHORT,0);
  else gl.drawArrays(gl.TRIANGLES,0,room.num);
  if(eva && hull.num){gl.bindVertexArray(hull.vao);gl.drawElements(gl.TRIANGLES,hull.num,gl.UNSIGNED_SHORT,0);}
- if(onlyStatic)return;
+ if(!onlyStatic)drawFallbackArm(program,eva,pose);
+}
+function drawFallbackArm(program,eva,pose){
+ gl.vertexAttrib4f(3,0,0,0,1);
  if(eva&&importedArm){
    gl.uniform4f(program.armPose,pose[12],pose[13],pose[14],pose[8]);
    gl.bindVertexArray(importedArm.vao);gl.drawElements(gl.TRIANGLES,importedArm.elements,gl.UNSIGNED_SHORT,0);
  }else{
+   gl.uniform4f(program.armPose,0,0,0,-1);
    gl.bindVertexArray(hand.vao);gl.drawArrays(gl.TRIANGLES,0,hand.num);
  }
 }
@@ -638,7 +652,7 @@ function bakeBackdrop(bind,w,h,orbit){
 const waypoint=$("waypoint"),waypointSymbol=["◇","▸","◂","▴","▾"];
 let lastWaypoint=0,lastWaypointX=0,lastWaypointY=0,lastWaypointEdge=0;
 function updateWaypoint(){
- const route=active?visual[60]:0;
+ const route=active&&engine.camera_mode(0)!==1?visual[60]:0;
  if(route!==lastWaypoint){waypoint.hidden=route===0;lastWaypoint=route;}
  if(!route)return;
  const x=visual[61],y=visual[62],edge=visual[63];
@@ -674,12 +688,14 @@ function render(alpha) {
  // Share the exact depth mapping between the station and stock suit so that
  // the original visor/near shell occludes naturally from the registered eye.
  const stockDepth=apolloBody?.stockEyeSeat&&eva&&!entry&&!drawBody;
- const depthClip=stockDepth
-   ? [1.000400080016,0.02000400080016] : [1.002,.10];
+ const stationView=eva&&!entry;
+ const depthClip=stationView?(stockDepth?stockStationDepth:bodyStationDepth):[1.002,.10];
  const heated=visual[58]>.01;
+ const thirdPerson=engine.camera_mode(0)===1;
  if(eva&&upgradedSky&&earthReady&&active)fineEarth.update(h);
  const draw=engine.draw_plan(worldVersion,w,h,Number(Boolean(apolloBody)),Number(upgradedSky));
  if(draw===0)return;
+ if(hudRow)equipmentRow.set(hudRow);
  const holdingAngle=draw===2;
  if(eva&&shadowDirty){
    shadowDirty=false;
@@ -699,23 +715,36 @@ function render(alpha) {
  if(holdingAngle)bakeBackdrop(bind,w,h,orbit);
  gl.clear(gl.DEPTH_BUFFER_BIT);
  gl.enable(gl.DEPTH_TEST);bind(scene);gl.uniform2fv(scene.depthClip,depthClip);
+ bindEquipment(gl,scene,equipmentRow,active&&!thirdPerson);
  gl.uniform1i(scene.practicalLighting,Number(upgradedPractical));gl.uniform1i(scene.lightingUpgrade,Number(upgradedSky));gl.uniform4fv(scene.earthLighting,orbit.center);
  // Both suit solvers use this same Wosy-derived rail anchor; shade only in contact.
  const grip=body?avatarRig.stationGrip(pose):null;
  const contact=(!apolloModelActive||upgradedPractical)?grip:null;
  if(contact){gl.uniform4f(scene.gripContact,...contact.center,contact.progress);gl.uniform1f(scene.gripRadius,contact.radius);}
  else gl.uniform4f(scene.gripContact,0,0,0,0);
- gl.uniform1i(scene.routeLens,pose[20]);gl.uniform1i(scene.routeReach,pose[10]);
+ gl.uniform1i(scene.routeLens,thirdPerson?0:pose[20]);gl.uniform1i(scene.routeReach,pose[10]);
  gl.activeTexture(gl.TEXTURE2);gl.bindTexture(gl.TEXTURE_2D,shadowTexture);gl.uniform1i(scene.sunMap,2);gl.uniform1i(scene.detailedShadow,Number(detailed));
  gl.activeTexture(gl.TEXTURE4);gl.bindTexture(gl.TEXTURE_2D_ARRAY,surfaceTexture);gl.uniform1i(scene.surfaceTile,4);gl.uniform1i(scene.armSurfaceReady,Number(armSurfaceReady));gl.uniform1i(scene.panelStampReady,Number(panelStampReady));gl.uniform1i(scene.pressureStampReady,Number(pressureStampReady));gl.uniform1i(scene.fasciaStampReady,Number(fasciaStampReady));
  meshes(scene,eva,pose,Boolean(body));
+ let suitPose=pose,suitOptions=null;
  if(body){
   // Keep meter-scale suit vertices precise millions of meters from Kestrel.
   const relative=entry?{...camera,eye:camera.eye.map((n,i)=>n-pose[i])}:camera;
-  let suitPose=pose;
   if(entry){suitPose=pose.slice();suitPose[0]=0;suitPose[1]=0;suitPose[2]=0;}
-  apolloBody.draw(suitPose,{camera:relative,optics,thirdPerson:drawBody,roll,sunDirection:orbitalSun,contact:grip,stationSun:apolloModelActive&&!entry,earthLighting:upgradedSky?orbit.center:null,shadowDetail:detailed,renderFraction:fraction,depthClip});
+  suitOptions={camera:relative,optics,thirdPerson:drawBody,roll,sunDirection:orbitalSun,contact:grip,stationSun:apolloModelActive&&!entry,earthLighting:upgradedSky?orbit.center:null,shadowDetail:detailed,renderFraction:fraction,depthClip};
+  body.draw(suitPose,suitOptions);
  }
+ if(active&&equipmentRow[8]){
+  const savedPose=pose.slice();
+  const eye=new Float32Array(camera.eye),aim=new Float32Array(visual.subarray(54,58));
+  const savedOptics=new Float32Array(optics),savedRoll=new Float32Array(roll);
+  const savedOptions=body?{...suitOptions,camera:{...suitOptions.camera,eye:Array.from(suitOptions.camera.eye)},
+    optics:savedOptics,roll:savedRoll,earthLighting:suitOptions.earthLighting?.slice()}:null;
+  const savedSuitPose=entry?suitPose.slice():savedPose;
+  lastPickCamera={w,h,eye,basis:aim,optics:savedOptics,roll:savedRoll,depthClip,pose:savedPose,
+    drawOccluder:program=>body?body.draw(savedSuitPose,savedOptions):drawFallbackArm(program,eva,savedPose)};
+  pickFrame=equipmentRow;
+ }else{pickFrame=null;}
  // The background lies behind the mesh; early depth rejects the sky and globe
  // across the station rather than shading those pixels and drawing over them.
  gl.depthMask(false);
@@ -725,9 +754,9 @@ function render(alpha) {
  }else{
    bind(space);bindOrbit(orbit);
  }
- if(stockDepth){gl.depthRange(1,1);gl.depthFunc(gl.LEQUAL);}
+ if(stationView){gl.depthRange(1,1);gl.depthFunc(gl.LEQUAL);}
  gl.bindVertexArray(null);gl.drawArrays(gl.TRIANGLES,0,3);gl.depthMask(true);
- if(stockDepth){gl.depthRange(0,1);gl.depthFunc(gl.LESS);}
+ if(stationView){gl.depthRange(0,1);gl.depthFunc(gl.LESS);}
  if(body)apolloBody.drawInteriorVisor();
  if(heated){
   if(!glow){engine.reentry_shell();glow=reentryGlow(gl,entryMesh);}
@@ -735,23 +764,32 @@ function render(alpha) {
   glow(entrySample,visual.subarray(54,58),optics,roll);
  }
 }
+let lastEquipmentId=0,lastHudActive=false,lastCanCoast=false;
 function hud(){
  const eva=frame[15]===1;
  const hudCode=engine.hud_view();
  const [speed,driftAngle,showDrift,isEntry,lost,firstLookHint,copyIntent,flightStatus]=hudRow;
  const view=hudText(hudCode,frame[16],Boolean(firstLookHint),copyIntent);
+ if(hudRow[8]!==lastEquipmentId||active!==lastHudActive){
+  lastEquipmentId=hudRow[8];lastHudActive=active;worldVersion++;
+ }
+ lastCanCoast=view.coast;
+ const thirdPerson=engine.camera_mode(0)===1;
  const coastButton=$("coast");
- coastButton.hidden=!active||!view.coast;
+ coastButton.hidden=!active||!view.coast||thirdPerson;
  if(active&&!view.coast)engine.input_action(2);
  coastButton.setAttribute("aria-pressed",String(Boolean(engine.input_status()&2)));
  const cameraButton=$("camera");
  cameraButton.hidden=!apolloBody||!eva;
  cameraButton.disabled=!active||cameraButton.hidden;
- const thirdPerson=engine.camera_mode(0)===1;
  cameraButton.setAttribute("aria-label",thirdPerson?"Switch to first-person camera":"Switch to third-person camera");
  cameraButton.setAttribute("aria-pressed",String(thirdPerson));
  const instrument=$("flight-instrument");
- instrument.hidden=!active;
+ const visor=active&&!thirdPerson;
+ $("visor-instructions").hidden=!visor;
+ $("controls").hidden=!visor;
+ $("reticle").hidden=!visor;
+ instrument.hidden=!visor;
  instrument.classList.toggle("burn",view.burn);
  instrument.classList.toggle("contact",flightStatus===6);
  const clock=frame[30]>1?"×"+frame[30]+" · ":"";
@@ -761,7 +799,7 @@ function hud(){
  text("systems",signalLost?"SIGNAL LOST":"SYSTEMS ONLINE");
  main.classList.toggle("signal-lost",signalLost);
  const readout=entry?clock+(frame[28]/1000).toFixed(1)+" km · "+(engine.entry_flow(5)/1000).toFixed(2)+" km/s":
-   clock+flightStatusText(flightStatus)+" · "+speed.toFixed(1)+" m/s"+(eva?" · Δv "+frame[31].toFixed(1)+" m/s":"")+(view.far?" · "+(frame[28]/1000).toFixed(0)+" km":"");
+   clock+flightStatusText(flightStatus)+" · "+speed.toFixed(1)+" m/s"+(eva?" · Δv "+frame[31].toFixed(1)+" / 20 m/s":"")+(view.far?" · "+(frame[28]/1000).toFixed(0)+" km":"");
  text("flight-speed",readout);
  const vector=$("drift-vector");
  vector.style.opacity=String(showDrift);
@@ -775,8 +813,9 @@ function hud(){
  text("help",view.tip);
  text("compact-help",view.short);
  $("compact-help").hidden=!view.short;
- $("action").disabled=!active||!view.interact;
- text("action",view.action);
+ const instruction=view.interact?equipmentInstruction(view.action,hudRow[8],coarseShadow):"";
+ $("equipment-prompt").hidden=!instruction;
+ text("equipment-prompt",instruction);
  text("exercise",view.section);
 }
 function text(id,value){const node=$(id);if(node.textContent!==value)node.textContent=value;}
@@ -836,18 +875,50 @@ function animate(t){
  render(alpha);
  if(timing)timing(t);
 }
-function clearPointers(){for(const stick of Object.values(sticks))stick.id=null;grabbed=null;actionTouch=null;}
+const touchContacts=new Set();
+function clearPointers(){touchContacts.clear();for(const stick of Object.values(sticks))stick.id=null;grabbed=null;pickFrame=null;}
+function tryEquipment(clientX,clientY){
+ if(!active||!lastPickCamera||!pickFrame?.[8]||!pickEquipment)return;
+ const bounds=canvas.getBoundingClientRect();
+ if(clientX<bounds.left||clientX>=bounds.right||clientY<bounds.top||clientY>=bounds.bottom)return;
+ const x=2*(clientX-bounds.left)/bounds.width-1,y=1-2*(clientY-bounds.top)/bounds.height;
+ const selected=pickEquipment(x,y,lastPickCamera,pickFrame);
+ if(selected)engine.equipment_activate(selected);
+}
+function rejectMultiPointerTap(next){
+ if(touchContacts.size>1)next.drag=true;
+ for(const contact of [grabbed,sticks.move,sticks.look]){
+  if(contact&&contact!==next&&contact.id!==null){contact.drag=true;next.drag=true;}
+ }
+}
+main.addEventListener("pointerdown",e=>{
+ if(!active||e.pointerType!=="touch"||(e.target!==canvas&&!e.target.closest(".thumb-zone")))return;
+ touchContacts.add(e.pointerId);
+ if(touchContacts.size>1){
+  for(const contact of [grabbed,sticks.move,sticks.look])if(contact&&contact.id!==null)contact.drag=true;
+ }
+},true);
+for(const event of ["pointerup","pointercancel"])
+ window.addEventListener(event,e=>touchContacts.delete(e.pointerId),true);
+function dragDistance(e,start){return Math.hypot(e.clientX-start.startX,e.clientY-start.startY);}
 function clear(){engine?.input_clear();clearPointers();}
 canvas.addEventListener("pointerdown",e=>{
- if(!active||grabbed!==null)return;grabbed={id:e.pointerId,x:e.clientX,y:e.clientY};canvas.setPointerCapture(e.pointerId);
+ if(!active||e.button!==0||grabbed!==null)return;
+ grabbed={id:e.pointerId,x:e.clientX,y:e.clientY,startX:e.clientX,startY:e.clientY,drag:false};
+ rejectMultiPointerTap(grabbed);canvas.setPointerCapture(e.pointerId);
 });
 canvas.addEventListener("pointermove",e=>{
  if(grabbed?.id!==e.pointerId)return;
  engine.input_pointer(e.clientX-grabbed.x,e.clientY-grabbed.y,Number(e.pointerType==="touch"));
- grabbed={id:e.pointerId,x:e.clientX,y:e.clientY};
+ grabbed.drag||=dragDistance(e,grabbed)>7;
+ grabbed.x=e.clientX;grabbed.y=e.clientY;
 });
 for(const event of ["pointerup","pointercancel","lostpointercapture"]){
- canvas.addEventListener(event,e=>{if(grabbed?.id===e.pointerId)grabbed=null;});
+ canvas.addEventListener(event,e=>{
+  if(grabbed?.id!==e.pointerId)return;
+  const contact=grabbed;grabbed=null;
+  if(event==="pointerup"&&!contact.drag&&dragDistance(e,contact)<=7)tryEquipment(e.clientX,e.clientY);
+ });
 }
 function releaseStick(stick){
  stick.id=null;engine.input_release(stick.zone);
@@ -857,19 +928,29 @@ for(const [name,stick] of Object.entries(sticks)){
  const locate=e=>engine.input_stick(stick.zone,innerWidth,e.clientX-stick.startX,e.clientY-stick.startY);
  node.addEventListener("pointerdown",e=>{
   if(!active||stick.id!==null||e.pointerType!=="touch")return;
-  stick.id=e.pointerId;stick.startX=e.clientX;stick.startY=e.clientY;node.setPointerCapture(e.pointerId);
+  stick.id=e.pointerId;stick.startX=e.clientX;stick.startY=e.clientY;
+  stick.drag=false;rejectMultiPointerTap(stick);
+  node.setPointerCapture(e.pointerId);
  });
- node.addEventListener("pointermove",e=>{if(stick.id===e.pointerId)locate(e);});
- for(const type of ["pointerup","pointercancel","lostpointercapture"])node.addEventListener(type,e=>{if(stick.id===e.pointerId)releaseStick(stick);});
+ node.addEventListener("pointermove",e=>{if(stick.id===e.pointerId){stick.drag||=dragDistance(e,stick)>9;locate(e);}});
+ for(const type of ["pointerup","pointercancel","lostpointercapture"])node.addEventListener(type,e=>{if(stick.id===e.pointerId){
+  const select=type==="pointerup"&&!stick.drag&&dragDistance(e,stick)<=9;
+  releaseStick(stick);if(select)tryEquipment(e.clientX,e.clientY);
+ }});
 }
 window.addEventListener("blur",clear);
 document.addEventListener("visibilitychange",()=>{if(document.hidden)clear();});
 window.addEventListener("keydown",e=>{
  if(!active||e.altKey||e.ctrlKey||e.metaKey)return;
+ if(e.target instanceof HTMLElement&&e.target.matches("select,input,textarea,[contenteditable]"))return;
+ if(e.code==="KeyX"){
+   if(!e.repeat&&lastCanCoast)engine.input_action(1);
+   return;
+ }
  if(e.code==="KeyE"){
+   if(e.target instanceof HTMLElement&&e.target.closest("button,select,input,dialog,[contenteditable]"))return;
    e.preventDefault();
-   // Like the action button, preserve a press until the next fixed tick.
-   if(!e.repeat)engine.input_action(0);
+   if(!e.repeat){const r=canvas.getBoundingClientRect();tryEquipment(r.left+r.width/2,r.top+r.height/2);}
    return;
  }
  const slot=browserKeys.get(e.code);if(slot!==undefined){e.preventDefault();engine.input_key(slot,1);}
@@ -886,27 +967,6 @@ quality.addEventListener("change",()=>{
  if(engine)configureShadow();
  worldVersion++;
 });
-const actionButton=$("action");
-actionButton.addEventListener("pointerdown",e=>{
- suppressTouchClick=e.pointerType==="touch";
- if(suppressTouchClick&&!actionButton.disabled)actionTouch={id:e.pointerId,x:e.clientX,y:e.clientY};
-});
-actionButton.addEventListener("pointerup",e=>{
- if(actionTouch?.id!==e.pointerId)return;
- const start=actionTouch;
- actionTouch=null;
- // Mobile browsers can suppress the compatibility click after a camera drag.
- // Queue a bounded touch release itself, without double-firing a later click.
- const hit=actionButton.getBoundingClientRect();
- if(active&&!actionButton.disabled&&Math.hypot(e.clientX-start.x,e.clientY-start.y)<14&&
-    e.clientX>=hit.left&&e.clientX<=hit.right&&e.clientY>=hit.top&&e.clientY<=hit.bottom)engine.input_action(0);
-});
-for(const type of ["pointercancel","lostpointercapture"])actionButton.addEventListener(type,e=>{
- if(actionTouch?.id===e.pointerId)actionTouch=null;
-});
-actionButton.onclick=e=>{
- if(active&&!actionButton.disabled&&!(suppressTouchClick&&e.detail>0))engine.input_action(0);
-};
 function enter(which){
  clear();engine.input_advance(0,0);if(which===2)engine.select_reentry();else engine.select_deck(which);engine.tick(0,0,0,0);
  active=true;last=performance.now();$("intro").hidden=true;hud();
@@ -921,7 +981,7 @@ function closePause(){
 }
 function pauseExercise(){
  if(!active)return;
- clearPointers();engine.input_advance(0,2);active=false;
+ clearPointers();engine.input_advance(0,2);active=false;hud();
  $("pause-settings").append(qualityLabel);
  pauseDialog.showModal();$("resume").focus();
 }
@@ -970,7 +1030,7 @@ try{
    avatar_rig(p,n){rigRow=new Float64Array(engine.memory.buffer,p,n);},
    material_art(p,n){if(n!==113)throw Error("Unexpected station material profile");materialArt=new Float64Array(engine.memory.buffer,p,n);},
    sky_art(p,n){if(n!==37)throw Error("Unexpected celestial profile");skyArt=new Float64Array(engine.memory.buffer,p,n);},
-   hud_view(p,n){if(n!==8)throw Error("Unexpected HUD projection");hudRow=new Float64Array(engine.memory.buffer,p,n);},
+   hud_view(p,n){if(n!==15)throw Error("Unexpected HUD projection");hudRow=new Float64Array(engine.memory.buffer,p,n);},
    render_budget(p,n){if(n!==3)throw Error("Unexpected renderer plan");renderPlan=new Float64Array(engine.memory.buffer,p,n);},
    earth_tiles(p,n){if(n!==19)throw Error("Unexpected globe tile projection");tileRow=new Float64Array(engine.memory.buffer,p,n);},
    entry_shell(p,n){if(n!==6144)throw Error("Unexpected entry shell");entryMesh=new Float32Array(engine.memory.buffer,p,n);},
@@ -984,6 +1044,7 @@ try{
  orbitalSun=skyArt.subarray(0,3);
  const sun=sunShader(skyArt);
  scene=program(vs,fs(sun,materialArt));space=program(svs,sfs(sun,skyArt));skyCopy=program(svs,skyCopyFS);depth=program(depthVS(sun),depthFS);room=batch();hand=batch();hull=batch();
+ pickEquipment=equipmentPicker(gl,program(vs,pickFragment),meshes);
  skyTexture=gl.createTexture();gl.bindTexture(gl.TEXTURE_2D,skyTexture);
  for(const mode of [gl.TEXTURE_MIN_FILTER,gl.TEXTURE_MAG_FILTER])gl.texParameteri(gl.TEXTURE_2D,mode,gl.LINEAR);
  for(const axis of [gl.TEXTURE_WRAP_S,gl.TEXTURE_WRAP_T])gl.texParameteri(gl.TEXTURE_2D,axis,gl.CLAMP_TO_EDGE);

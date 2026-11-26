@@ -161,4 +161,25 @@ i32(i32) copy_intent=fn(code){
     if(intent==CopyIntent::empty_tank){3}else{if(intent==CopyIntent::arrival_pulse){2}
     else{if(intent==CopyIntent::counterthrust){1}else{0}}}
 };
+i32(i32,i32,i32) equipment=fn(code,deck,leg){
+    if((code&1024)==0||((code>>16)&7)>5){0}else{
+        i32 section=(code>>16)&7;
+        if(deck==0){if(section==0){1}else{0}}
+        else{if(section==5){6}else{if(section==4&&(code&63)!=9){5}else{2+leg}}}
+    }
+};
+f64(i32,i32,f32,f32) target_geometry=fn(target,lane,anchor_y,anchor_z){
+    f64 y=core.float_extend<f64>(anchor_y);
+    f64 z=core.float_extend<f64>(anchor_z);
+    if(target==1){
+        f64[6] indoor=[0.678,-0.324,-2.993,0.816,-0.180,-1.810];
+        indoor[core.int_extend<u64>(lane)]
+    }else{
+        f64 low=if(target==6){-1.008}else{if(target==5){0.91}else{if(target==4){-0.301}else{-1.55}}};
+        f64 high=if(target==6){-0.782}else{if(target==5){1.46}else{if(target==4){0.052}else{1.13}}};
+        f64 radius=if(target==6){0.097}else{if(target==5){0.108}else{0.090}};
+        f64[6] bounds=[low,y-radius,z-radius,high,y+radius,z+radius];
+        bounds[core.int_extend<u64>(lane)]
+    }
+};
 %%end

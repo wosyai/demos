@@ -94,3 +94,16 @@ export function hudText(code,leg,showFirstLookHint,copyIntent){
 
 const flightStatuses=["FREE FLOAT","DRIFT","ANCHORED","TAKING HOLD","PUSHING OFF","THRUST","HULL CONTACT"];
 export function flightStatusText(status){return flightStatuses[status];}
+
+const equipmentNames=["","rail","rail","rail","cargo pin","console handle","hatch handle"];
+const equipmentActions={
+ "Grip rail":"grip it","Grip handle":"grip it","Grip hatch":"grip it",
+ "Release & push":"release and push off","Seat cargo lock":"seat it",
+ "Drift to align":"release and drift to the console","Set alignment":"lower the cargo",
+ "Transfer cargo":"transfer the load","Release & return":"release and return to the hatch",
+ "Lock airlock":"lock the hatch"
+};
+export function equipmentInstruction(action,id,touch){
+ const name=equipmentNames[id],verb=equipmentActions[action];
+ return name&&verb?(touch?"Tap":"Click")+" the highlighted "+name+" to "+verb+".":"";
+}

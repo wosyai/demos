@@ -10,7 +10,7 @@ f64 dy=0.0;
 f64 thrust_x=0.0; f64 thrust_y=0.0;
 f64 head_x=0.0; f64 head_y=0.0;
 i32(u64) binding=fn(physical_slot){
-    i32[12] masks=[1,1,2,2,4,4,8,8,16,32,256,256];
+    i32[12] masks=[1,0,2,0,4,0,8,0,16,32,256,256];
     masks[physical_slot]
 };
 i32(i32,i32) logical=fn(i,mask){
@@ -54,8 +54,11 @@ unit(i32,f64,f64,f64) stick=fn(zone,width,dx0,dy0){
         if(amount>0.08){seen=true;};
     };
 };
+f64(i32,i32) digital=fn(positive,negative){
+    (if((physical&positive)!=0){1.0}else{0.0})-(if((physical&negative)!=0){1.0}else{0.0})
+};
 i32() status=fn{
-    (if(seen){1}else{0})|(if(coasting){2}else{0})|(if(dx!=0.0||dy!=0.0||head_x!=0.0||head_y!=0.0){4}else{0})
+    (if(seen){1}else{0})|(if(coasting){2}else{0})|(if(dx!=0.0||dy!=0.0||head_x!=0.0||head_y!=0.0||(physical&170)!=0){4}else{0})
 };
 i32() command_mask=fn{
     i32 mask=logical(0,0);
@@ -69,9 +72,10 @@ i32() contact_pulse=fn{
     if(edge){64}else{0}
 };
 f64(i32) axis=fn(lane){
+    f64 keyed_x=digital(8,2);f64 keyed_y=digital(32,128);
     if(lane==0){thrust_x}else{if(lane==1){-thrust_y}else{
-    if(lane==2){math.clamp(dx/0.045+head_x,-1.0,1.0)}else{if(lane==3){math.clamp(dy/0.045-head_y,-1.0,1.0)}else{
-    if(lane==4){dx+head_x*0.033}else{dy-head_y*0.027}}}}}
+    if(lane==2){math.clamp(dx/0.045+head_x+keyed_x,-1.0,1.0)}else{if(lane==3){math.clamp(dy/0.045-head_y+keyed_y,-1.0,1.0)}else{
+    if(lane==4){dx+math.clamp(head_x+keyed_x*0.58,-1.0,1.0)*0.033}else{dy+math.clamp(-head_y+keyed_y*0.58,-1.0,1.0)*0.027}}}}}
 };
 unit() consume_pointer=fn{dx=0.0;dy=0.0;};
 %%end
