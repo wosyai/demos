@@ -233,6 +233,7 @@ vec3 sunColor(vec3 n){
  bool doorPlate=abs(material.y-.754)<.0007;
  float shadow=direct>0. ? shadowAt(world+(doorPlate?n*.018:vec3(0.)),n,direct):0.;
  float spec=0.;
+ float directMetal=metal;
  if(shadow>0.){
    vec3 halfway=normalize(sunDir+normalize(eye-world));
    float lobe=max(dot(n,halfway),0.);
@@ -240,7 +241,13 @@ vec3 sunColor(vec3 n){
      // Turned rail shells have a narrow lobe across the brushed grain.
      lobe=min(1.,lobe*inversesqrt(max(.32,1.-.87*halfway.x*halfway.x)));
      polish=134.;
+     directMetal=1.08;
      metal=1.08;
+   }
+   if(practicalLighting&&abs(material.y-${n(75)})<.00008){
+     float bevel=1.-abs(n.x);
+     polish=mix(${n(76)},${n(77)},bevel);
+     directMetal=${n(78)};
    }
    spec=pow(lobe,polish);
  }
@@ -297,7 +304,7 @@ vec3 sunColor(vec3 n){
    float skyReflect=smoothstep(-.5,.6,n.y);
    ambient+=mix(vec3(.06,.125,.20),vec3(.026,.028,.022),skyReflect)*(.40+.60*sheet.b);
  }
- vec3 energy=col*(ambient+lamp*direct*shadow*1.44)+metal*spec*shadow*lamp;
+ vec3 energy=col*(ambient+lamp*direct*shadow*1.44)+directMetal*spec*shadow*lamp;
  if(gripContact.w>0.){
    // Profile-local contact occlusion on the bar. Existing station shadows
    // remain authoritative for projected structures; no new render pass.
@@ -891,13 +898,13 @@ function shadowBuffer(size){
  }
 try{
  if(!gl)throw Error("WebGL 2 is required to render the station.");
- const response=await fetch(new URL("./orbital.wasm?v=63",import.meta.url));
+ const response=await fetch(new URL("./orbital.wasm?v=64",import.meta.url));
  if(!response.ok)throw Error("The station engine could not be downloaded.");
  const {instance}=await WebAssembly.instantiate(await response.arrayBuffer(),{
   orbital:{
    indexed:uploadIndexed,hands:uploadHands,
    avatar_rig(p,n){rigRow=new Float64Array(engine.memory.buffer,p,n);},
-   material_art(p,n){if(n!==75)throw Error("Unexpected station material profile");materialArt=new Float64Array(engine.memory.buffer,p,n);},
+   material_art(p,n){if(n!==79)throw Error("Unexpected station material profile");materialArt=new Float64Array(engine.memory.buffer,p,n);},
    sky_art(p,n){if(n!==29)throw Error("Unexpected celestial profile");skyArt=new Float64Array(engine.memory.buffer,p,n);},
    hud_view(p,n){if(n!==8)throw Error("Unexpected HUD projection");hudRow=new Float64Array(engine.memory.buffer,p,n);},
    render_budget(p,n){if(n!==3)throw Error("Unexpected renderer plan");renderPlan=new Float64Array(engine.memory.buffer,p,n);},
