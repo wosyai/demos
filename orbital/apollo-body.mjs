@@ -277,7 +277,7 @@ uniform vec3 eye;
 uniform vec4 basis;
 uniform vec2 optics;
 uniform vec2 roll;
-uniform float clipBias;
+uniform vec2 depthClip;
 out vec2 tex;
 out vec3 n;
 out vec3 world;
@@ -288,7 +288,7 @@ void main(){
  vec3 p=world-eye;
  vec3 q=vec3(basis.x*p.x+basis.y*p.z,p.y,-basis.y*p.x+basis.x*p.z);
  vec3 a=vec3(q.x,basis.z*q.y+basis.w*q.z,-basis.w*q.y+basis.z*q.z);
- gl_Position=vec4((roll.x*a.x+roll.y*a.y)*optics.x,(-roll.y*a.x+roll.x*a.y)*optics.y,-1.002*a.z-clipBias,-a.z);
+ gl_Position=vec4((roll.x*a.x+roll.y*a.y)*optics.x,(-roll.y*a.x+roll.x*a.y)*optics.y,-depthClip.x*a.z-depthClip.y,-a.z);
  tex=uv;n=mat3(skin)*normal;surfacePoint=pos;surfaceColor=baked?bakedColor:baseColor;
 }`;
 const fragment=sunVisibility=>`#version 300 es
@@ -427,7 +427,7 @@ export async function loadApolloBody(gl,url,rig,sunVisibility){
 
 function renderAvatar(gl,pose,meshes,hasEquipment=false,sunVisibility,stock=false){
  const p=program(gl,sunVisibility);
- const U=Object.fromEntries(['eye','basis','optics','roll','clipBias','sunDirection','firstPerson','stockEyeSeat','plume','interiorOptic','baseColor','baked','mapped','albedo'].map(n=>[n,gl.getUniformLocation(p,n)]));
+ const U=Object.fromEntries(['eye','basis','optics','roll','depthClip','sunDirection','firstPerson','stockEyeSeat','plume','interiorOptic','baseColor','baked','mapped','albedo'].map(n=>[n,gl.getUniformLocation(p,n)]));
  const S=sunVisibility?Object.fromEntries(['stationSun','sunMap','detailedShadow','renderFraction','earthLighting'].map(n=>[n,gl.getUniformLocation(p,n)])):null;
  const unlitEarth=new Float32Array(4);
  const UBO=3, TEX=8, palette=gl.createBuffer();
@@ -439,7 +439,7 @@ function renderAvatar(gl,pose,meshes,hasEquipment=false,sunVisibility,stock=fals
  let last=null,visor=null;
  return {
   stockEyeSeat:stock,
-  draw(frame,{camera, optics, thirdPerson=false, sunDirection=[.5674,.611,.5521], roll=[1,0],stationSun=false,earthLighting,shadowDetail=false,renderFraction=1,clipBias=.1,...opts}){
+  draw(frame,{camera, optics, thirdPerson=false, sunDirection=[.5674,.611,.5521], roll=[1,0],stationSun=false,earthLighting,shadowDetail=false,renderFraction=1,depthClip=[1.002,.10],...opts}){
    last=pose.solve(frame,opts);visor=null;
    gl.useProgram(p);gl.uniform3fv(U.eye,camera.eye);
    if(S){
@@ -451,7 +451,7 @@ function renderAvatar(gl,pose,meshes,hasEquipment=false,sunVisibility,stock=fals
     }
    }
    gl.uniform4f(U.basis,Math.cos(camera.yaw),Math.sin(camera.yaw),Math.cos(camera.pitch),Math.sin(camera.pitch));
-   gl.uniform1f(U.clipBias,clipBias);gl.uniform2fv(U.optics,optics);gl.uniform2fv(U.roll,roll);gl.uniform3fv(U.sunDirection,sunDirection);
+   gl.uniform2fv(U.depthClip,depthClip);gl.uniform2fv(U.optics,optics);gl.uniform2fv(U.roll,roll);gl.uniform3fv(U.sunDirection,sunDirection);
    gl.uniform1i(U.albedo,TEX);gl.uniform1f(U.plume,0);gl.uniform1i(U.firstPerson,!thirdPerson);
    gl.bindBuffer(gl.UNIFORM_BUFFER,palette);gl.bufferSubData(gl.UNIFORM_BUFFER,0,last.palette);
    gl.bindBufferBase(gl.UNIFORM_BUFFER,UBO,palette);gl.activeTexture(gl.TEXTURE0+TEX);
