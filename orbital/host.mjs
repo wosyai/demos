@@ -1,4 +1,4 @@
-import {hudText,flightStatusText} from "./hud-text.mjs?v=7";
+import {hudText,flightStatusText} from "./hud-text.mjs?v=8";
 import {reentryGlow} from "./reentry-glow.mjs?v=2";
 import {earthDetail} from "./earth-detail.mjs?v=3";
 import {exteriorSky} from "./exterior-sky.mjs?v=6";
@@ -875,7 +875,7 @@ function shadowBuffer(size){
  }
 try{
  if(!gl)throw Error("WebGL 2 is required to render the station.");
- const response=await fetch(new URL("./orbital.wasm?v=61",import.meta.url));
+ const response=await fetch(new URL("./orbital.wasm?v=62",import.meta.url));
  if(!response.ok)throw Error("The station engine could not be downloaded.");
  const {instance}=await WebAssembly.instantiate(await response.arrayBuffer(),{
   orbital:{

@@ -299,6 +299,41 @@ assert.ok(hint().tip.startsWith("Thrust left to slow down."),"desktop help expos
 step(64);assert.equal(state[9],0);
 engine.set_thrust(-1,0);while(state[5]>.08)step(256);engine.set_thrust(0,0);step();
 assert.equal(state[18],4);assert.equal(state[10],0,'counterthrust does not bypass aim');
+if(process.argv[3]==="--console-overshoot"){
+ for(let i=0;i<900;i++)step();
+ const sight=()=>{
+  const dx=1.255-state[0],dz=state[2]+4.864,dy=-.260-state[1];
+  return [Math.atan2(dx,dz),Math.atan2(dy,Math.hypot(dx,dz))];
+ };
+ const look=(offsetYaw,offsetPitch)=>{
+  const [targetYaw,targetPitch]=sight();
+  step(0,targetYaw+offsetYaw-state[3],targetPitch+offsetPitch-state[4],0);
+ };
+ look(0,0);
+ for(let i=0;i<180;i++){look(0,0);step();}
+ assert.ok(Math.hypot(state[0]-1.04,state[1]+.025,state[2]+4.16)>1.25);
+ assert.ok(Math.hypot(...state.slice(5,8))<.25);
+ for(const [dyaw,dpitch,name,marker] of [
+  [-.65,0,"Look right","→"],[.65,0,"Look left","←"],
+  [0,-.46,"Look up","↑"],[0,.46,"Look down","↓"],
+ ]){
+  look(dyaw,dpitch);hudIs("Face the alignment console",false,marker);
+  assert.equal(hint().action,name);
+  assert.equal(state[10],0);
+ }
+ step(64);assert.equal(state[9],0,"signed guidance never widens grip reach");
+ look(0,0);assert.equal(hint().objective,"Approach the alignment console");
+ // Drift out along the unobstructed starboard departure; warp is enabled only past the existing limit.
+ look(0,0);
+ for(let i=0;i<150;i++)step(2);
+ const radius=()=>Math.hypot(...state.slice(0,3));
+ until(()=>radius()>=149.6,0,15_000);
+ until(()=>radius()>150.1,512,120);
+ hudIs("Separated from station",false);
+ assert.equal(hint().far,true);assert.equal(hint().coast,true);assert.equal(state[30],120);
+ console.log("Console overshoot: four signed disabled bearings, unchanged Grip reach, generic aligned approach and existing far warp passed.");
+ process.exit(0);
+}
  hudIs("Face the alignment console",false,"→");
 step(64);assert.equal(state[9],0);
 step(0,1.00);assert.equal(state[18],5,'overshooting the light reverses the Wosy reticle cue');

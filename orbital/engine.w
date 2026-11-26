@@ -1713,9 +1713,10 @@ bool(f32,f32,f32,f32,f32) approaching_stop_window=fn(dx,dy,dz,distance_sq,speed_
 hud.Cargo cargo_phase=hud.Cargo::rails;
 hud.Steering steer_cue=hud.Steering::none;
 i32 arrival_pulse=0;
+bool() far_from_station=fn{pilot_x*pilot_x+pilot_y*pilot_y+pilot_z*pilot_z>22500.0};
 i32() hud_code = fn{
     hud.Motion motion=hud.flight(mode);
-    bool far=pilot_x*pilot_x+pilot_y*pilot_y+pilot_z*pilot_z>22500.0;
+    bool far=far_from_station();
     bool burn=thrust_x*thrust_x+thrust_y*thrust_y+thrust_z*thrust_z>0.0001;
     i32 opposite=0;
     if(steer_cue==hud.Steering::slow_rail||steer_cue==hud.Steering::counterthrust){
@@ -1762,7 +1763,7 @@ unit(f32,i32,f32,f32) tick = fn(dt,keys,look_x,look_y) {
         thrust_z=diag*(ax*sine(yaw)-forward*cosine(yaw)*cosine(pitch));
         f32 power=if((keys&256)!=0){0.42}else{1.52};
         if(deck==1){
-            if((keys&512)!=0 && ax==0.0 && forward==0.0 && ay==0.0 && pilot_x*pilot_x+pilot_y*pilot_y+pilot_z*pilot_z>22500.0){orbit_warp=120.0;};
+            if((keys&512)!=0 && ax==0.0 && forward==0.0 && ay==0.0 && far_from_station()){orbit_warp=120.0;};
             orbital_gravity(d*orbit_warp);
         };
         f32 effort_sq=thrust_x*thrust_x+thrust_y*thrust_y+thrust_z*thrust_z;
@@ -1889,7 +1890,7 @@ unit(f32,i32,f32,f32) tick = fn(dt,keys,look_x,look_y) {
             if((nearby && !slow)||approaching_stop_window(dock_x-pilot_x,dock_y-pilot_y,dock_z-pilot_z,distance_sq,speed_sq)){
                 steer_cue=hud.Steering::counterthrust;
             };
-            if(nearby && slow && !aligned){steer_cue=aim_hint;};
+            if(slow && !aligned && (nearby || (for_alignment&&!far_from_station()))){steer_cue=aim_hint;};
             if(!nearby && slow && aligned && distance_sq<1.44){
                 steer_cue=if(for_hatch){hud.Steering::ease_hatch}else{hud.Steering::ease_console};
                 f32 ax0=dock_x-pilot_x;f32 ay0=dock_y-pilot_y;f32 az0=dock_z-pilot_z;

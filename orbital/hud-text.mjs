@@ -63,6 +63,9 @@ function counter(face){
 export function hudText(code,leg,showFirstLookHint,copyIntent){
  const entry=messages[code&63], aim=(code>>>6)&7, route=Boolean(code&512);
  let [objective,tip,action,short=""]=typeof entry==="function"?entry(rails[leg],showFirstLookHint):entry;
+ if((code&63)===15&&aim>=4){
+  action=["Look right","Look left","Look up","Look down"][aim-4];
+ }
  if(copyIntent===1){
   const direction=code>>>19;
   short=counter(direction);
