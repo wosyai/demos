@@ -113,8 +113,10 @@ vec3 orbitalExterior(vec3 ray, vec3 backdrop, vec3 centerDir, float earthSinRadi
       float feather=min(1.,.125*min(m.x,m.y));
       // Fade frequencies above the screen's Nyquist limit toward the limb.
       // Derivative magnitude from the ray/sphere intersection, not wrapped UV.
-      float footprint=earthTexelAngle*distanceToSurface/max(.02,projected);
-      float gain=feather*(1.-smoothstep(5.,10.,footprint));
+      // The antialiased silhouette fringe can extend beyond the sphere.
+      // Keep its filtering distance bounded by the genuine nearest point.
+      float footprint=earthTexelAngle*max(1.-radius,distanceToSurface)/max(.02,projected);
+      float gain=feather*(1.-smoothstep(5.,${profile[36].toFixed(1)},footprint));
       if(gain>0.){
         float fine=(textureLod(earthFine,vec3(st,float(layer)),clamp(log2(max(1.,footprint)),0.,3.)).r-128./255.)*.5;
         albedo=clamp(albedo+gain*fine,0.,1.);

@@ -22,6 +22,8 @@ f32[512] tally=[
 i32[9] IDs=[-1,-1,-1,-1,-1,-1,-1,-1,-1];
 f64[19] tiles=[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0];
 f64 next_scan=0.0;
+bool detail_eligible=true;
+f64() detail_fade_end=fn{10.0};
 unit(u64) clear_tally=fn(i){
     if(i<512){tally[i]=0.0;clear_tally(i+1);};
 };
@@ -72,13 +74,22 @@ unit(u64) pack=fn(i){
 };
 bool(f64,f64,f64,f64,f64,f64,f64,f64,f64,f64,f64,f64,f64,f64,f64) scan=fn(now,height,x,y,z,radius,spin,aa,bb,cc,ss,ox,oy,roll_c,roll_s){
     tiles[0]=10430.0/(height*oy);
-    if(now<next_scan){false}else{
-        next_scan=now+180.0;
-        clear_tally(0);clear_ids(0);
-        f64 mag=math.norm(x,y,z);
-        sample(0,x/mag,y/mag,z/mag,radius,aa,bb,cc,ss,math.cos(spin),math.sin(spin),ox,oy,roll_c,roll_s);
-        rank(0);pack(0);
-        true
+    f64 disc=math.clamp(radius,0.0001,0.999999);
+    f64 best_depth=if(disc>0.02){disc}else{0.02};
+    bool eligible=tiles[0]*(1.0-disc)/best_depth<detail_fade_end()+0.001;
+    bool changed=eligible!=detail_eligible;
+    detail_eligible=eligible;
+    if(!eligible){
+        if(changed){clear_ids(0);pack(0);true}else{false}
+    }else{
+        if(!changed&&now<next_scan){false}else{
+            next_scan=now+180.0;
+            clear_tally(0);clear_ids(0);
+            f64 mag=math.norm(x,y,z);
+            sample(0,x/mag,y/mag,z/mag,radius,aa,bb,cc,ss,math.cos(spin),math.sin(spin),ox,oy,roll_c,roll_s);
+            rank(0);pack(0);
+            true
+        }
     }
 };
 unit() publish=fn{unsafe {bridge.earth_tiles(core.pointer_cast<*?u8>(&?tiles[0]),19);};};

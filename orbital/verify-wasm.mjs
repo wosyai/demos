@@ -53,7 +53,7 @@ engine=new WebAssembly.Instance(wasm,{orbital:{
  },hands(p,n){hand=read(p,n);handLoads++;},
  avatar_rig(p,n){assert.equal(p%8,0);rigRow=new Float64Array(engine.memory.buffer,p,n);},
  material_art(p,n){assert.equal(n,103);assert.equal(p%8,0);materialArt=new Float64Array(engine.memory.buffer,p,n).slice();},
- sky_art(p,n){assert.equal(n,36);assert.equal(p%8,0);skyArt=new Float64Array(engine.memory.buffer,p,n).slice();},
+ sky_art(p,n){assert.equal(n,37);assert.equal(p%8,0);skyArt=new Float64Array(engine.memory.buffer,p,n).slice();},
  hud_view(p,n){assert.equal(n,8);assert.equal(p%8,0);hudView=new Float64Array(engine.memory.buffer,p,n).slice();},
  render_budget(p,n){assert.equal(n,3);assert.equal(p%8,0);rendererPlan=new Float64Array(engine.memory.buffer,p,n).slice();},
  earth_tiles(p,n){assert.equal(n,19);assert.equal(p%8,0);earthTiles=new Float64Array(engine.memory.buffer,p,n).slice();},
@@ -916,6 +916,15 @@ for(let mask=0;mask<512;mask++){
  assert.equal(engine.globe_request(mask,2),-1);
 }
 assert.equal(engine.globe_retry(237.5),60237.5);
+assert.equal(skyArt[36],10);
+assert.equal(engine.globe_tiles(381,342),1,'a coarse raster immediately retires detail demand');
+assert.ok(earthTiles[0]*(1-globeView[52])/globeView[52]>skyArt[36]+.001);
+assert.deepEqual([...earthTiles.slice(1,10)],Array(9).fill(-1));
+assert.equal(engine.globe_request(511,0),-1,'no demand can contribute at any visible Earth ray');
+assert.equal(engine.globe_tiles(382,341),0,'staying ineligible does not rescan');
+assert.equal(engine.globe_tiles(383,845),1,'detail recovery rescans immediately, before the old deadline');
+assert.deepEqual(earthTiles.slice(1),geographicPlan,'the native page demand and priorities are identical when recovered');
+assert.notEqual(engine.globe_request(511,0),-1);
 console.log('Wosy globe detail: camera geography, exact tile slots and scores, and scan cadence passed.');
 
 engine.select_deck(1);engine.tick(0,0,0,0);
@@ -1047,7 +1056,7 @@ for(const altitudeKm of [390,260,80]){
 console.log('Wosy Earth atmosphere: fixed physical column at physical orbit radii with the original showcase disc.');
 
 
-assert.deepEqual([...skyArt.slice(30)],[1,.97,.90,.46,.34,.23]);
+assert.deepEqual([...skyArt.slice(30,36)],[1,.97,.90,.46,.34,.23]);
 const solarRadiusSq=skyArt[19];
 const limb=(scale)=>.88+.12*Math.sqrt(Math.max(0,1-scale**2));
 const glow=(scale,inner)=>{
