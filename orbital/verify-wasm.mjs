@@ -1003,3 +1003,20 @@ console.log('Wosy Coast: ordinary pause preserves warp intent, not held input or
 
 assert.deepEqual([...waypointChecks].sort(),[1,2,3,4,5],"all five world waypoints were exercised along the real mission");
 console.log("Wosy waypoint: five authored station markers projected through actual camera optics in portrait and desktop.");
+
+
+const authoredMmu=rig.mmuGrasps();
+assert.equal(rig.mmuGrasps(),authoredMmu,'cache the authored profile once outside the dynamic buffer');
+for(const profile of authoredMmu){
+ assert.equal(profile.bends.length,14);
+ assert.ok(Math.abs(Math.hypot(...profile.orientation)-1)<1e-8);
+ assert.ok([...profile.translation,...profile.orientation,...profile.bends,profile.opposition].every(Number.isFinite));
+}
+const mmuProbe=new Float32Array(38);
+assert.equal(rig.controls(mmuProbe)[0].fit,1);
+mmuProbe[8]=.11;
+assert.ok(Math.abs(rig.controls(mmuProbe)[0].fit-.5)<1e-6);
+mmuProbe[8]=.23;
+assert.equal(rig.controls(mmuProbe)[0].fit,0);
+assert.equal(rig.controls(mmuProbe)[1].fit,1);
+console.log('Wosy MMU: cached authored profiles and bounded left station handoff; right remains on its control.');

@@ -2,8 +2,8 @@ import {hudText,flightStatusText} from "./hud-text.mjs?v=8";
 import {reentryGlow} from "./reentry-glow.mjs?v=2";
 import {earthDetail} from "./earth-detail.mjs?v=3";
 import {exteriorSky} from "./exterior-sky.mjs?v=6";
-import {loadApolloBody,loadProceduralSuit} from "./apollo-body.mjs?v=17";
-import {bindAvatarRig} from "./avatar-rig.mjs?v=1";
+import {loadApolloBody,loadProceduralSuit} from "./apollo-body.mjs?v=18";
+import {bindAvatarRig} from "./avatar-rig.mjs?v=2";
 let avatarRig,rigRow;
 const $ = id => document.getElementById(id);
 const canvas = $("view");
@@ -898,7 +898,7 @@ function shadowBuffer(size){
  }
 try{
  if(!gl)throw Error("WebGL 2 is required to render the station.");
- const response=await fetch(new URL("./orbital.wasm?v=64",import.meta.url));
+ const response=await fetch(new URL("./orbital.wasm?v=65",import.meta.url));
  if(!response.ok)throw Error("The station engine could not be downloaded.");
  const {instance}=await WebAssembly.instantiate(await response.arrayBuffer(),{
   orbital:{

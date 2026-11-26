@@ -7,14 +7,20 @@ export function bindAvatarRig(instance, read){
   if(!packet||packet.length!==count)throw Error("Invalid Wosy avatar rig packet");
   return packet;
  };
- const controlRow=(lx,ly,rx,ry)=>{
-  const p=checked("avatar_mmu",36,lx,ly,rx,ry);
-  const at=i=>({stem:vec(p,i),handle:vec(p,i+3),pivot:basis(vec(p,i+6),vec(p,i+9),vec(p,i+12),vec(p,i+15))});
-  return [at(0),at(18)];
+ const controlRow=(lx,ly,rx,ry,reach)=>{
+  const p=checked("avatar_mmu",37,lx,ly,rx,ry,reach);
+  const at=(i,fit)=>({fit,stem:vec(p,i),handle:vec(p,i+3),pivot:basis(vec(p,i+6),vec(p,i+9),vec(p,i+12),vec(p,i+15))});
+  return [at(0,p[36]),at(18,1)];
  };
- let neutral;
+ let neutral,grasps;
  return {
-  neutralControls(){return neutral??=controlRow(0,0,0,0);},
+  neutralControls(){return neutral??=controlRow(0,0,0,0,0);},
+  mmuGrasps(){
+   return grasps??=(()=>{
+    const p=checked("avatar_mmu_grasps",44);
+    return [0,22].map(i=>({translation:vec(p,i),orientation:[...p.slice(i+3,i+7)],bends:[...p.slice(i+7,i+21)],opposition:p[i+21]}));
+   })();
+  },
   stationGrip(frame){
    const p=checked("avatar_grip",16,frame[0],frame[1],frame[2],frame[12],frame[13],frame[14],frame[8],frame[19],Number(frame[15]===1&&frame[29]!==1));
    if(!p[0])return null;
@@ -30,7 +36,7 @@ export function bindAvatarRig(instance, read){
    return {body:at(0),head:at(9)};
   },
   controls(frame){
-   return controlRow(frame[33]||0,frame[34]||0,frame[35]||0,frame[36]||0);
+   return controlRow(frame[33]||0,frame[34]||0,frame[35]||0,frame[36]||0,frame[8]||0);
   },
   elbow(shoulder,wrist,upper,fore,pole){
    const p=checked("avatar_elbow",7,...shoulder,...wrist,upper,fore,...pole);

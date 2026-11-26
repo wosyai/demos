@@ -75,7 +75,7 @@ Arm(Vec,Vec,f64,f64,Vec) elbow=fn(shoulder,wrist,upper,fore,pole){
     f64 rise=math.root_scaled(math.clamp(upper*upper-run*run,0.0,1.0e30),1.0);
     Arm value={.elbow=add(shoulder,add(mul(dir,run),mul(normalized(normal),rise)));.wrist=add(shoulder,mul(dir,reach));.error=math.abs(requested-reach);};value
 };
-f64[36] packet=[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0];
+f64[37] packet=[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0];
 unit(i32) send=fn(n){unsafe {bridge.avatar_rig(core.pointer_cast<*?u8>(&?packet[0]),n);};};
 unit(u64,Vec) write_vec=fn(i,value){
     packet[i]=value.x;packet[i+1]=value.y;packet[i+2]=value.z;
@@ -105,8 +105,15 @@ unit(u64,Control) write_control=fn(i,value){
     write_vec(i,value.stem);write_vec(i+3,value.handle);write_vec(i+6,value.right);
     write_vec(i+9,value.up);write_vec(i+12,value.depth);write_vec(i+15,value.offset);
 };
-unit(f64,f64,f64,f64) publish_mmu=fn(lx,ly,rx,ry){
-    write_control(0,control(-1.0,lx,ly));write_control(18,control(1.0,rx,ry));send(36);
+f64[44] mmu_grasps=[
+    -0.2887152623,-0.1758412891,-0.4841333545,-0.123451306,0.213545757,0.5308221924,0.8107933058,-0.5254493068,-0.3753374861,-0.0137239872,0.1343875776,0.2280236504,0.1021752705,0.416207134,0.4879735912,-0.527525945,0.3480901661,0.3336974065,-0.0168848743,-0.0127141235,-0.0072551153,0.2662460463,
+    0.2863297166,-0.1589574046,-0.5100514334,-0.3117934128,-0.3365824157,-0.5727058045,0.6793417451,0.438570613,0.244220647,-0.2174077643,-0.2310878627,-0.1520094235,-0.1797134684,-0.4067223951,-0.3891582468,-0.0781442849,-0.0000153505,0.0,0.1307552871,0.0,0.0,-0.0284366747
+];
+unit() publish_mmu_grasps=fn{unsafe {bridge.avatar_rig(core.pointer_cast<*?u8>(&?mmu_grasps[0]),44);};};
+unit(f64,f64,f64,f64,f64) publish_mmu=fn(lx,ly,rx,ry,mmu_reach){
+    write_control(0,control(-1.0,lx,ly));write_control(18,control(1.0,rx,ry));
+    f64 g=math.clamp(mmu_reach/0.22,0.0,1.0);
+    packet[36]=1.0-g*g*(3.0-2.0*g);send(37);
 };
 unit(f64,f64,f64,f64,f64,f64,f64,f64,f64,f64,f64) publish_elbow=fn(sx,sy,sz,wx,wy,wz,upper,fore,px,py,pz){
     Arm arm=elbow(v(sx,sy,sz),v(wx,wy,wz),upper,fore,v(px,py,pz));

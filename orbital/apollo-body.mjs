@@ -97,6 +97,15 @@ function align(m,from,to){
  return dst;
 }
 
+const mmuBendOrder=[
+ 'ThumbProximal','ThumbDistal',
+ 'IndexProximal','IndexIntermediate','IndexDistal',
+ 'MiddleProximal','MiddleIntermediate','MiddleDistal',
+ 'RingProximal','RingIntermediate','RingDistal',
+ 'LittleProximal','LittleIntermediate','LittleDistal'
+];
+const mmuBendIndex=new Map(mmuBendOrder.map((name,i)=>[name,i]));
+
 export class ApolloPose {
  constructor(asset,rig){
   this.rig=rig;
@@ -107,6 +116,20 @@ export class ApolloPose {
   this.globals=this.nodes.map(()=>null);
   this.joints=asset.json.skins[0].joints;
   this.palette=new Float32Array(89*16);
+  const mmuProfiles=rig.mmuGrasps();
+  this.mmuGrip=Object.fromEntries(['Left','Right'].map((side,i)=>{
+   const g=mmuProfiles[i],prefix=side+'Hand',oppositionName=prefix+'ThumbMetacarpal';
+   const candidates=this.joints.map((node,skin)=>({node,skin,name:this.nodes[node].name}));
+   const match=name=>candidates.filter(c=>c.name===name);
+   const thumb=match(oppositionName);
+   const exact=g.bends.length===mmuBendOrder.length&&thumb.length===1&&mmuBendOrder.every(name=>match(prefix+name).length===1);
+   if(!exact)return [side,null];
+   const {node,skin}=thumb[0],inverse=asset.bind[skin];
+   if(!inverse)return [side,null];
+   const axis=unit(inverse.slice(4,7));
+   if(!Number.isFinite(length(axis))||length(axis)<.5)return [side,null];
+   return [side,{...g,local:matrix(g.translation,g.orientation),thumb:[node,axis]}];
+  }));
   this.knuckles=Object.fromEntries(['Left','Right'].map(side=>[side,this.joints.flatMap((i,ib)=>{
    const name=this.nodes[i].name;
    if(!name.startsWith(side+'Hand'))return [];
@@ -114,7 +137,7 @@ export class ApolloPose {
    const r=thumb?(name.endsWith('Proximal')?-.18:name.endsWith('Distal')?-.20:0):
       name.endsWith('Proximal')?-.12:name.endsWith('Intermediate')?-.43:name.endsWith('Distal')?-.38:0;
    const inv=asset.bind[ib];
-   return r?[[i,r*(side==='Left'?1:-1),unit([inv[0],inv[1],inv[2]])]]:[];
+   return r?[[i,r*(side==='Left'?1:-1),unit([inv[0],inv[1],inv[2]]),mmuBendIndex.get(name.slice(side.length+4))]]:[];
   })]));
  }
  solve(frame,options={}){
@@ -145,10 +168,12 @@ export class ApolloPose {
   for(const [side,s] of [['Left',-1],['Right',1]]){
    const upper=index(side+'ArmUpper'),lower=index(side+'ArmLower'), wrist=index(side+'HandWrist');
    let a=origin(joints[upper]),b=origin(joints[lower]),c=origin(joints[wrist]);
-   const control=controls[side==='Left'?0:1];
+   const i=side==='Left'?0:1,control=controls[i],fit=control.fit;
    const hand=transform(gear,control.handle);
    const controllerForward=unit(sub(hand,transform(gear,control.stem)));
-   const rest=sub(hand,mul(controllerForward,.061));
+   const originalRest=sub(hand,mul(controllerForward,.061));
+   const authored=this.mmuGrip[side], mmu=fit>0&&authored?product(control.mount,authored.local):null;
+   const rest=mmu?mix(originalRest,origin(mmu),fit):originalRest;
    const reach=side==='Left'?grip:0;
    const authoredWrist=Array.from(frame.slice(12,15));
    const published=options.wrist??add(authoredWrist,[.068,.154,.077]);
@@ -190,11 +215,25 @@ export class ApolloPose {
     }
    }
 
+   if(mmu){
+    const x=unit(mix(m.slice(0,3),mmu.slice(0,3),fit));
+    const y0=mix(m.slice(4,7),mmu.slice(4,7),fit);
+    const y=unit(sub(y0,mul(x,dot(x,y0))));
+    m=transformBasis(x,y,cross(x,y),origin(m));
+   }
    install(wrist,m);
+   if(mmu){
+    const [thumb,axis]=authored.thumb;
+    install(thumb,product(joints[thumb],matrix(undefined,orbitRotation(axis,authored.opposition*fit))));
+   }
    const curl=.72+.28*reach;
    // Mirror the approved closed bake's per-knuckle curls.
-   for(const [i,r,axis] of this.knuckles[side])
-    install(i,product(joints[i],matrix(undefined,orbitRotation(axis,r*curl))));
+   const knuckles=this.knuckles[side];
+   for(let j=0;j<knuckles.length;j++){
+    const [joint,r,axis,bendIndex]=knuckles[j];
+    const bend=mmu&&bendIndex!==undefined?r*curl+authored.bends[bendIndex]*fit:r*curl;
+    install(joint,product(joints[joint],matrix(undefined,orbitRotation(axis,bend))));
+   }
    debug[side]={shoulder:a, elbow:origin(joints[lower]), wrist:origin(joints[wrist]), requested:target, error:M.wristError};
   }
   for(let j=0;j<this.joints.length;j++)this.palette.set(product(joints[this.joints[j]],this.asset.bind[j]),j*16);
@@ -446,7 +485,10 @@ function equipmentPose(palette,frame,body,gear,rig){
    }
   }
   const controls=rig.controls(frame);
-  for(const [i,control] of controls.entries())palette.set(product(gear,control.pivot), (85+i)*16);
+  for(const [i,control] of controls.entries()){
+   control.mount=product(gear,control.pivot);
+   palette.set(control.mount,(85+i)*16);
+  }
   return {amount,controls};
 }
 

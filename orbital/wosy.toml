@@ -65,6 +65,7 @@ avatar_grip = "avatar_grip"
 avatar_approach = "avatar_approach"
 avatar_facing = "avatar_facing"
 avatar_mmu = "avatar_mmu"
+avatar_mmu_grasps = "avatar_mmu_grasps"
 avatar_elbow = "avatar_elbow"
 
 [targets.app.profiles.dev]
