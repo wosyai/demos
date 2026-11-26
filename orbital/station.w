@@ -41,6 +41,39 @@ Part(i32) catwalk_collision=fn(id){
     Part pl={.section=0;.axis=0;.finish=0;.x=b.x+b.u*0.5;.y=b.y+b.v*0.5;.z=b.z;
         .l=b.w;.u=b.u*0.5;.v=b.v*0.5;.taper=1.0;};pl
 };
+struct copy RailShaft { f32 min_x; f32 max_x; i32 sides; }
+f32(i32) rail_depth=fn(leg){if(leg==0){-1.59}else{if(leg==1){-3.43}else{-4.88}}};
+f32 rail_y=-0.57;
+f32 rail_radius=0.087;
+RailShaft(i32) rail_shaft=fn(id){
+    RailShaft r=if(id<2){RailShaft continuous={.min_x=-1.55;.max_x=1.13;.sides=48;};continuous}
+    else{if(id==2){RailShaft left={.min_x=-1.55;.max_x=-0.55;.sides=36;};left}
+    else{RailShaft right={.min_x=0.30;.max_x=0.95;.sides=24;};right}};
+    r
+};
+i32(i32) rail_leg=fn(id){if(id<2){id}else{2}};
+CatwalkBox(f32,f32,f32) rail_base_plate=fn(x,z,length){
+    f32 base=-0.64-length;
+    CatwalkBox foot={.x=x-0.115;.y=base-0.041;.z=z-0.095;.u=0.23;.v=0.065;.w=0.20;};foot
+};
+CatwalkBox(i32) rail_foot_box=fn(id){
+    i32 leg=id/2;f32 z0=rail_depth(leg);bool left=id%2==0;
+    if(leg<2){
+        if(left){rail_base_plate(-1.30,z0,0.238)}else{rail_base_plate(0.755,z0,0.44)}
+    }else{
+        CatwalkBox bracket=if(left){
+            CatwalkBox low={.x=-1.41;.y=-0.88;.z=z0-0.03;.u=0.22;.v=0.25;.w=0.061;};low
+        }else{
+            CatwalkBox high={.x=0.70;.y=-1.10;.z=z0-0.03;.u=0.17;.v=0.48;.w=0.061;};high
+        };
+        bracket
+    }
+};
+Part(i32) rail_foot_collision=fn(id){
+    CatwalkBox b=rail_foot_box(id);
+    Part pl={.section=0;.axis=0;.finish=0;.x=b.x+b.u*0.5;.y=b.y+b.v*0.5;.z=b.z;
+        .l=b.w;.u=b.u*0.5;.v=b.v*0.5;.taper=1.0;};pl
+};
 unit(i32) spine_band=fn(i){if(i<8){
     f32 z= -11.8+core.sint_to_float<f32>(i)*2.36;
     tube(0,1,-4.69,0.0,z,0.14,1.98,1.0);

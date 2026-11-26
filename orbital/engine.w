@@ -407,7 +407,7 @@ f32() seat_blend = fn {
     t*t*(3.0-2.0*t)
 };
 
-f32(i32) rail_depth = fn(leg) {if(leg==0){-1.59}else{if(leg==1){-3.43}else{-4.88}}};
+f32(i32) rail_depth = fn(leg) {station.rail_depth(leg)};
 f32() align_pin_y = fn {if(alignment_stage>=4){-0.36}else{if(alignment_stage==3){-0.43+0.07*transfer_ease(transfer_pose)}else{-0.54+0.11*seat_blend()}}};
 f32() arm_x = fn {if(alignment_stage>=5){-0.94}else{if(alignment_stage>=1){1.09}else{-0.18}}};
 f32() arm_y = fn {if(alignment_stage>=5){hatch_lock_y()}else{if(alignment_stage>=1){align_pin_y()}else{cargo_lock_y()}}};
@@ -421,7 +421,8 @@ unit(f32,f32,f32,f32) socket_bolt = fn(x,y,z,radius){
 unit(f32,f32,f32) rail_foot = fn(x,z,length){
     f32 base=-0.64-length;
     paint(0.22,0.28,0.30,0.62);
-    box(x-0.115,base-0.041,z-0.095,0.23,0.065,0.20);
+    station.CatwalkBox foot_plate=station.rail_base_plate(x,z,length);
+    box(foot_plate.x,foot_plate.y,foot_plate.z,foot_plate.u,foot_plate.v,foot_plate.w);
     paint(0.55,0.59,0.60,0.65);
     quad(x-0.054,base,z+0.076,x+0.054,base,z+0.076,x+0.032,-0.636,z+0.081,x-0.032,-0.636,z+0.081,0.87);
     quad(x-0.104,base,z+0.047,x-0.054,base,z+0.076,x-0.032,-0.636,z+0.081,x-0.059,-0.636,z+0.060,0.87);
@@ -439,6 +440,14 @@ unit(f32,f32,f32,f32) route_lens = fn(x,y,z,address){
     paint(0.32,0.70,0.79,address);
     quad(x,y,z+0.003,x+0.131,y,z+0.003,x+0.162,y+0.031,z+0.003,x,y+0.031,z+0.003,0.92);
 };
+unit(i32) draw_rail_axis=fn(shaft_id){
+    station.RailShaft shaft=station.rail_shaft(shaft_id);f32 rail_z=rail_depth(station.rail_leg(shaft_id));
+    round_shell(shaft.min_x,station.rail_y,rail_z,shaft.max_x,station.rail_y,rail_z,station.rail_radius,station.rail_radius,0,0,shaft.sides)
+};
+unit(i32) draw_rail_bracket=fn(id){
+    station.CatwalkBox rail_bracket=station.rail_foot_box(id);
+    box(rail_bracket.x,rail_bracket.y,rail_bracket.z,rail_bracket.u,rail_bracket.v,rail_bracket.w)
+};
 unit(i32) traversal_rail = fn(leg) {
     f32 z=rail_depth(leg);
     if(leg<2){
@@ -451,9 +460,8 @@ unit(i32) traversal_rail = fn(leg) {
     };
     paint(0.53,0.54,0.54,material_scene.walk_rail());
     if(leg==2){
-        round_shell(-1.55,-0.57,z,-0.55,-0.57,z,0.087,0.087,0,0,36);
-        round_shell(0.30,-0.57,z,0.95,-0.57,z,0.087,0.087,0,0,24);
-    }else{round_shell(-1.55,-0.57,z,1.13,-0.57,z,0.087,0.087,0,0,48);};
+        draw_rail_axis(2);draw_rail_axis(3);
+    }else{draw_rail_axis(leg);};
     if(leg==0){paint(0.95,0.51,0.125,0.30);}else{if(leg==1){paint(0.39,0.73,0.82,0.30);}else{paint(0.96,0.67,0.25,0.30);};};
     round_shell(-1.41,-0.57,z,-1.19,-0.57,z,0.12,0.12,0,0,32);
     round_shell(0.67,-0.57,z,0.84,-0.57,z,0.115,0.115,0,0,32);
@@ -464,8 +472,7 @@ unit(i32) traversal_rail = fn(leg) {
         sweep(-1.54,-0.904,z-0.04,0.779,-1.097,z-0.062,0.046,0.046,0,0,7);
     }else{
         paint(0.19,0.21,0.22,0.08);
-        box(-1.41,-0.88,z-0.03,0.22,0.25,0.061);
-        box(0.70,-1.10,z-0.03,0.17,0.48,0.061);
+        draw_rail_bracket(4);draw_rail_bracket(5);
     };
 };
 unit(f32,f32,f32) shoulder_bolt = fn(x,y,z){
@@ -1507,7 +1514,9 @@ unit(f32,i32) exterior_sweep = fn(d, budget){
     trace_x=pilot_x;trace_y=pilot_y;trace_z=pilot_z;
     trace_vx=vx;trace_vy=vy;trace_vz=vz;
     exterior_surfaces(d);
-    eva_contact.Hit solid=eva_contact.station_sweep(pilot_x,pilot_y,pilot_z,vx,vy,vz,body_yaw,body_pitch,d);
+    i32 released_rail=if(mode==3&&alignment_stage==0&&station_leg<2&&grip>0.0
+        &&abs_cell(pilot_z-rail_depth(station_leg))<0.9){station_leg}else{-1};
+    eva_contact.Hit solid=eva_contact.station_sweep(pilot_x,pilot_y,pilot_z,vx,vy,vz,body_yaw,body_pitch,d,released_rail);
     if(solid.active&&core.float_trunc<f32>(solid.time)<contact_t){
         contact_t=core.float_trunc<f32>(solid.time);contact_axis=5;
     };

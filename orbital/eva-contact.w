@@ -104,6 +104,92 @@ Hit(bool,i32,art.Axes,art.Vec,art.Vec,f64,Hit) swept=fn(wing,id,axes,origin,v,dt
         swept(wing,id+1,axes,origin,v,dt,found)
     }
 };
+f64(f64,f64,f64) polygon_radius=fn(y,z,arc){
+    f64 radial=math.norm(y,z,0.0);
+    f64 direction=math.atan2(y,z);
+    if(direction<0.0){direction=direction+6.283185307179586;};
+    f64 vertex=core.sint_to_float<f64>(core.float_to_sint_trunc<i32>(direction/arc+0.5))*arc;
+    radial*math.cos(direction-vertex)
+};
+art.Vec(f64) radial_axis=fn(angle){art.v(0.0,math.sin(angle),math.cos(angle))};
+art.Vec(i32,i32,art.Axes,f64) rail_axis=fn(i,sectors,body,arc){
+    if(i==0){unit_axis(0)}
+    else{if(i<4){body_axis(body,i-1)}
+    else{if(i<7){art.cross(unit_axis(0),body_axis(body,i-4))}
+    else{
+        i32 edge=i-7;
+        if(edge<sectors){radial_axis((core.sint_to_float<f64>(edge)+0.5)*arc)}
+        else{
+            i32 pair=edge-sectors;
+            f64 angle=(core.sint_to_float<f64>(pair/3)+0.5)*arc+1.5707963267948966;
+            art.cross(radial_axis(angle),body_axis(body,pair%3))
+        }
+    }}}
+};
+Sweep(i32,i32,art.Axes,art.Vec,art.Vec,art.Vec,f64,f64,f64,f64,Sweep) rail_intervals=fn(i,sectors,body,offset,velocity,actor,half_run,rad,arc,dt,best){
+    if(i==7+4*sectors||!best.possible){best}else{
+        art.Vec raw=rail_axis(i,sectors,body,arc);
+        if(art.dot(raw,raw)<0.000000000001){
+            rail_intervals(i+1,sectors,body,offset,velocity,actor,half_run,rad,arc,dt,best)
+        }else{
+            art.Vec axis0=art.normalized(raw);
+            art.Vec in_body=art.v(art.dot(axis0,body.forward),art.dot(axis0,body.up),art.dot(axis0,body.right));
+            f64 span0=math.abs(axis0.x)*half_run+rad*polygon_radius(axis0.y,axis0.z,arc)+support_radius(in_body,actor)+0.003;
+            Interval span=slab(art.dot(offset,axis0),art.dot(velocity,axis0),-span0,span0,dt);
+            f64 last=hi(best.enter,span.enter);f64 first=lo(best.leave,span.leave);
+            Sweep next={.possible=span.possible&&last<=first&&last<=dt&&first>=0.0;
+                .enter=last;.leave=first;.normal=if(span.enter>best.enter){art.mul(axis0,span.sign)}else{best.normal};};
+            rail_intervals(i+1,sectors,body,offset,velocity,actor,half_run,rad,arc,dt,next)
+        }
+    }
+};
+Hit(i32,art.Axes,art.Vec,art.Vec,art.Vec,art.Vec,f64) shaft_hit=fn(id,body,origin,velocity,half,actor,dt){
+    station.RailShaft shaft=station.rail_shaft(id);
+    f64 lo_x=f64v(shaft.min_x);f64 hi_x=f64v(shaft.max_x);
+    f64 yy=f64v(station.rail_y);f64 zz=f64v(station.rail_depth(station.rail_leg(id)));
+    f64 rad=f64v(station.rail_radius);
+    Interval a=slab(origin.x,velocity.x,lo_x-half.x,hi_x+half.x,dt);
+    Interval b=slab(origin.y,velocity.y,yy-rad-half.y,yy+rad+half.y,dt);
+    Interval c=slab(origin.z,velocity.z,zz-rad-half.z,zz+rad+half.z,dt);
+    f64 enter=hi(a.enter,hi(b.enter,c.enter));f64 leave=lo(a.leave,lo(b.leave,c.leave));
+    if(a.possible&&b.possible&&c.possible&&enter<=dt&&leave>=0.0&&enter<=leave){
+        art.Vec center=art.v((lo_x+hi_x)*0.5,yy,zz);
+        Sweep start={.possible=true;.enter=-100000.0;.leave=dt;.normal=art.v(0.0,0.0,0.0);};
+        f64 arc=6.283185307179586/core.sint_to_float<f64>(shaft.sides);
+        Sweep exact=rail_intervals(0,shaft.sides/2,body,art.sub(origin,center),velocity,actor,(hi_x-lo_x)*0.5,rad,arc,dt,start);
+        if(exact.possible&&exact.enter>=-0.00002&&art.dot(exact.normal,velocity)<0.0){
+            Hit found={.active=true;.time=hi(0.0,exact.enter);.normal=exact.normal;};found
+        }else{none(dt)}
+    }else{none(dt)}
+};
+Hit(i32,i32,i32,art.Axes,art.Vec,art.Vec,art.Vec,art.Vec,f64,Hit) rail_parts=fn(i,probe_id,releasing,body,from,v,half,actor,dt,best){
+    if(i==10){best}else{
+        bool hand_at_same_bar=probe_id==10&&i<2&&i==releasing;
+        Hit found=if(i<4){if(hand_at_same_bar){none(dt)}else{shaft_hit(i,body,from,v,half,actor,dt)}}
+            else{solid(station.rail_foot_collision(i-4),body,from,v,half,actor,dt)};
+        Hit chosen=if(found.active&&(!best.active||found.time<best.time)){found}else{best};
+        rail_parts(i+1,probe_id,releasing,body,from,v,half,actor,dt,chosen)
+    }
+};
+Probe(i32) rail_probe=fn(id){
+    if(id==7){probe(0.162,-0.253,-0.280,0.223,0.218,0.162)}
+    else{if(id==10){probe(0.527,-0.253,-0.280,0.142,0.218,0.162)}
+    else{register(id)}}
+};
+Hit(i32,i32,art.Axes,art.Vec,art.Vec,f64,Hit) swept_rails=fn(id,releasing,axes,origin,v,dt,best){
+    if(id==11){best}else{
+        Probe p=rail_probe(id);art.Vec from=art.add(origin,rotate(axes,p.local));
+        art.Vec half=art.v(extent(axes.forward.x,axes.up.x,axes.right.x,p.half)+0.003,
+            extent(axes.forward.y,axes.up.y,axes.right.y,p.half)+0.003,
+            extent(axes.forward.z,axes.up.z,axes.right.z,p.half)+0.003);
+        Hit found=rail_parts(0,id,releasing,axes,from,v,half,p.half,dt,best);
+        swept_rails(id+1,releasing,axes,origin,v,dt,found)
+    }
+};
+bool(art.Vec,art.Vec) outside_rails=fn(origin,endpoint){
+    hi(origin.y,endpoint.y)< -3.20||lo(origin.y,endpoint.y)>1.60||hi(origin.x,endpoint.x)< -3.70
+        ||lo(origin.x,endpoint.x)>3.25||hi(origin.z,endpoint.z)< -7.0||lo(origin.z,endpoint.z)>0.60
+};
 bool(art.Vec,art.Vec) outside_solar=fn(origin,endpoint){
     hi(origin.y,endpoint.y)<0.78||lo(origin.y,endpoint.y)>4.90||hi(origin.x,endpoint.x)< -22.0
         ||lo(origin.x,endpoint.x)>10.0||hi(origin.z,endpoint.z)< -22.0||lo(origin.z,endpoint.z)>0.0
@@ -112,16 +198,18 @@ bool(art.Vec,art.Vec) outside_catwalk=fn(origin,endpoint){
     hi(origin.y,endpoint.y)< -3.20||lo(origin.y,endpoint.y)>3.85||hi(origin.x,endpoint.x)< -3.70
         ||lo(origin.x,endpoint.x)>1.50||hi(origin.z,endpoint.z)< -5.45||lo(origin.z,endpoint.z)>0.0
 };
-Hit(f32,f32,f32,f32,f32,f32,f32,f32,f32) station_sweep=fn(x,y,z,vx,vy,vz,yaw,pitch,step){
+Hit(f32,f32,f32,f32,f32,f32,f32,f32,f32,i32) station_sweep=fn(x,y,z,vx,vy,vz,yaw,pitch,step,releasing){
     f64 dt=f64v(step);art.Vec from=art.v(f64v(x),f64v(y),f64v(z));art.Vec v=art.v(f64v(vx),f64v(vy),f64v(vz));
     art.Vec endpoint=art.add(from,art.mul(v,dt));
     bool solar_in=count(true)>0&&!outside_solar(from,endpoint);
     bool local_in=!outside_catwalk(from,endpoint);
-    if(!solar_in&&!local_in){none(dt)}
+    bool rail_in=!outside_rails(from,endpoint);
+    if(!solar_in&&!local_in&&!rail_in){none(dt)}
     else{
         art.Axes body=art.facing(f64v(yaw),f64v(pitch));
         Hit wing_hit=if(solar_in){swept(true,0,body,from,v,dt,none(dt))}else{none(dt)};
-        if(local_in){swept(false,0,body,from,v,dt,wing_hit)}else{wing_hit}
+        Hit box_hit=if(local_in){swept(false,0,body,from,v,dt,wing_hit)}else{wing_hit};
+        if(rail_in){swept_rails(0,releasing,body,from,v,dt,box_hit)}else{box_hit}
     }
 };
 bool(bool,i32,art.Axes,art.Vec,art.Vec,f64) orientation_parts=fn(wing,i,body,from,actor,padding){
