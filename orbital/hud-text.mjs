@@ -89,7 +89,7 @@ export function hudText(code,leg,showFirstLookHint,copyIntent){
  if(copyIntent===3){tip="Propellant depleted. Existing drift continues.";short="Propellant depleted";}
  return {objective,tip,action,short,section:sections[(code>>>16)&7],
    aim:Boolean(aim),route,marker:route?(aim===4?"❯":"❮"):arrow[aim],
-   interact:Boolean(code&1024),canPush:(code&63)===2||(code&63)===36,console:Boolean(code&2048),coast:Boolean(code&4096),far:Boolean(code&8192),burn:Boolean(code&32768)};
+   interact:Boolean(code&1024),canPush:(code&63)===2||(code&63)===35,console:Boolean(code&2048),coast:Boolean(code&4096),far:Boolean(code&8192),burn:Boolean(code&32768)};
 }
 
 const flightStatuses=["FREE FLOAT","DRIFT","ANCHORED","TAKING HOLD","RELEASING","THRUST","HULL CONTACT"];
