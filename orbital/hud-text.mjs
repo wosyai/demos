@@ -7,8 +7,8 @@ const approach=rail=>"Approach the "+rail.toLowerCase();
 const findHatch=side=>["Return to the airlock",`Look ${side} to find the round hatch. Let the push carry you.`,`Look ${side}`,`Look ${side} to find hatch`];
 const messages=[
  (rail,showTouch)=>[approach(rail),initial,"Too far",showTouch?"Left half: thrust · Right half: look":"Drift to lit rail"],
- ["Pushing off","Drift toward the next rail.","Pushing off"],
- rail=>[rail+" secured","Open your hand and push toward the next rail.","Release & push"],
+ ["Pushing off","Push away from the rail, then pass underneath it.","Pushing off"],
+ rail=>[rail+" secured","Open your hand to push away from the rail.","Release & push"],
  ["Gripping the rail","Your drift is arrested.","Grip rail"],
  rail=>[rail+" in reach","Grip to stop drifting.","Grip rail"],
  rail=>[approach(rail),"Look toward the lit rail.","Face rail","Look toward rail"],
@@ -50,7 +50,9 @@ const messages=[
  ["Entry heating","Hot gas is forming along the flight path. Switch camera to see the wake.","Entry in progress","Plasma heating · ×24"],
  ["Suit lost","The unshielded suit exceeded its heating limit in this exercise. Reset to replay.","Reset to replay","Heating limit exceeded"],
  ["Ease toward the hatch","Use a short thrust pulse to close the last gap, then match speed.","Out of reach","Pulse toward the hatch"],
- ["Ease toward the console","Use a short thrust pulse to close the last gap, then match speed.","Out of reach","Pulse toward the console"]
+ ["Ease toward the console","Use a short thrust pulse to close the last gap, then match speed.","Out of reach","Pulse toward the console"],
+ ["Descend below the rail","Thrust down to clear the rail before moving toward the next one.","Rail ahead","Thrust down"],
+ ["Pass beneath the rail","Thrust forward beneath the rail, then rise toward the next one.","Rail ahead","Thrust forward"]
 ];
 const sections=["TRAINING 01 / HANDRAIL","EVA / 1 OF 3","EVA / 2 OF 3","EVA / 3 OF 3","EVA / CARGO ALIGNMENT","EVA / AIRLOCK RETURN","ORBIT / REENTRY"];
 const arrow=["+","+","+","+","→","←","↑","↓"];

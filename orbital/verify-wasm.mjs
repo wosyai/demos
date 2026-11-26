@@ -126,6 +126,29 @@ const step=(keys=0,yaw=0,pitch=0,dt=1/60)=>{
  if(state[15]===1&&state[8]>.004&&[1,2,3].includes(state[9]))captureFrames.push([...state]);
 };
 const until=(test,keys,cap=400)=>{for(let i=0;i<cap&&!test();i++)step(keys);assert.ok(test(),'state did not arrive '+[...state]);};
+function underRail(previous,next){
+ const z=[-1.59,-3.43,-4.88];
+ const destinations=[[.14,-1.28,z[previous]+.65],[.14,-1.28,z[next]+.76],[.06,-.025,z[next]+.76]];
+ for(const [x,y,depth] of destinations){
+  let arrived=false;
+  for(let i=0;i<1000;i++){
+   const limit=t=>Math.max(-.7,Math.min(.7,t));
+   const ax=limit((x-state[0])*2-state[5]*2.6),az=limit((depth-state[2])*2-state[7]*2.6);
+   const sn=Math.sin(state[3]),cs=Math.cos(state[3]),forward=ax*sn-az*cs;
+   engine.set_thrust(ax*cs+az*sn,forward);
+   const up=(y-state[1])*2-state[6]*2.75-forward*Math.sin(state[4]);
+   step(up>.08?16:up<-.08?32:0);
+   if(i>25&&Math.hypot(state[0]-x,state[1]-y,state[2]-depth)<.085&&Math.hypot(...state.slice(5,8))<.08){
+    arrived=true;break;
+   }
+  }
+  assert.ok(arrived,'ordinary under-rail input path must reach '+[x,y,depth]);
+ }
+ engine.set_thrust(0,0);
+ const dx=.05-state[0],dz=state[2]-z[next],dy=-.235-state[1];
+ step(0,Math.atan2(dx,dz)-state[3],Math.atan2(dy,Math.hypot(dx,dz))-state[4]);
+ assert.equal(state[10],1,'actual next grip must be offered');
+}
 let initial,contact;
 const capture=()=>[...state.slice(0,21),...new Array(17).fill(0),...hand];
 function reset(){engine.reset();step(0,0,0,0);}
@@ -270,11 +293,12 @@ const heldUploads=handLoads;
 for(let i=0;i<85;i++)step(64|16|2);assert.deepEqual(capture(),evaContact);
 assert.equal(handLoads,heldUploads,'a still grip does not re-upload meshes or invalidate cached shadows');
 step();
-step(64);assert.equal(state[11],2);assert.ok(state[7]<0);
+step(64);assert.equal(state[11],2);assert.ok(state[6]<0&&state[7]>0,"release follows the outward and downward rail face");
 until(()=>state[9]===0,0);
 assert.equal(state[16],1);assert.equal(state[17],0);assert.equal(state[20],2);
 step(64);assert.equal(state[9],0,'cannot trigger the next rail as soon as released');step();
-until(()=>state[10]===1,260);
+hudIs("Descend below the rail",false);
+underRail(0,1);
 step(64);until(()=>state[9]===2,64);
 assert.equal(state[16],1);assert.equal(state[17],0);assert.equal(state[20],0);
 assert.equal(state[14].toFixed(2),'-3.43');
@@ -285,7 +309,7 @@ for(let i=0;i<8;i++)step(64);
 assert.equal(roomLoads,scaffoldBatches,'looking out at the cargo never republishes the stationary world');
 step();step(64);until(()=>state[9]===0,0);
 assert.equal(state[16],2);
-until(()=>state[10]===1,260);
+underRail(1,2);
 step(64);until(()=>state[9]===2,64);
 const beforeLatch=room, countBeforeLatch=roomLoads;
 const openPin=[...state.slice(12,15)], openGlove=hand, openHandLoads=handLoads;
@@ -640,7 +664,7 @@ step(64);until(()=>state[9]===2,64);
 assert.equal(handLoads,uploadsForExternal,'a loaded arm omits Wosy fallback tessellation and uploads');
 for (let next=1;next<3;next++) {
  step();step(64);until(()=>state[9]===0,0);
- until(()=>state[10]===1,260);
+ underRail(next-1,next);
  step(64);until(()=>state[9]===2,64);
  assert.equal(state[16],next);
 }

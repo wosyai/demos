@@ -1866,7 +1866,15 @@ unit(f32,i32,f32,f32) tick = fn(dt,keys,look_x,look_y) {
                 else{if(alignment_stage==4){mode=3;mark=2;vx=-0.49;vz=0.76;};};};};};};
             }else{
                 mode=3;mark=2;
-                vz=if(deck==0){-0.19}else{-0.43};
+                if(deck==0){vz=-0.19;}else{
+                    f64 from_y=core.float_extend<f64>(pilot_y-station.rail_y);
+                    f64 from_z=core.float_extend<f64>(pilot_z-rail_depth(station_leg));
+                    f64 normal_len=projection.norm(from_y,from_z,0.0);
+                    f64 normal_y=if(normal_len>0.00001){from_y/normal_len}else{0.0};
+                    f64 normal_z=if(normal_len>0.00001){from_z/normal_len}else{1.0};
+                    vy=core.float_trunc<f32>(normal_y*0.22-normal_z*0.48);
+                    vz=core.float_trunc<f32>(normal_z*0.22+normal_y*0.48);
+                };
             };
         };
     };
@@ -1947,6 +1955,13 @@ unit(f32,i32,f32,f32) tick = fn(dt,keys,look_x,look_y) {
                 arrival_pulse=hud.counter(-ax0*cosine(yaw)-az0*sine(yaw),-forward0*cosine(pitch)-ay0*sine(pitch),
                     forward0*sine(pitch)-ay0*cosine(pitch));
             };
+        };
+    };
+    if(deck==1&&mode==0&&station_leg>0&&alignment_stage==0&&!cargo_locked&&reach==0.0){
+        f32 last_bar=rail_depth(station_leg-1);
+        station.RailShaft trailing_shaft=station.rail_shaft(station_leg-1);
+        if(pilot_z>last_bar-0.64&&pilot_x>=trailing_shaft.min_x-0.65&&pilot_x<=trailing_shaft.max_x+0.65){
+            steer_cue=if(pilot_y> -1.24){hud.Steering::rail_descend}else{hud.Steering::rail_pass};
         };
     };
     state[18]=hud.guidance_code(steer_cue);

@@ -1,7 +1,7 @@
 %%start
 enum Motion { floating; taking; held; pushing; }
 enum Cargo { rails; pin; approach; aligning; lowering; seated; closing; opening; parking; delivered; return_hatch; handle; locking; complete; }
-enum Steering { none; face_rail; slow_rail; counterthrust; right; left; up; down; hatch_right; hatch_left; ease_hatch; ease_console; }
+enum Steering { none; face_rail; slow_rail; counterthrust; right; left; up; down; hatch_right; hatch_left; ease_hatch; ease_console; rail_descend; rail_pass; }
 f32(Steering) guidance_code=fn(steering){
     f32 wire=0.0;
     if(steering==Steering::face_rail){wire=1.0;};
@@ -63,6 +63,8 @@ i32(Motion,bool,Steering) rail=fn(motion,reach,cue){
     else{if(reach){message=4;}else{
         if(cue==Steering::face_rail){message=5;};
         if(cue==Steering::slow_rail){message=6;};
+        if(cue==Steering::rail_descend){message=46;};
+        if(cue==Steering::rail_pass){message=47;};
     };};};};
     message
 };
