@@ -2,7 +2,7 @@ import {hudText,flightStatusText} from "./hud-text.mjs?v=8";
 import {reentryGlow} from "./reentry-glow.mjs?v=2";
 import {earthDetail} from "./earth-detail.mjs?v=3";
 import {exteriorSky} from "./exterior-sky.mjs?v=6";
-import {loadApolloBody,loadProceduralSuit} from "./apollo-body.mjs?v=16";
+import {loadApolloBody,loadProceduralSuit} from "./apollo-body.mjs?v=17";
 import {bindAvatarRig} from "./avatar-rig.mjs?v=1";
 let avatarRig,rigRow;
 const $ = id => document.getElementById(id);
@@ -88,6 +88,24 @@ const depthFS=`#version 300 es
 precision mediump float;
 void main(){}
 `;
+const sunCompare=`float shadowAt(vec3 p,vec3 n,float direct){
+ if(detailedShadow==0){
+   vec3 u=lightClip(p+n*.012)*.5+.5;
+   if(any(greaterThan(u,vec3(1.)))||any(lessThan(u,vec3(0.))))return 1.;
+   float shade=texture(sunMap,vec3(u.xy,u.z-.00112));
+   if(renderFraction>.69){
+     vec2 o=vec2(.00115,.00073);
+     shade=shade*.50+texture(sunMap,vec3(u.xy+o,u.z-.00132))*.25+texture(sunMap,vec3(u.xy-o,u.z-.00132))*.25;
+   }
+   return shade;
+ }
+ float incline=1.-direct;
+ vec3 u=lightClip(p+n*(.004+.005*incline))*.5+.5;
+ if(any(greaterThan(u,vec3(1.)))||any(lessThan(u,vec3(0.))))return 1.;
+ float depth=u.z-(.00021+.00030*incline);
+ return texture(sunMap,vec3(u.xy,depth));
+}
+`;
 const exteriorMaterial=(sun,profile)=>{
 const n=i=>profile[i].toFixed(8);
 const v=i=>`vec3(${n(i)},${n(i+1)},${n(i+2)})`;
@@ -109,23 +127,7 @@ uniform bool fasciaStampReady;
 uniform int routeLens;
 uniform bool routeReach;
 ${sun}
-float shadowAt(vec3 p,vec3 n,float direct){
- if(detailedShadow==0){
-   vec3 u=lightClip(p+n*.012)*.5+.5;
-   if(any(greaterThan(u,vec3(1.)))||any(lessThan(u,vec3(0.))))return 1.;
-   float shade=texture(sunMap,vec3(u.xy,u.z-.00112));
-   if(renderFraction>.69){
-     vec2 o=vec2(.00115,.00073);
-     shade=shade*.50+texture(sunMap,vec3(u.xy+o,u.z-.00132))*.25+texture(sunMap,vec3(u.xy-o,u.z-.00132))*.25;
-   }
-   return shade;
- }
- float incline=1.-direct;
- vec3 u=lightClip(p+n*(.004+.005*incline))*.5+.5;
- if(any(greaterThan(u,vec3(1.)))||any(lessThan(u,vec3(0.))))return 1.;
- float depth=u.z-(.00021+.00030*incline);
- return texture(sunMap,vec3(u.xy,depth));
-}
+${sunCompare}
 // Wosy transfer_hatch lamp-centre coordinates (right, up, depth).
 // Top and bottom rim fixtures face inward/down; recessed lamps throw forward
 // through the cavity. The local baffle suppresses light behind the pressure skin.
@@ -644,7 +646,7 @@ function render(alpha) {
   const relative=entry?{...camera,eye:camera.eye.map((n,i)=>n-pose[i])}:camera;
   let suitPose=pose;
   if(entry){suitPose=pose.slice();suitPose[0]=0;suitPose[1]=0;suitPose[2]=0;}
-  apolloBody.draw(suitPose,{camera:relative,optics,thirdPerson:drawBody,roll,sunDirection:orbitalSun,contact:grip});
+  apolloBody.draw(suitPose,{camera:relative,optics,thirdPerson:drawBody,roll,sunDirection:orbitalSun,contact:grip,stationSun:apolloModelActive&&!entry,shadowDetail:detailed,renderFraction:fraction});
  }
  // The background lies behind the mesh; early depth rejects the sky and globe
  // across the station rather than shading those pixels and drawing over them.
@@ -1053,7 +1055,7 @@ try{
   try{installSuit(loadProceduralSuit(gl,avatarRig));}
   catch(e){console.warn("EVA equipment fallback: "+e.message);loadBakedArm();}
  };
- if(wantsApollo)loadApolloBody(gl,new URL("./apollo-body.glb?v=1",import.meta.url),avatarRig).then(body=>installSuit(body,true)).catch(e=>{console.warn("Apollo body fallback: "+e.message);useDefaultSuit();});
+ if(wantsApollo)loadApolloBody(gl,new URL("./apollo-body.glb?v=1",import.meta.url),avatarRig,sun+sunCompare).then(body=>installSuit(body,true)).catch(e=>{console.warn("Apollo body fallback: "+e.message);useDefaultSuit();});
  else useDefaultSuit();
  $("start").disabled=false;$("training").disabled=false;$("reentry").disabled=false;requestAnimationFrame(animate);
 }catch(e){$("error").textContent=String(e.message);console.error(e);}

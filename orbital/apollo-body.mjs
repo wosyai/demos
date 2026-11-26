@@ -251,7 +251,7 @@ void main(){
  gl_Position=vec4((roll.x*a.x+roll.y*a.y)*optics.x,(-roll.y*a.x+roll.x*a.y)*optics.y,-1.002*a.z-.1,-a.z);
  tex=uv;n=mat3(skin)*normal;surfacePoint=pos;surfaceColor=baked?bakedColor:baseColor;
 }`;
-const fragment=`#version 300 es
+const fragment=sunVisibility=>`#version 300 es
 precision highp float;
 uniform vec3 sunDirection;
 uniform vec3 eye;
@@ -265,6 +265,11 @@ in vec3 n;
 in vec3 world;
 in vec3 surfacePoint;
 out vec4 pix;
+${sunVisibility?`uniform bool stationSun;
+uniform highp sampler2DShadow sunMap;
+uniform int detailedShadow;
+uniform float renderFraction;
+${sunVisibility}`:""}
 void main(){
  if(plume>0.){
     float a=pow(max(1.-tex.x,0.),2.2)*plume;
@@ -276,7 +281,8 @@ void main(){
  if(mapped)color*=texture(albedo,tex).rgb;
  vec3 N=normalize(n);
  float direct=max(dot(N,sunDirection),0.);
- vec3 lit=color*(vec3(.15,.18,.23)+vec3(.035,.079,.118)*max(0.,dot(N,vec3(.46,-.80,-.35)))+direct*vec3(1.08,1.04,.94));
+ ${sunVisibility?"float sunVisibility=stationSun&&direct>0.?shadowAt(world,N,direct):1.;":"const float sunVisibility=1.;"}
+ vec3 lit=color*(vec3(.15,.18,.23)+vec3(.035,.079,.118)*max(0.,dot(N,vec3(.46,-.80,-.35)))+direct*sunVisibility*vec3(1.08,1.04,.94));
  if(!mapped&&surfaceColor.a<.99){
    vec3 V=normalize(eye-world);
    if(surfaceColor.a<.3){
@@ -292,13 +298,13 @@ void main(){
    float h=max(dot(N,normalize(sunDirection+V)),0.);
    float h2=h*h,h4=h2*h2,h8=h4*h4,h16=h8*h8,h32=h16*h16;
    float spec=mix(h8*h4*h,h32*h16*h4*h,metal);
-   lit+=mix(vec3(.66,.74,.82),mix(vec3(.60,.71,.78),color,.46),metal)*(max(.0,1.-facing)*.035+spec*mix(.10,.48,metal)*sqrt(direct));
+   lit+=mix(vec3(.66,.74,.82),mix(vec3(.60,.71,.78),color,.46),metal)*(max(.0,1.-facing)*.035+spec*mix(.10,.48,metal)*sqrt(direct)*sunVisibility);
  }
  pix=vec4(pow(max(lit,0.),vec3(.45455)),1.);
 }`;
-function program(gl){
+function program(gl,sunVisibility){
  const p=gl.createProgram();
- for(const [kind,src] of [[gl.VERTEX_SHADER,vertex],[gl.FRAGMENT_SHADER,fragment]]){
+ for(const [kind,src] of [[gl.VERTEX_SHADER,vertex],[gl.FRAGMENT_SHADER,fragment(sunVisibility)]]){
   const s=gl.createShader(kind);gl.shaderSource(s,src);gl.compileShader(s);
   if(!gl.getShaderParameter(s,gl.COMPILE_STATUS))throw Error(gl.getShaderInfoLog(s));
   gl.attachShader(p,s);gl.deleteShader(s);
@@ -319,7 +325,7 @@ function firstPersonSleeve(asset,part,indices){
  }
  return new indices.constructor(keep);
 }
-export async function loadApolloBody(gl,url,rig){
+export async function loadApolloBody(gl,url,rig,sunVisibility){
  const response=await fetch(url);
  if(!response.ok)throw Error('Apollo mesh: '+response.status);
  const asset=openApolloGLB(await response.arrayBuffer()), pose=new ApolloPose(asset,rig);
@@ -359,12 +365,13 @@ export async function loadApolloBody(gl,url,rig){
    meshes.push({name:node.name,vao,first:sleeveParts.has(node.name),elements,nearElements,nearCount,len:indices.length,kind:indices instanceof Uint16Array?gl.UNSIGNED_SHORT:gl.UNSIGNED_INT,tex,color:mat.baseColorFactor??[1,1,1,1]});
   }
  }
- return renderAvatar(gl,pose,meshes);
+ return renderAvatar(gl,pose,meshes,false,sunVisibility);
 }
 
-function renderAvatar(gl,pose,meshes,hasEquipment=false){
- const p=program(gl);
+function renderAvatar(gl,pose,meshes,hasEquipment=false,sunVisibility){
+ const p=program(gl,sunVisibility);
  const U=Object.fromEntries(['eye','basis','optics','roll','sunDirection','firstPerson','plume','baseColor','baked','mapped','albedo'].map(n=>[n,gl.getUniformLocation(p,n)]));
+ const S=sunVisibility?Object.fromEntries(['stationSun','sunMap','detailedShadow','renderFraction'].map(n=>[n,gl.getUniformLocation(p,n)])):null;
  const UBO=3, TEX=8, palette=gl.createBuffer();
  gl.uniformBlockBinding(p,gl.getUniformBlockIndex(p,'ApolloJoints'),UBO);
  gl.bindBuffer(gl.UNIFORM_BUFFER,palette);gl.bufferData(gl.UNIFORM_BUFFER,89*64,gl.DYNAMIC_DRAW);
@@ -373,9 +380,17 @@ function renderAvatar(gl,pose,meshes,hasEquipment=false){
  gl.bindVertexArray(null);
  let last=null;
  return {
-  draw(frame,{camera, optics, thirdPerson=false, sunDirection=[.5674,.611,.5521], roll=[1,0],...opts}){
+  draw(frame,{camera, optics, thirdPerson=false, sunDirection=[.5674,.611,.5521], roll=[1,0],stationSun=false,shadowDetail=false,renderFraction=1,...opts}){
    last=pose.solve(frame,opts);
    gl.useProgram(p);gl.uniform3fv(U.eye,camera.eye);
+   if(S){
+    gl.uniform1i(S.sunMap,2);
+    gl.uniform1i(S.stationSun,Number(stationSun));
+    if(stationSun){
+     gl.uniform1i(S.detailedShadow,Number(shadowDetail));
+     gl.uniform1f(S.renderFraction,renderFraction);
+    }
+   }
    gl.uniform4f(U.basis,Math.cos(camera.yaw),Math.sin(camera.yaw),Math.cos(camera.pitch),Math.sin(camera.pitch));
    gl.uniform2fv(U.optics,optics);gl.uniform2fv(U.roll,roll);gl.uniform3fv(U.sunDirection,sunDirection);
    gl.uniform1i(U.albedo,TEX);gl.uniform1f(U.plume,0);gl.uniform1i(U.firstPerson,!thirdPerson);
