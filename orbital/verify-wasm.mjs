@@ -581,6 +581,7 @@ assert.ok(state[7]>19&&state[7]<21,'full retrograde tank contributes about 20 m/
 let lowest=state[28];
 for(let i=0;i<6500;i++){step(512);lowest=Math.min(lowest,state[28]);}
 assert.ok(lowest>300000&&state[29]===0,'realistic suit impulse is insufficient for atmospheric entry from EVA orbit');
+engine.input_advance(0,0);engine.input_advance(46_655,1);
 engine.select_reentry();step(0,0,0,0);
 assert.equal(state[28],260000);assert.equal(state[32],1);
 let warpTicks=0,lastAbove=state[28];
@@ -606,22 +607,38 @@ function checkEntryPresentation(){
  const warm=heat>.01;
  assert.equal(q[58],heat);assert.equal(q[59],Number(warm&&load<1));
  entrySample=undefined;
- engine.reentry_visual(46655);
+ engine.reentry_visual();
  if(!warm){assert.equal(entrySample,undefined);return;}
  const span=Math.hypot(x,z),ux=span>.05?-z/span:1,uz=span>.05?x/span:0;
- const old=[q[0]-q[38],q[1]-q[39]-.58,q[2]-q[40],x,y,z,ux,0,uz,y*uz,z*ux-x*uz,-y*ux,heat,load<1?46.655:q[37]*.17];
+ const old=[q[0]-q[38],q[1]-q[39]-.58,q[2]-q[40],x,y,z,ux,0,uz,y*uz,z*ux-x*uz,-y*ux,heat,load<1?(hotPauseChecked?46.656:46.655):q[37]*.17];
  assert.ok(entrySample.every((n,i)=>Math.abs(n-old[i])<2e-12));
 }
-let flightTicks=0, lastHeatLoad=0, lastAltitude=state[28], onset=0, peakAirSpeed=0;
+let flightTicks=0, lastHeatLoad=0, lastAltitude=state[28], onset=0, peakAirSpeed=0, hotPauseChecked=false;
 for(;flightTicks<2200&&engine.entry_flow(4)<1;flightTicks++){
  step(512|4|64);
  const [x,y,z,heat,load,speed]=[0,1,2,3,4,5].map(engine.entry_flow);
  assert.ok(Math.abs(Math.hypot(x,y,z)-1)<1e-5);
  assert.ok(load>=lastHeatLoad&&state[28]<lastAltitude&&state[30]<120&&state[31]===20);
  if(flightTicks%31===0)checkEntryPresentation();
+ if(!hotPauseChecked&&heat>.08&&load<.80){
+  hotPauseChecked=true;
+  const fraction=engine.input_advance(60_000,2);
+  const before=Array.from(visualOf(fraction,390/844));
+  engine.reentry_visual();const hot=Array.from(entrySample);
+  assert.ok(Math.abs(hot.at(-1)-46.655)<2e-12,'visual clock uses full active time, not physics cap or paused duration');
+  assert.ok(engine.draw_plan(301,390,844,1,1)>0);
+  assert.equal(engine.draw_plan(301,390,844,1,1),0,'unchanged hot paused view is reusable');
+  visualOf(fraction,844/390);
+  assert.ok(engine.draw_plan(302,844,390,1,1)>0,'paused resource/resize invalidation still renders');
+  engine.reentry_visual();assert.deepEqual(Array.from(entrySample),hot,'hot resize retains the same phase');
+  assert.deepEqual(Array.from(visualOf(fraction,390/844)),before);
+  engine.input_advance(1,1);visualOf(fraction,390/844);
+  engine.reentry_visual();assert.ok(Math.abs(entrySample.at(-1)-hot.at(-1)-.001)<2e-12,'resume advances heat by active elapsed time only');
+ }
  if(heat>.08&&!onset){onset=state[28];hudIs('Entry heating',false);}
  lastHeatLoad=load;lastAltitude=state[28];peakAirSpeed=Math.max(peakAirSpeed,speed);
 }
+assert.ok(hotPauseChecked,'captured a genuinely hot paused entry');
 assert.ok(onset>95000&&onset<105000,'visible plasma only appears deeper than the interface');
 assert.ok(flightTicks>800&&flightTicks<1400&&engine.entry_flow(4)===1&&state[28]>72000&&state[28]<87000);
 assert.ok(engine.entry_flow(5)<peakAirSpeed-25,'denser airflow causes observable deceleration before terminal');
@@ -862,3 +879,50 @@ assert.equal(engine.sky_plan(1280,720,1,1,1,1,0),0);
 assert.equal(engine.sky_plan(1280,720,1,1,1,1,1),1,'Earth page update invalidates the projected backdrop');
 assert.equal(engine.sky_plan(390,844,1,1,1,1,1),1,'resize invalidates the projected backdrop');
 console.log('Wosy draw policy: idle skips, resource epochs, steady camera, tile texture invalidation and viewport changes passed.');
+
+engine.select_deck(1);engine.tick(0,0,0,0);
+engine.input_clear();engine.input_advance(0,0);
+engine.input_key(1,1);
+engine.input_advance(17,1);
+engine.camera_mode(1);
+const fraction=engine.input_advance(6,1);
+const activePose=Array.from(visualOf(fraction,390/844));
+const activeSimulation=Array.from(state);
+assert.equal(engine.input_advance(60_000,2),fraction,'pause keeps the last interpolation fraction');
+assert.equal(engine.input_status()&8,0,'pause does not advance a fixed step');
+assert.deepEqual(Array.from(state),activeSimulation);
+for(let k=0;k<8;k++)assert.deepEqual(Array.from(visualOf(fraction,390/844)),activePose,'paused redraw must not advance chase');
+const resized=visualOf(fraction,844/390);
+assert.deepEqual(Array.from(resized.slice(0,44)),activePose.slice(0,44),'resize may change optics, not paused pilot or chase pose');
+assert.equal(engine.input_advance(0,1),fraction,'resume starts without adding paused time');
+assert.notDeepEqual(Array.from(visualOf(fraction,390/844).slice(38,43)),activePose.slice(38,43),'explicit resume advances chase again');
+engine.input_advance(17,1);
+assert.equal(Math.hypot(...state.slice(23,26)),0,'cleared momentary input does not return');
+console.log('Wosy pause: exact simulation and presentation freeze, resize, resume and input clearing passed.');
+
+engine.input_clear();engine.input_advance(0,0);
+engine.select_reentry();engine.tick(0,0,0,0);
+engine.input_action(1);
+engine.input_advance(17,1);
+assert.equal(state[30],120,'the ordinary Coast input selects warp');
+engine.input_key(1,1);
+engine.input_pointer(30,-10,0);
+engine.input_action(0);
+const coastPausedState=Array.from(state);
+engine.input_advance(0,2);
+engine.input_advance(90_000,2);
+assert.equal(engine.input_status()&6,2,'pause clears queued motion but preserves latched Coast');
+assert.deepEqual(Array.from(state),coastPausedState);
+engine.input_advance(17,1);
+assert.equal(state[37]-coastPausedState[37],2,'resume advances exactly one Coast tick');
+assert.equal(state[30],120);
+assert.ok(state.slice(23,26).every(value=>value===0),'resume does not restore thrust');
+engine.input_action(1);engine.input_advance(17,1);
+assert.equal(state[30],1,'manual Coast cancel still leaves warp');
+engine.input_action(1);engine.input_advance(17,1);assert.equal(state[30],120);
+engine.input_advance(0,2);
+engine.input_clear();
+assert.equal(engine.input_status()&2,0,'explicit safety loss clears Coast even while paused');
+engine.input_advance(17,1);
+assert.equal(state[30],1);
+console.log('Wosy Coast: ordinary pause preserves warp intent, not held input or elapsed time; cancel and safety clear still work.');

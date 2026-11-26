@@ -33,6 +33,7 @@ bool present_history=false;
 f64[60] presentation=[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0];
 bool third_person=false;
 f64 chase_blend=0.0;
+bool presentation_paused=false;
 i32(i32) camera_mode=fn(command){
     if(command==1 && deck==1){third_person=!third_person;};
     if(third_person){1}else{0}
@@ -1959,7 +1960,9 @@ unit(f64,f64,i32) project_visual=fn(alpha,aspect,avatar){
     bool eva=state[15]==1.0;bool entry=state[32]==1.0;
     bool body=eva&&avatar==1;bool chase=body&&third_person;
     f64 target=if(chase){1.0}else{0.0};
-    if(projection.abs(chase_blend-target)>0.005){chase_blend=chase_blend+(target-chase_blend)*0.22;}else{chase_blend=target;};
+    if(!presentation_paused){
+        if(projection.abs(chase_blend-target)>0.005){chase_blend=chase_blend+(target-chase_blend)*0.22;}else{chase_blend=target;};
+    };
     f64 cx=x;f64 cy=y;f64 cz=z;f64 yaw_out=heading;f64 pitch_out=tilt;
     if(chase_blend>0.0&&body){
         f64 sy=projection.sin(heading);f64 cy0=projection.cos(heading);f64 sp=projection.sin(tilt);f64 cp=projection.cos(tilt);
@@ -2009,9 +2012,10 @@ i32(f64,f64) globe_tiles=fn(now,height){
     if(scanned){1}else{0}
 };
 unit() reentry_shell=fn{entry_view.geometry();};
-unit(f64) reentry_visual=fn(clock){
+f64 presentation_seconds=0.0;
+unit() reentry_visual=fn{
     if(presentation[58]>0.01){
-        f64 phase=if(presentation[59]==1.0){clock*0.001}else{presentation[37]*0.17};
+        f64 phase=if(presentation[59]==1.0){presentation_seconds}else{presentation[37]*0.17};
         entry_view.frame(presentation[0]-presentation[38],presentation[1]-presentation[39],presentation[2]-presentation[40],
             core.float_extend<f64>(flow_x),core.float_extend<f64>(flow_y),core.float_extend<f64>(flow_z),presentation[58],phase);
     };
@@ -2035,11 +2039,15 @@ unit(i32) advance_fixed=fn(mask){
         advance_fixed(mask);
     };
 };
-f64(f64,i32) input_advance=fn(period,active){
-    f64 elapsed=period/1000.0;
-    pending_time=pending_time+(if(elapsed<0.20){elapsed}else{0.20});
+f64(f64,i32) input_advance=fn(period,activity){
     did_tick=false;
-    if(active==0){pending_time=0.0;}else{
+    if(activity==2&&!presentation_paused){control.clear_momentary();};
+    presentation_paused=activity==2;
+    if(activity==0){pending_time=0.0;presentation_seconds=0.0;};
+    if(activity==1){
+        f64 elapsed=if(period>0.0){period/1000.0}else{0.0};
+        presentation_seconds=presentation_seconds+elapsed;
+        pending_time=pending_time+(if(elapsed<0.20){elapsed}else{0.20});
         if(pending_time>=0.016666666666666666){
             did_tick=true;
             i32 mask=control.command_mask();
@@ -2100,7 +2108,7 @@ i32(i32,i32,i32,i32,i32) draw_plan=fn(epoch,width,height,avatar,sky){
     bool equipped=outside&&avatar==1;
     bool orbit_enabled=outside&&sky==1;
     bool sky_moved=orbit_enabled&&(!saw_spin||projection.abs(presentation[48]-draw_spin)>=0.0006);
-    bool evolving=presentation[59]==1.0;
+    bool evolving=!presentation_paused&&presentation[59]==1.0;
     bool same=drew_view&&draw_epoch==epoch&&draw_width==width&&draw_height==height&&
         last_view[41]==presentation[41]&&last_view[42]==presentation[42]&&
         projection.abs(last_view[38]-presentation[38])<0.00002&&projection.abs(last_view[39]-presentation[39])<0.00002&&

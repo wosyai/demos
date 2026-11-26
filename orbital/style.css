@@ -64,3 +64,10 @@ footer{position:absolute;bottom:1.35rem;left:50%;transform:translateX(-50%);widt
 
 .signal-lost .telemetry>span{background:#f28b76;box-shadow:0 0 10px #d15e49}
 .signal-lost .telemetry>b{color:#ffd0c5}
+
+#pause{width:min(25rem,calc(100% - 2rem));max-height:calc(100dvh - 1rem);overflow:auto;padding:1rem 1.25rem 1.25rem;color:#e2f3f2;border:1px solid #8ab2b677;border-radius:.8rem;background:#10232b}
+#pause::backdrop{background:#08141b88}
+#pause h2{margin:0 0 .65rem;font-size:1.25rem}
+#pause button{min-height:44px;margin:0 .4rem .45rem 0;padding:.5rem .7rem}
+#resume{background:#bceee9;color:#102329;font-weight:800}
+#pause-settings .quality-label{margin-top:.3rem}

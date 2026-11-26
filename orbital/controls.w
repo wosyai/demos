@@ -30,10 +30,11 @@ unit(i32) action=fn(command){
     if(command==1){coasting=!coasting;};
     if(command==2){coasting=false;};
 };
-unit() clear=fn{
-    physical=0;queued=false;pressed=false;coasting=false;dx=0.0;dy=0.0;
+unit() clear_momentary=fn{
+    physical=0;queued=false;pressed=false;dx=0.0;dy=0.0;
     thrust_x=0.0;thrust_y=0.0;head_x=0.0;head_y=0.0;
 };
+unit() clear=fn{clear_momentary();coasting=false;};
 unit(i32) release=fn(zone){
     if(zone==0){thrust_x=0.0;thrust_y=0.0;}else{head_x=0.0;head_y=0.0;};
 };

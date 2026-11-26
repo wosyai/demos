@@ -593,7 +593,7 @@ function render(alpha) {
  const orbit={spin:visual[48],center:visual.subarray(49,53)};
  const eva=pose[15]===1,body=eva&&apolloBody,entry=pose[32]===1;
  const heated=visual[58]>.01;
- if(eva&&upgradedSky&&earthReady&&$("intro").hidden)fineEarth.update(h);
+ if(eva&&upgradedSky&&earthReady&&active)fineEarth.update(h);
  const draw=engine.draw_plan(worldVersion,w,h,Number(Boolean(apolloBody)),Number(upgradedSky));
  if(draw===0)return;
  const holdingAngle=draw===2;
@@ -644,7 +644,7 @@ function render(alpha) {
  gl.bindVertexArray(null);gl.drawArrays(gl.TRIANGLES,0,3);gl.depthMask(true);
  if(heated){
   if(!glow){engine.reentry_shell();glow=reentryGlow(gl,entryMesh);}
-  engine.reentry_visual(performance.now());
+  engine.reentry_visual();
   glow(entrySample,visual.subarray(54,58),optics,roll);
  }
 }
@@ -655,7 +655,7 @@ function hud(){
  const view=hudText(hudCode,frame[16],Boolean(firstLookHint),copyIntent);
  const coastButton=$("coast");
  coastButton.hidden=!active||!view.coast;
- if(coastButton.hidden)engine.input_action(2);
+ if(active&&!view.coast)engine.input_action(2);
  coastButton.setAttribute("aria-pressed",String(Boolean(engine.input_status()&2)));
  const cameraButton=$("camera");
  cameraButton.hidden=!apolloBody||!eva;
@@ -741,15 +741,16 @@ function setupTiming(){
 function animate(t){
  requestAnimationFrame(animate);
  if(!last)last=t;
- const period=t-last;
- last=t;
+ const period=Math.max(0,t-last);
+ if(t>last)last=t;
  engine.quality_adapt(period,Number(active),Number(nativeQuality),Number(rasterSoftware));
- const alpha=engine.input_advance(period,Number(active));
+ const alpha=engine.input_advance(period,active?1:pauseDialog.open?2:0);
  if(engine.input_status()&8)hud();
  render(alpha);
  if(timing)timing(t);
 }
-function clear(){engine?.input_clear();for(const stick of Object.values(sticks))stick.id=null;grabbed=null;actionTouch=null;}
+function clearPointers(){for(const stick of Object.values(sticks))stick.id=null;grabbed=null;actionTouch=null;}
+function clear(){engine?.input_clear();clearPointers();}
 canvas.addEventListener("pointerdown",e=>{
  if(!active||grabbed!==null)return;grabbed={id:e.pointerId,x:e.clientX,y:e.clientY};canvas.setPointerCapture(e.pointerId);
 });
@@ -787,7 +788,8 @@ window.addEventListener("keydown",e=>{
  const slot=browserKeys.get(e.code);if(slot!==undefined){e.preventDefault();engine.input_key(slot,1);}
 });
 window.addEventListener("keyup",e=>{const slot=browserKeys.get(e.code);if(slot!==undefined)engine?.input_key(slot,0);});
-const quality=$("render-quality");
+const pauseDialog=$("pause"),menuButton=$("menu");
+const quality=$("render-quality"),qualityLabel=quality.parentElement;
 quality.value=nativeQuality?"full":"auto";
 quality.addEventListener("change",()=>{
  nativeQuality=quality.value==="full";
@@ -819,13 +821,40 @@ actionButton.onclick=e=>{
  if(active&&!actionButton.disabled&&!(suppressTouchClick&&e.detail>0))engine.input_action(0);
 };
 function enter(which){
- clear();if(which===2)engine.select_reentry();else engine.select_deck(which);engine.tick(0,0,0,0);
- active=true;$("intro").hidden=true;hud();
+ clear();engine.input_advance(0,0);if(which===2)engine.select_reentry();else engine.select_deck(which);engine.tick(0,0,0,0);
+ active=true;last=performance.now();$("intro").hidden=true;hud();
 }
 $("camera").onclick=()=>{if(active&&apolloBody&&frame[15]===1){engine.camera_mode(1);worldVersion++;hud();}};
 $("coast").onclick=()=>{if(active&&!$("coast").hidden)engine.input_action(1);};
 $("reset").onclick=()=>{if(engine)enter(frame[32]===1?2:frame[15]);};
-$("menu").onclick=()=>{clear();active=false;$("intro").hidden=false;};
+function restartExercise(){enter(frame[32]===1?2:frame[15]);}
+function closePause(){
+ pauseDialog.close();$("launch-settings").append(qualityLabel);
+ active=true;last=performance.now();menuButton.focus();hud();
+}
+function pauseExercise(){
+ if(!active)return;
+ clearPointers();engine.input_advance(0,2);active=false;
+ $("pause-settings").append(qualityLabel);
+ pauseDialog.showModal();$("resume").focus();
+}
+let escapeDown=false;
+window.addEventListener("keyup",e=>{if(e.key==="Escape")escapeDown=false;});
+window.addEventListener("blur",()=>{escapeDown=false;});
+window.addEventListener("keydown",e=>{
+ if(e.key!=="Escape"||e.altKey||e.ctrlKey||e.metaKey)return;
+ if(active){
+  e.preventDefault();
+  if(!e.repeat&&!escapeDown){escapeDown=true;pauseExercise();}
+ }else if(pauseDialog.open&&(e.repeat||escapeDown)){e.preventDefault();}
+});
+pauseDialog.addEventListener("cancel",e=>{
+ e.preventDefault();
+ if(!escapeDown){escapeDown=true;closePause();}
+});
+menuButton.onclick=pauseExercise;
+$("resume").onclick=closePause;
+$("pause-restart").onclick=()=>{closePause();restartExercise();};
 $("start").onclick=()=>enter(1);
 $("training").onclick=()=>enter(0);
 $("reentry").onclick=()=>enter(2);
@@ -846,7 +875,7 @@ function shadowBuffer(size){
  }
 try{
  if(!gl)throw Error("WebGL 2 is required to render the station.");
- const response=await fetch(new URL("./orbital.wasm?v=58",import.meta.url));
+ const response=await fetch(new URL("./orbital.wasm?v=60",import.meta.url));
  if(!response.ok)throw Error("The station engine could not be downloaded.");
  const {instance}=await WebAssembly.instantiate(await response.arrayBuffer(),{
   orbital:{
