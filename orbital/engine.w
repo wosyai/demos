@@ -1072,15 +1072,19 @@ unit() transfer_hatch = fn {
     port_plate(0.591,0.346,0.025,0.029,0.160);
     port_plate(-0.381,0.623,0.039,0.016,0.160);
 };
+unit(i32,i32) catwalk_member=fn(row_id,member){
+    station.CatwalkBox catwalk_shape=station.catwalk_box(row_id,member);
+    box(catwalk_shape.x,catwalk_shape.y,catwalk_shape.z,catwalk_shape.u,catwalk_shape.v,catwalk_shape.w)
+};
 unit(i32) catwalk = fn(k) {
     if(k<3){
-        f32 z=-2.1-0.58*core.sint_to_float<f32>(k);
+        f32 z=station.catwalk_z(k);
         paint(0.47,0.48,0.44,0.14);
-        box(-1.57,-1.10,z,0.92,0.044,0.051);
-        box(-1.53,1.25,z,0.092,0.46,0.08);
+        catwalk_member(k,0);
+        catwalk_member(k,1);
         quad(-1.48,1.29,z,-1.40,1.29,z,-0.94,1.68,z-0.58,-1.02,1.68,z-0.58,0.80);
         paint(0.59,0.52,0.32,0.17);
-        box(-1.38,1.71,z,0.426,0.050,0.055);
+        catwalk_member(k,2);
         paint(0.20,0.22,0.23,0.12);
         quad(-0.958,-1.24,z,-0.958,-1.08,z,-0.958,-1.08,z+0.11,-0.958,-1.24,z+0.11,0.75);
         catwalk(k+1);
@@ -1504,7 +1508,7 @@ unit(f32,i32) exterior_sweep = fn(d, budget){
     trace_x=pilot_x;trace_y=pilot_y;trace_z=pilot_z;
     trace_vx=vx;trace_vy=vy;trace_vz=vz;
     exterior_surfaces(d);
-    eva_contact.Hit solid=eva_contact.solar(pilot_x,pilot_y,pilot_z,vx,vy,vz,body_yaw,body_pitch,d);
+    eva_contact.Hit solid=eva_contact.station_sweep(pilot_x,pilot_y,pilot_z,vx,vy,vz,body_yaw,body_pitch,d);
     if(solid.active&&core.float_trunc<f32>(solid.time)<contact_t){
         contact_t=core.float_trunc<f32>(solid.time);contact_axis=5;
     };

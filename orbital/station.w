@@ -22,6 +22,25 @@ unit(i32,i32,i32,f32,f32,f32,f32,f32,f32,f32) put=fn(section,axis,finish,x,y,z,l
 Part(i32) at=fn(i){parts[core.int_extend<u64>(i/16)][core.int_extend<u64>(i%16)]};
 unit(f32,f32,f32,f32,f32,f32,i32) plank=fn(x,y,z,w,h,d,finish){put(0,0,finish,x+w*0.5,y+h*0.5,z,d,w*0.5,h*0.5,1.0);};
 unit(i32,i32,f32,f32,f32,f32,f32,f32) tube=fn(ax,finish,x,y,z,l,r,taper){put(if(r>0.66){2}else{1},ax,finish,x,y,z,l,r,r,taper);};
+struct copy CatwalkBox { f32 x; f32 y; f32 z; f32 u; f32 v; f32 w; }
+f32(i32) catwalk_z=fn(row_id){-2.1-0.58*core.sint_to_float<f32>(row_id)};
+CatwalkBox(i32,i32) catwalk_box=fn(row_id,member){
+    f32 z0=catwalk_z(row_id);
+    CatwalkBox b=if(member==0){
+        CatwalkBox lower={.x=-1.57;.y=-1.10;.z=z0;.u=0.92;.v=0.044;.w=0.051;};lower
+    }else{if(member==1){
+        CatwalkBox upright={.x=-1.53;.y=1.25;.z=z0;.u=0.092;.v=0.46;.w=0.08;};upright
+    }else{
+        CatwalkBox top={.x=-1.38;.y=1.71;.z=z0;.u=0.426;.v=0.050;.w=0.055;};top
+    }};
+    b
+};
+i32 catwalk_count=9;
+Part(i32) catwalk_collision=fn(id){
+    CatwalkBox b=catwalk_box(id/3,id%3);
+    Part pl={.section=0;.axis=0;.finish=0;.x=b.x+b.u*0.5;.y=b.y+b.v*0.5;.z=b.z;
+        .l=b.w;.u=b.u*0.5;.v=b.v*0.5;.taper=1.0;};pl
+};
 unit(i32) spine_band=fn(i){if(i<8){
     f32 z= -11.8+core.sint_to_float<f32>(i)*2.36;
     tube(0,1,-4.69,0.0,z,0.14,1.98,1.0);
