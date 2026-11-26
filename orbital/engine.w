@@ -1249,8 +1249,11 @@ unit(i32,i32) hull_sides=fn(i,n){
         f32 b0=cw(b1)*norm*hull_piece.u;f32 bb=wave(b1)*norm*hull_piece.v;
         f32 t=hull_piece.taper;f32 l=hull_piece.l;
         f32 shade=0.85;
+        bool wing_under=hull_piece.finish==5&&n==4&&i==2;
+        if(wing_under){paint(0.052,0.146,0.38,material_scene.wing_back());};
         hull_pt(a0,a1,0.0,shade);hull_pt(b0,bb,0.0,shade);hull_pt(b0*t,bb*t,l,shade);
         hull_pt(a0,a1,0.0,shade);hull_pt(b0*t,bb*t,l,shade);hull_pt(a0*t,a1*t,l,shade);
+        if(wing_under){hull_mat(5);};
         hull_pt(0.0,0.0,0.0,shade);hull_pt(b0,bb,0.0,shade);hull_pt(a0,a1,0.0,shade);
         hull_pt(0.0,0.0,l,shade);hull_pt(a0*t,a1*t,l,shade);hull_pt(b0*t,bb*t,l,shade);
         hull_sides(i+1,n);

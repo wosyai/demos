@@ -52,7 +52,7 @@ engine=new WebAssembly.Instance(wasm,{orbital:{
   }
  },hands(p,n){hand=read(p,n);handLoads++;},
  avatar_rig(p,n){assert.equal(p%8,0);rigRow=new Float64Array(engine.memory.buffer,p,n);},
- material_art(p,n){assert.equal(n,79);assert.equal(p%8,0);materialArt=new Float64Array(engine.memory.buffer,p,n).slice();},
+ material_art(p,n){assert.equal(n,103);assert.equal(p%8,0);materialArt=new Float64Array(engine.memory.buffer,p,n).slice();},
  sky_art(p,n){assert.equal(n,30);assert.equal(p%8,0);skyArt=new Float64Array(engine.memory.buffer,p,n).slice();},
  hud_view(p,n){assert.equal(n,8);assert.equal(p%8,0);hudView=new Float64Array(engine.memory.buffer,p,n).slice();},
  render_budget(p,n){assert.equal(n,3);assert.equal(p%8,0);rendererPlan=new Float64Array(engine.memory.buffer,p,n).slice();},
@@ -170,10 +170,19 @@ assert.ok(evaRoom.length/24<6680,'route indicators and console details stay with
 assert.equal(state[15],1);assert.ok(evaRoom.length>=5400*8 && evaRoom.length<6680*24 && evaRoom.length%24===0);
 assert.ok(evaRoom.every(Number.isFinite) && hand.every(Number.isFinite));
 const alloy=[];
-assert.deepEqual([...materialArt.slice(75)],[.71925,57,33,.61]);
+assert.deepEqual([...materialArt.slice(75,79)],[.71925,57,33,.61]);
 for(let i=0;i<evaRoom.length;i+=8)if(Math.abs(evaRoom[i+7]-materialArt[75])<.00001)alloy.push([...evaRoom.slice(i,i+8)]);
 assert.ok(alloy.length>=180&&alloy.length%3===0,'machined tag contains original complete annulus/bevel triangles');
 assert.ok(alloy.every(([x,y,z])=>x>=-1.2821&&x<=-1.2349&&Math.hypot(y-.27,z+2.60)>=.686&&Math.hypot(y-.27,z+2.60)<=.8141),'only the authored airlock collar has the alloy role');
+const wingRear=[];
+assert.deepEqual([...materialArt.slice(79,87)],[.47825,-17.05,-10.90,0,-15.64,-9.41,4.95,5.70]);
+for(let i=0;i<hull.length;i+=8)if(Math.abs(hull[i+7]-materialArt[79])<.00001)wingRear.push([...hull.slice(i,i+8)]);
+assert.equal(wingRear.length,36,'six existing wing backs, each with two triangles');
+assert.ok(wingRear.every(v=>Math.abs(v[1]-2.66)<.002),'solar rear role never tags top or edge composite');
+for(const x of materialArt.slice(80,83))for(const z of materialArt.slice(83,85)){
+ const tile=wingRear.filter(v=>v[0]>x-.015&&v[0]<x+4.965&&v[2]>z-.015&&v[2]<z+5.715);
+ assert.equal(tile.length,6);
+}
 const airlockLid=[];
 for(let i=0;i<hull.length;i+=8)if(Math.abs(hull[i+7]-.754)<.0001)airlockLid.push(hull.slice(i,i+8));
 assert.equal(airlockLid.length,90,'closed pressure lid is one immutable 30-segment bowl');

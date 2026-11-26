@@ -170,7 +170,24 @@ vec2 servicePractical(vec3 p,vec3 n,vec3 viewDir,float roughness,out bool inPort
   return min(vec2(.89,.48),C*mask);
 }
 
-vec3 sunColor(vec3 n){
+vec3 wingRear(float weathering,vec2 footprint){
+  const vec2 extent=vec2(${n(85)},${n(86)});
+  float x0=world.x<(${n(80)}+${n(85)}+${n(81)})*.5?${n(80)}:
+    world.x<(${n(81)}+${n(85)}+${n(82)})*.5?${n(81)}:${n(82)};
+  float z0=world.z<(${n(83)}+${n(86)}+${n(84)})*.5?${n(83)}:${n(84)};
+  vec2 uv=clamp((world.xz-vec2(x0,z0))/extent,0.,1.);
+  vec2 width=max(footprint/extent,vec2(.0004));
+  vec2 edge=min(uv,1.-uv);
+  float hoop=max(1.-smoothstep(${n(87)},${n(87)}+width.x,edge.x),
+                 1.-smoothstep(${n(87)},${n(87)}+width.y,edge.y));
+  float carrier=1.-smoothstep(${n(88)},${n(88)}+width.x,abs(uv.x-.5));
+  float cradle=1.-smoothstep(${n(91)},${n(91)}+width.y,min(abs(uv.y-${n(89)}),abs(uv.y-${n(90)})));
+  float lead=(1.-smoothstep(${n(93)},${n(93)}+width.x,abs(uv.x-${n(92)})))*
+    (1.-smoothstep(${n(93)}*.5,${n(93)}*2.,width.x));
+  vec3 panel=mix(${v(94)},${v(97)},max(hoop,max(carrier,cradle)));
+  return mix(panel,${v(100)},lead*.73)*(.85+.26*weathering);
+}
+vec3 sunColor(vec3 n,vec3 worldDx,vec3 worldDy){
  bool steel=material.y>.56 && material.y<.69;
  bool emitter=material.y>.8;
  bool upperBlanket=abs(material.y-${n(2)})<.0007;
@@ -278,6 +295,7 @@ vec3 sunColor(vec3 n){
     vec3 photovoltaic=mix(col*(.84+sheet.r*.3),vec3(.19,.32,.63),.22);
     col=mix(photovoltaic,vec3(.55,.51,.38),max(thin*.79,bus*.64));
     if(n.y<-.45)col=mix(col,vec3(.30,.28,.215)*(.76+.32*sheet.r),.85);
+    if(practicalLighting&&n.y<-.45&&abs(material.y-${n(79)})<.00008)col=wingRear(sheet.r,abs(worldDx.xz)+abs(worldDy.xz));
  }
  if(abs(material.y-.697)<.0005){
     float fresnel=pow(1.-abs(dot(n,normalize(eye-world))),3.);
@@ -338,7 +356,8 @@ out vec4 pix;
 ${view}
 ${exteriorMaterial(sun,material)}
 void main(){
- vec3 normal=normalize(cross(dFdx(world),dFdy(world)));
+ vec3 worldDx=dFdx(world),worldDy=dFdy(world);
+ vec3 normal=normalize(cross(worldDx,worldDy));
  if(eva==1){
    if(material.y>=1.098){
      int address=int(round((material.y-1.10)*100.))+1;
@@ -348,7 +367,7 @@ void main(){
    }
    if(dot(fittedNormal,fittedNormal)>.2)normal=normalize(fittedNormal);
    if(dot(normal,eye-world)<0.)normal=-normal;
-   pix=vec4(sunColor(normal),1.);return;
+   pix=vec4(sunColor(normal,worldDx,worldDy),1.);return;
  }
  float overhead=smoothstep(-1.2,1.52,world.y);
  float local=smoothstep(.0,1.,.65+.35*cos((world.z+9.4)*3.53));
@@ -898,13 +917,13 @@ function shadowBuffer(size){
  }
 try{
  if(!gl)throw Error("WebGL 2 is required to render the station.");
- const response=await fetch(new URL("./orbital.wasm?v=66",import.meta.url));
+ const response=await fetch(new URL("./orbital.wasm?v=67",import.meta.url));
  if(!response.ok)throw Error("The station engine could not be downloaded.");
  const {instance}=await WebAssembly.instantiate(await response.arrayBuffer(),{
   orbital:{
    indexed:uploadIndexed,hands:uploadHands,
    avatar_rig(p,n){rigRow=new Float64Array(engine.memory.buffer,p,n);},
-   material_art(p,n){if(n!==79)throw Error("Unexpected station material profile");materialArt=new Float64Array(engine.memory.buffer,p,n);},
+   material_art(p,n){if(n!==103)throw Error("Unexpected station material profile");materialArt=new Float64Array(engine.memory.buffer,p,n);},
    sky_art(p,n){if(n!==30)throw Error("Unexpected celestial profile");skyArt=new Float64Array(engine.memory.buffer,p,n);},
    hud_view(p,n){if(n!==8)throw Error("Unexpected HUD projection");hudRow=new Float64Array(engine.memory.buffer,p,n);},
    render_budget(p,n){if(n!==3)throw Error("Unexpected renderer plan");renderPlan=new Float64Array(engine.memory.buffer,p,n);},

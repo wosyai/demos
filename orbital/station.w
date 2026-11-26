@@ -1,4 +1,5 @@
 %%start
+wing_art = namespace orbital "station-material.w";
 struct copy Part { i32 section; i32 axis; i32 finish; f32 x; f32 y; f32 z; f32 l; f32 u; f32 v; f32 taper; }
 Part empty={.section=0;.axis=0;.finish=0;.x=0.0;.y=0.0;.z=0.0;.l=0.0;.u=0.0;.v=0.0;.taper=1.0;};
 Part[16] row=[empty,empty,empty,empty,empty,empty,empty,empty,empty,empty,empty,empty,empty,empty,empty,empty];
@@ -36,7 +37,7 @@ unit(i32) lattice=fn(i){if(i<20){
     lattice(i+1);
 };};
 unit(f32,f32) wing=fn(x,z){
-    plank(x,2.66,z,4.95,0.088,5.70,5);
+    plank(x,2.66,z,wing_art.wing_width(),0.088,wing_art.wing_depth(),5);
     plank(x,2.63,z+0.02,0.074,0.16,5.66,3);
     plank(x+4.88,2.63,z+0.02,0.074,0.16,5.66,3);
     plank(x,2.64,z,4.95,0.13,0.095,1);
@@ -107,8 +108,8 @@ unit() build=fn{
     lattice(0);
     tube(2,1,-4.69,0.98,-9.7,1.64,0.47,1.0);
     plank(-16.8,2.52,-10.03,23.1,0.27,0.62,3);
-    wing(-17.05,-15.64);wing(-10.90,-15.64);wing(0.0,-15.64);
-    wing(-17.05,-9.41);wing(-10.90,-9.41);wing(0.0,-9.41);
+    wing(wing_art.wing_x(0),wing_art.wing_z(0));wing(wing_art.wing_x(1),wing_art.wing_z(0));wing(wing_art.wing_x(2),wing_art.wing_z(0));
+    wing(wing_art.wing_x(0),wing_art.wing_z(1));wing(wing_art.wing_x(1),wing_art.wing_z(1));wing(wing_art.wing_x(2),wing_art.wing_z(1));
     tube(2,1,-4.69,1.62,2.5,2.14,0.13,1.0);
     tube(2,3,-4.69,3.76,2.5,0.33,0.30,1.0);
     tube(2,0,-4.69,4.09,2.5,0.68,0.30,4.40);
