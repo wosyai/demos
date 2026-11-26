@@ -1,4 +1,4 @@
-import {hudText} from './hud-text.mjs';
+import {hudText,flightStatusText} from './hud-text.mjs';
 import {ProceduralPose} from './apollo-body.mjs';
 import {bindAvatarRig} from './avatar-rig.mjs';
 import assert from 'node:assert/strict';
@@ -54,7 +54,7 @@ engine=new WebAssembly.Instance(wasm,{orbital:{
  avatar_rig(p,n){assert.equal(p%8,0);rigRow=new Float64Array(engine.memory.buffer,p,n);},
  material_art(p,n){assert.equal(n,75);assert.equal(p%8,0);materialArt=new Float64Array(engine.memory.buffer,p,n).slice();},
  sky_art(p,n){assert.equal(n,29);assert.equal(p%8,0);skyArt=new Float64Array(engine.memory.buffer,p,n).slice();},
- hud_view(p,n){assert.equal(n,7);assert.equal(p%8,0);hudView=new Float64Array(engine.memory.buffer,p,n).slice();},
+ hud_view(p,n){assert.equal(n,8);assert.equal(p%8,0);hudView=new Float64Array(engine.memory.buffer,p,n).slice();},
  render_budget(p,n){assert.equal(n,3);assert.equal(p%8,0);rendererPlan=new Float64Array(engine.memory.buffer,p,n).slice();},
  earth_tiles(p,n){assert.equal(n,19);assert.equal(p%8,0);earthTiles=new Float64Array(engine.memory.buffer,p,n).slice();},
  entry_shell(p,n){assert.equal(n,6144);entryMesh=read(p,n);},
@@ -84,6 +84,7 @@ function visualOf(alpha,aspect,hasAvatar=1){
  return visual;
 }
 const captureFrames=[];
+const statusIs=(expected)=>{engine.hud_view();assert.equal(flightStatusText(hudView[7]),expected);};
 const hint=()=>{const code=engine.hud_view();assert.equal(code,engine.hud_code());return hudText(code,state[16],Boolean(hudView[5]),hudView[6]);};
 function hudIs(objective,interact,marker="+"){
  const view=hint();
@@ -99,6 +100,7 @@ const capture=()=>[...state.slice(0,21),...new Array(17).fill(0),...hand];
 function reset(){engine.reset();step(0,0,0,0);}
 reset();
 initial=capture();
+statusIs("FREE FLOAT");
  hudIs("Approach the amber rail",false);
 assert.ok(room.length>=2500*8 && room.length<=4096*8 && room.length%24===0);
 assert.ok(room.every(Number.isFinite));assert.ok(hand.every(Number.isFinite));
@@ -106,20 +108,20 @@ step(64);assert.equal(state[9],0,'cannot grip from spawn');step();
 until(()=>state[10]===1,260);
 step(0,1.25);assert.equal(state[10],0,'cannot grip when facing away');step(64);assert.equal(state[9],0);
 step(0,-1.25);assert.equal(state[10],1);
-step(64);assert.equal(state[9],1);
+step(64);assert.equal(state[9],1);statusIs("TAKING HOLD");
 until(()=>state[9]===2,64);
-contact=capture();
+contact=capture();statusIs("ANCHORED");
 for(let i=0;i<90;i++)step(64|4|2|16);
 assert.deepEqual(capture(),contact,'held action/thrust cannot exit the frozen handrail pose');
 assert.deepEqual(contact.slice(5,10),[0,0,0,1,2]);
 const box = (m) => [0,1,2].map(i=>{const a=m.filter((_,j)=>j%8===i);return [Math.min(...a),Math.max(...a)];});
 assert.notDeepEqual(box(initial.slice(38)),box(contact.slice(38)),'contact has its own authored hand volume');
 const [x,y,z]=box(contact.slice(38));assert.ok(x[0]<.745 && x[1]>.745 && y[1]>-.21 && z[0]<-1.94 && z[1]>-1.94,'contact mesh wraps the handrail');
-step();step(64);assert.equal(state[9],3);assert.equal(state[11],2);assert.ok(state[7]<0);
+step();step(64);assert.equal(state[9],3);assert.equal(state[11],2);assert.ok(state[7]<0);statusIs("PUSHING OFF");
 const before=state[2];until(()=>state[9]===0,0);assert.ok(state[2]<before);
 reset();assert.deepEqual(capture(),initial,'reset restores exact initial pose');
-until(()=>state[7]<-.65,4);
-const velocity=state[7];step();assert.equal(state[7],velocity,'release retains momentum exactly');
+until(()=>state[7]<-.65,4);statusIs("THRUST");
+const velocity=state[7];step();assert.equal(state[7],velocity,'release retains momentum exactly');statusIs("DRIFT");
 while(state[7]<-.015)step(8);
 assert.ok(Math.abs(state[7])<.028,'opposite thrust neutralizes drift without a brake');
 until(()=>state[1]>1.019,16);assert.ok(state[1]<=1.02001 && state[6]===0);
@@ -516,6 +518,7 @@ engine.set_thrust(0,0);step();assert.deepEqual([...state.slice(23,26)],[0,0,0]);
 reset();
 for(let i=0;i<200;i++)step(1);
 assert.ok(state[0]>-1.371&&state[0]<-1.369&&state[5]===0&&state[26]===1,'hull stops a direct inward burn');
+statusIs("HULL CONTACT");
 assert.ok(state[7]>0,'station contact preserves tangential translation');
 step(64);assert.equal(state[17],0,'skipping the rails cannot lock cargo');
 engine.select_deck(0);step(0,0,0,0);

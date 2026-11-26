@@ -82,3 +82,6 @@ export function hudText(code,leg,showFirstLookHint,copyIntent){
    aim:Boolean(aim),route,marker:route?(aim===4?"❯":"❮"):arrow[aim],
    interact:Boolean(code&1024),console:Boolean(code&2048),coast:Boolean(code&4096),far:Boolean(code&8192),burn:Boolean(code&32768)};
 }
+
+const flightStatuses=["FREE FLOAT","DRIFT","ANCHORED","TAKING HOLD","PUSHING OFF","THRUST","HULL CONTACT"];
+export function flightStatusText(status){return flightStatuses[status];}

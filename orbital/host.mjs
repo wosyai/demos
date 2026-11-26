@@ -1,4 +1,4 @@
-import {hudText} from "./hud-text.mjs?v=6";
+import {hudText,flightStatusText} from "./hud-text.mjs?v=7";
 import {reentryGlow} from "./reentry-glow.mjs?v=2";
 import {earthDetail} from "./earth-detail.mjs?v=3";
 import {exteriorSky} from "./exterior-sky.mjs?v=6";
@@ -649,9 +649,9 @@ function render(alpha) {
  }
 }
 function hud(){
- const eva=frame[15]===1,contact=frame[26]===1;
+ const eva=frame[15]===1;
  const hudCode=engine.hud_view();
- const [speed,driftAngle,showDrift,isEntry,lost,firstLookHint,copyIntent]=hudRow;
+ const [speed,driftAngle,showDrift,isEntry,lost,firstLookHint,copyIntent,flightStatus]=hudRow;
  const view=hudText(hudCode,frame[16],Boolean(firstLookHint),copyIntent);
  const coastButton=$("coast");
  coastButton.hidden=!active||!view.coast;
@@ -666,7 +666,7 @@ function hud(){
  const instrument=$("flight-instrument");
  instrument.hidden=!active;
  instrument.classList.toggle("burn",view.burn);
- instrument.classList.toggle("contact",contact);
+ instrument.classList.toggle("contact",flightStatus===6);
  const clock=frame[30]>1?"×"+frame[30]+" · ":"";
  const entry=isEntry===1;
  $("flight-keys").hidden=entry;$("entry-keys").hidden=!entry;
@@ -674,7 +674,7 @@ function hud(){
  text("systems",signalLost?"SIGNAL LOST":"SYSTEMS ONLINE");
  main.classList.toggle("signal-lost",signalLost);
  const readout=entry?clock+(frame[28]/1000).toFixed(1)+" km · "+(engine.entry_flow(5)/1000).toFixed(2)+" km/s":
-   clock+(contact?"HULL CONTACT · ":view.burn?"THRUST · ":"DRIFT · ")+speed.toFixed(1)+" m/s"+(eva?" · Δv "+frame[31].toFixed(1)+" m/s":"")+(view.far?" · "+(frame[28]/1000).toFixed(0)+" km":"");
+   clock+flightStatusText(flightStatus)+" · "+speed.toFixed(1)+" m/s"+(eva?" · Δv "+frame[31].toFixed(1)+" m/s":"")+(view.far?" · "+(frame[28]/1000).toFixed(0)+" km":"");
  text("flight-speed",readout);
  const vector=$("drift-vector");
  vector.style.opacity=String(showDrift);
@@ -875,7 +875,7 @@ function shadowBuffer(size){
  }
 try{
  if(!gl)throw Error("WebGL 2 is required to render the station.");
- const response=await fetch(new URL("./orbital.wasm?v=60",import.meta.url));
+ const response=await fetch(new URL("./orbital.wasm?v=61",import.meta.url));
  if(!response.ok)throw Error("The station engine could not be downloaded.");
  const {instance}=await WebAssembly.instantiate(await response.arrayBuffer(),{
   orbital:{
@@ -883,7 +883,7 @@ try{
    avatar_rig(p,n){rigRow=new Float64Array(engine.memory.buffer,p,n);},
    material_art(p,n){if(n!==75)throw Error("Unexpected station material profile");materialArt=new Float64Array(engine.memory.buffer,p,n);},
    sky_art(p,n){if(n!==29)throw Error("Unexpected celestial profile");skyArt=new Float64Array(engine.memory.buffer,p,n);},
-   hud_view(p,n){if(n!==7)throw Error("Unexpected HUD projection");hudRow=new Float64Array(engine.memory.buffer,p,n);},
+   hud_view(p,n){if(n!==8)throw Error("Unexpected HUD projection");hudRow=new Float64Array(engine.memory.buffer,p,n);},
    render_budget(p,n){if(n!==3)throw Error("Unexpected renderer plan");renderPlan=new Float64Array(engine.memory.buffer,p,n);},
    earth_tiles(p,n){if(n!==19)throw Error("Unexpected globe tile projection");tileRow=new Float64Array(engine.memory.buffer,p,n);},
    entry_shell(p,n){if(n!==6144)throw Error("Unexpected entry shell");entryMesh=new Float32Array(engine.memory.buffer,p,n);},

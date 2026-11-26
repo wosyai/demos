@@ -46,6 +46,15 @@ f32(Cargo,i32) telemetry_stage=fn(stage,alignment){
     if(stage==Cargo::locking){wire=6.5;};
     wire
 };
+i32(Motion,bool,bool,bool) instrument_status=fn(motion,contact,burn,drift){
+    if(contact){6}else{
+        if(motion==Motion::taking){3}else{
+            if(motion==Motion::held){2}else{
+                if(motion==Motion::pushing){4}else{if(burn){5}else{if(drift){1}else{0}}}
+            }
+        }
+    }
+};
 i32(Motion,bool,Steering) rail=fn(motion,reach,cue){
     i32 message=0;
     if(motion==Motion::pushing){message=1;}

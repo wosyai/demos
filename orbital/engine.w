@@ -2067,7 +2067,7 @@ unit(f64,i32,i32,i32) quality_adapt=fn(period,live,full,software){
 };
 unit(f64,f64,f64,i32,i32) quality_plan=fn(w,h,dpr,full,software){render_policy.plan(w,h,dpr,full==1,software==1);};
 i32(i32,i32,i32,i32) quality_shadow=fn(full,hardware,coarse,maximum){render_policy.shadow(full==1,hardware==1,coarse==1,maximum)};
-f64[7] hud_view_row=[0.0,0.0,0.0,0.0,0.0,0.0,0.0];
+f64[8] hud_view_row=[0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0];
 i32() hud_view=fn{
     f64 hx=core.float_extend<f64>(state[3]);f64 hp=core.float_extend<f64>(state[4]);
     f64 vx1=core.float_extend<f64>(state[5]);f64 vy1=core.float_extend<f64>(state[6]);f64 vz1=core.float_extend<f64>(state[7]);
@@ -2079,12 +2079,14 @@ i32() hud_view=fn{
     i32 code=hud_code();
     hud_view_row[0]=speed;
     hud_view_row[1]=projection.atan2(side,along);
-    hud_view_row[2]=if(speed>0.08&&!entry){1.0}else{0.0};
+    bool drifting=speed>0.08;
+    hud_view_row[2]=if(drifting&&!entry){1.0}else{0.0};
     hud_view_row[3]=if(entry){1.0}else{0.0};
     hud_view_row[4]=if((code&63)==43){1.0}else{0.0};
     hud_view_row[5]=if(station_leg==0&&(control.status()&1)==0){1.0}else{0.0};
     hud_view_row[6]=core.sint_to_float<f64>(hud.copy_intent(code));
-    unsafe {host.hud_view(core.pointer_cast<*?u8>(&?hud_view_row[0]),7);};
+    hud_view_row[7]=core.sint_to_float<f64>(hud.instrument_status(hud.flight(mode),wall_contact,(code&32768)!=0,drifting));
+    unsafe {host.hud_view(core.pointer_cast<*?u8>(&?hud_view_row[0]),8);};
     code
 };
 unit() celestial_profile=fn{sky_art.publish();};
