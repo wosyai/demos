@@ -24,6 +24,10 @@ node tools/verify-wasm.mjs voxel/engine.wasm --binary
 node tools/verify-host.mjs
 ```
 
+## Package browser Wasm
+
+For distribution, run `python3 tools/package-wasm.py INPUT NEW_OUTPUT` with LLVM objcopy 18.1.8 (`LLVM_OBJCOPY` overrides its path). This removes only internal names from the output copy; normal builds keep them.
+
 ## Audio
 
 Select a game to enable sound. The Sound toggle is shared across games. [Asset formats and regeneration](arcade/audio/README.md)
