@@ -3,12 +3,12 @@ math = namespace orbital "presentation.w";
 detail_lod = namespace orbital "globe-tiles.w";
 bridge = extern wasm "orbital" { unsafe unit(*?u8,i32) sky_art; };
 f64() reference_disc=fn{0.7962254705797849};
-f64[37] packet=[
+f64[40] packet=[
     0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,
     0.0,0.3,-5.0,6.4,14.0,
     0.76,0.57,-0.31,0.00372906,0.06104854,0.0009869,
     0.8124226,-0.5092981,0.2838750,0.5136543,0.8555399,0.0648896,-0.2759145,0.0930958,0.9566631,0.0,
-    1.0,0.97,0.90,0.46,0.34,0.23,0.0
+    1.0,0.97,0.90,0.38,0.27,0.16,0.0,0.15,0.24,0.34
 ];
 unit() publish=fn{
     f64 n=math.norm(0.48,0.35,0.80);
@@ -20,6 +20,6 @@ unit() publish=fn{
     packet[6]=sy*xz;packet[7]=sz*xx-sx*xz;packet[8]=-sy*xx;
     packet[29]=reference_disc();
     packet[36]=detail_lod.detail_fade_end();
-    unsafe {bridge.sky_art(core.pointer_cast<*?u8>(&?packet[0]),37);};
+    unsafe {bridge.sky_art(core.pointer_cast<*?u8>(&?packet[0]),40);};
 };
 %%end

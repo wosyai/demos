@@ -1029,7 +1029,7 @@ try{
    indexed:uploadIndexed,hands:uploadHands,
    avatar_rig(p,n){rigRow=new Float64Array(engine.memory.buffer,p,n);},
    material_art(p,n){if(n!==113)throw Error("Unexpected station material profile");materialArt=new Float64Array(engine.memory.buffer,p,n);},
-   sky_art(p,n){if(n!==37)throw Error("Unexpected celestial profile");skyArt=new Float64Array(engine.memory.buffer,p,n);},
+   sky_art(p,n){if(n!==40)throw Error("Unexpected celestial profile");skyArt=new Float64Array(engine.memory.buffer,p,n);},
    hud_view(p,n){if(n!==15)throw Error("Unexpected HUD projection");hudRow=new Float64Array(engine.memory.buffer,p,n);},
    render_budget(p,n){if(n!==3)throw Error("Unexpected renderer plan");renderPlan=new Float64Array(engine.memory.buffer,p,n);},
    earth_tiles(p,n){if(n!==19)throw Error("Unexpected globe tile projection");tileRow=new Float64Array(engine.memory.buffer,p,n);},
