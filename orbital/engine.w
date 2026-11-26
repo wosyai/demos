@@ -1371,6 +1371,9 @@ f32 dock_yaw=0.0; f32 dock_pitch=0.0;
 f32 dock_vx=0.0; f32 dock_vy=0.0; f32 dock_vz=0.0;
 f32 body_yaw=0.0; f32 body_pitch=0.0;
 f32 hold_yaw=0.0;f32 hold_pitch=0.0;
+f32 anchored_head_offset=0.0;
+f32 prior_head_offset=0.0;
+f32 anchored_head_pitch=0.0;
 f32 stick_x=0.0;f32 stick_forward=0.0;
 f32 thrust_x=0.0;f32 thrust_y=0.0;f32 thrust_z=0.0;
 bool wall_contact=false;
@@ -1587,6 +1590,7 @@ unit(f32) descend_atmosphere=fn(d){
 };
 unit() reset = fn {
     present_history=false;
+    anchored_head_offset=0.0;prior_head_offset=0.0;anchored_head_pitch=0.0;
     if(deck==0){third_person=false;chase_blend=0.0;};
     pilot_x=0.0; pilot_y=0.0; pilot_z=0.37;vx=0.0;vy=0.0;vz=0.0;yaw=if(deck==0){0.13}else{-0.03};pitch=if(deck==0){-0.035}else{-0.095};timer=0.0;
     if(reentry_exercise){
@@ -1739,6 +1743,8 @@ i32() hud_code = fn{
 };
 unit(f32,i32,f32,f32) tick = fn(dt,keys,look_x,look_y) {
     prior_state=state;present_history=dt>0.0;
+    prior_head_offset=anchored_head_offset;
+    bool before_anchored=deck==1&&!reentry_exercise&&mode==2;
     if(!ready){if(deck==0){draw();}else{eva_room();};ready=true;};
     f32 d=limit(dt,0.0,0.032);
     f32 bind=if(mode==2){1.0}else{if(mode==3){grip}else{0.0}};
@@ -1935,6 +1941,18 @@ unit(f32,i32,f32,f32) tick = fn(dt,keys,look_x,look_y) {
         yaw=wrap_yaw(body_yaw+limit(wrap_yaw(yaw-body_yaw),-safe_yaw,safe_yaw));
         pitch=limit(pitch,body_pitch-safe_pitch,body_pitch+safe_pitch);
     };
+    if(deck==1&&!reentry_exercise&&mode==2){
+        if(!before_anchored){
+            anchored_head_pitch=pitch;
+        }else{
+            f32 head_input=limit(look_y,-2.20*d,2.20*d);
+            anchored_head_pitch=limit(anchored_head_pitch+head_input,body_pitch-0.86,body_pitch+0.37);
+            anchored_head_pitch=limit(anchored_head_pitch,-1.48,1.48);
+        };
+        anchored_head_offset=anchored_head_pitch-pitch;
+    }else{
+        anchored_head_offset=anchored_head_offset-limit(anchored_head_offset,-1.8*d,1.8*d);
+    };
     state[3]=yaw;state[4]=pitch;
     state[21]=body_yaw;state[22]=body_pitch;
     state[23]=thrust_x;state[24]=thrust_y;state[25]=thrust_z;
@@ -1993,6 +2011,17 @@ unit(f64,f64,i32) project_visual=fn(alpha,aspect,avatar){
     f64 x=presentation[0];f64 y=presentation[1];f64 z=presentation[2];
     f64 heading=presentation[3];f64 tilt=presentation[4];
     bool eva=state[15]==1.0;bool entry=state[32]==1.0;
+    f64 extra_head=core.float_extend<f64>(anchored_head_offset);
+    if(blend){
+        f64 start_head=core.float_extend<f64>(prior_head_offset);
+        extra_head=start_head+(extra_head-start_head)*alpha;
+    };
+    f64 head_tilt=tilt;
+    if(eva&&!entry&&extra_head!=0.0){
+        head_tilt=projection.clamp(tilt+extra_head,presentation[22]-0.86,presentation[22]+0.60);
+        head_tilt=projection.clamp(head_tilt,-1.48,1.48);
+        presentation[4]=head_tilt;
+    };
     bool body=eva&&avatar==1;bool chase=body&&third_person;
     f64 target=if(chase){1.0}else{0.0};
     if(!presentation_paused){
@@ -2015,6 +2044,7 @@ unit(f64,f64,i32) project_visual=fn(alpha,aspect,avatar){
         f64 pitch_goal=projection.atan2(qy,projection.norm(qx,0.0,qz));
         pitch_out=tilt+(pitch_goal-tilt)*chase_blend;
     };
+    if(head_tilt!=tilt){pitch_out=pitch_out+(head_tilt-tilt)*(1.0-chase_blend);};
     bool exterior_avatar=body&&(chase||chase_blend>0.03)&&projection.norm(cx-x,cy-y,cz-z)>0.8;
     f64 relief=if(eva&&aspect<0.72){1.40+0.45*projection.clamp((aspect-0.49)/0.23,0.0,1.0)}else{1.90};
     f64 focus=projection.clamp((if(eva){relief}else{1.8})*aspect,0.0,if(eva){1.42}else{1.45});
