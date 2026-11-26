@@ -19,7 +19,6 @@ const gripWidth=.023;
 const approachBars=[null,{center:[-.18,-.57,-1.59],radius:.087},{center:[-.18,-.57,-3.43],radius:.087}];
 const radial=(center,x,r,t)=>add(center,[x,r*Math.cos(t),r*Math.sin(t)]);
 const inward=t=>[0,Math.sin(t),-Math.cos(t)];
-const gripSmooth=t=>{const q=clamp(t,0,1);return q*q*(3-2*q);};
 function fitDigits(palette,palm,contact){
  const weight=contact?.progress??0;
  const localToFit=(from,to)=>{
@@ -134,10 +133,10 @@ export class ApolloPose {
    const name=this.nodes[i].name;
    if(!name.startsWith(side+'Hand'))return [];
    const thumb=name.includes('Thumb');
-   const r=thumb?(name.endsWith('Proximal')?-.18:name.endsWith('Distal')?-.20:0):
-      name.endsWith('Proximal')?-.12:name.endsWith('Intermediate')?-.43:name.endsWith('Distal')?-.38:0;
+   const jointType=thumb?(name.endsWith('Proximal')?0:name.endsWith('Distal')?1:-1):
+      name.endsWith('Proximal')?2:name.endsWith('Intermediate')?3:name.endsWith('Distal')?4:-1;
    const inv=asset.bind[ib];
-   return r?[[i,r*(side==='Left'?1:-1),unit([inv[0],inv[1],inv[2]]),mmuBendIndex.get(name.slice(side.length+4))]]:[];
+   return jointType>=0?[[i,jointType,unit([inv[0],inv[1],inv[2]]),mmuBendIndex.get(name.slice(side.length+4))]]:[];
   })]));
  }
  solve(frame,options={}){
@@ -179,25 +178,22 @@ export class ApolloPose {
    const published=options.wrist??add(authoredWrist,[.068,.154,.077]);
    const target=reach&&contact?this.rig.approach(rest,contact,reach,frame[9]===3):reach?mix(rest,published,reach):rest;
    const pole=add(mul(body.right,s*.51),mul(body.up,-1));
-   if(reach){
+   const spanError=reach?length(sub(target,a))-(length(sub(b,a))+length(sub(c,b))):0;
+   const art=this.rig.railArticulation(reach,spanError,Boolean(contact),i);
+   if(art.collar>0){
     const collar=index('LeftShoulder'), anchor=origin(joints[collar]);
-    const boneLength=length(sub(b,a))+length(sub(c,b));
-    const deficit=Math.max(0,length(sub(target,a))-boneLength+.010);
-    if(deficit){
-     // Protract the clavicle towards the rail, rather than stretching the hand.
-     const push=mul(unit(sub(target,a)),Math.min(deficit*1.48,.18));
-     const vector=sub(a,anchor);
-     const offset=mix(vector,sub(add(a,push),anchor),Math.min(1,reach*2.1));
-     install(collar,align(joints[collar],vector,offset));
-     a=origin(joints[upper]);b=origin(joints[lower]);c=origin(joints[wrist]);
-    }
+    const push=mul(unit(sub(target,a)),art.collar);
+    const vector=sub(a,anchor);
+    const offset=mix(vector,sub(add(a,push),anchor),art.collarBlend);
+    install(collar,align(joints[collar],vector,offset));
+    a=origin(joints[upper]);b=origin(joints[lower]);c=origin(joints[wrist]);
    }
    const M=this.rig.elbow(a,target,length(sub(b,a)),length(sub(c,b)),pole);
    install(upper,align(joints[upper],sub(b,a),sub(M.elbow,a)));
    const afterLower=origin(joints[lower]), afterWrist=origin(joints[wrist]);
    install(lower,align(joints[lower],sub(afterWrist,afterLower),sub(M.wrist,M.elbow)));
    const palm=index(side+'HandPalm');
-   const swing=contact?gripSmooth(reach/.69):reach;
+   const swing=art.palm;
    const forward=reach?unit(mix(controllerForward,contact?.direction??options.gripForward??head.forward,swing)):controllerForward;
 
    let m=align(joints[wrist],sub(origin(joints[palm]),origin(joints[wrist])),forward);
@@ -226,12 +222,11 @@ export class ApolloPose {
     const [thumb,axis]=authored.thumb;
     install(thumb,product(joints[thumb],matrix(undefined,orbitRotation(axis,authored.opposition*fit))));
    }
-   const curl=.72+.28*reach;
-   // Mirror the approved closed bake's per-knuckle curls.
    const knuckles=this.knuckles[side];
    for(let j=0;j<knuckles.length;j++){
-    const [joint,r,axis,bendIndex]=knuckles[j];
-    const bend=mmu&&bendIndex!==undefined?r*curl+authored.bends[bendIndex]*fit:r*curl;
+    const [joint,jointType,axis,bendIndex]=knuckles[j];
+    const flex=art.flex[jointType];
+    const bend=mmu&&bendIndex!==undefined?flex+authored.bends[bendIndex]*fit:flex;
     install(joint,product(joints[joint],matrix(undefined,orbitRotation(axis,bend))));
    }
    debug[side]={shoulder:a, elbow:origin(joints[lower]), wrist:origin(joints[wrist]), requested:target, error:M.wristError};
@@ -799,7 +794,7 @@ export class ProceduralPose{
    if(reach&&deficit)a=add(a,mul(unit(sub(target,a)),Math.min(contact&&frame[19]>=5?.242:contact&&frame[19]>=1?.182:.17,deficit)*Math.min(1,reach*2.1)));
    const pole=add(mul(body.right,s*.46),mul(body.up,-1));
    let M=this.rig.elbow(a,target,.276,.232,pole);
-   const alignment=contact&&i===0?gripSmooth(reach/.69):reach;
+   const alignment=this.rig.railArticulation(reach,0,Boolean(contact)&&i===0,i).palm;
    const hand=unit(mix(controlAxis,(contact&&i===0?contact.direction:(options.gripForward??head.forward)),alignment));
    const j=(4+3*i)*16;
    const palmAt=at=>{

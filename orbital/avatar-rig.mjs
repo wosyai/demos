@@ -13,6 +13,7 @@ export function bindAvatarRig(instance, read){
   return [at(0,p[36]),at(18,1)];
  };
  let neutral,grasps;
+ const openArticulation=[];
  return {
   neutralControls(){return neutral??=controlRow(0,0,0,0,0);},
   mmuGrasps(){
@@ -37,6 +38,13 @@ export function bindAvatarRig(instance, read){
   },
   controls(frame){
    return controlRow(frame[33]||0,frame[34]||0,frame[35]||0,frame[36]||0,frame[8]||0);
+  },
+  railArticulation(reach,spanError,registered,side){
+   const authored=()=>{
+    const p=checked("avatar_grasp_style",8,reach,spanError,Number(registered),Number(side===0));
+    return {collar:p[0],collarBlend:p[1],palm:p[2],flex:[...p.slice(3)]};
+   };
+   return reach===0?(openArticulation[side]??=authored()):authored();
   },
   elbow(shoulder,wrist,upper,fore,pole){
    const p=checked("avatar_elbow",7,...shoulder,...wrist,upper,fore,...pole);

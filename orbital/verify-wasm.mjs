@@ -1197,3 +1197,15 @@ for(const deck of [0,1]){
  assert.ok(Math.hypot(...state.slice(5,8))<.005,'passive rail release retains only ambient motion');
 }
 console.log('Orbital WASM: passive training and EVA rail release is stationary at onset; unavailable explicit push cannot capture a rail.');
+
+for(const [weight,span,registered,side] of [
+ [0,0,false,0],[0,0,true,1],[.08,-.004,true,0],[.345,.034,true,0],[.85,.2,false,0],[1,0,true,0]
+]){
+ const {collar,collarBlend,palm,flex}=rig.railArticulation(weight,span,registered,side);
+ const t=Math.max(0,Math.min(1,weight/.69)),curl=.72+.28*weight;
+ assert.equal(collar,weight?Math.max(0,Math.min((span+.010)*1.48,.18)):0);
+ assert.equal(collarBlend,Math.min(1,weight*2.1));
+ assert.equal(palm,registered?t*t*(3-2*t):weight);
+ assert.deepEqual(flex,[.18,.20,.12,.43,.38].map(v=>v*(side===0?-1:1)*curl));
+}
+console.log('Apollo rail articulation: bounded Wosy clavicle, palm phase and signed finger flex coefficients passed.');

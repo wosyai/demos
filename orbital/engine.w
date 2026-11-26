@@ -18,6 +18,10 @@ unit(f64,f64,f64,f64,f64) avatar_mmu=fn(lx,ly,rx,ry,mmu_reach){avatar_kinematics
 unit() avatar_mmu_grasps=fn{avatar_kinematics.publish_mmu_grasps();};
 unit(f64,f64,f64,f64,f64,f64,f64,f64,f64,f64,f64) avatar_elbow=fn(sx,sy,sz,wx,wy,wz,upper,fore,px,py,pz){avatar_kinematics.publish_elbow(sx,sy,sz,wx,wy,wz,upper,fore,px,py,pz);};
 
+unit(f64,f64,i32,i32) avatar_grasp_style=fn(grip_weight,span_error,registered_fit,left_side){
+    avatar_kinematics.publish_grasp_style(grip_weight,span_error,registered_fit,left_side);
+};
+
 host = extern wasm "orbital" {
     unsafe unit(*?u8,i32) hands;
     unsafe unit(*?u8,i32) frame;

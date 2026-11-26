@@ -146,4 +146,18 @@ unit(f64,f64,f64,f64,f64,f64,f64,f64,f64,f64,f64) publish_elbow=fn(sx,sy,sz,wx,w
     Arm arm=elbow(v(sx,sy,sz),v(wx,wy,wz),upper,fore,v(px,py,pz));
     write_vec(0,arm.elbow);write_vec(3,arm.wrist);packet[6]=arm.error;send(7);
 };
+unit(f64,f64,i32,i32) publish_grasp_style=fn(reach,span_error,registered,left){
+    f64 palm=math.clamp(reach/0.69,0.0,1.0);
+    f64 curl=0.72+0.28*reach;
+    f64 side=if(left==1){-1.0}else{1.0};
+    packet[0]=if(reach>0.0){math.clamp((span_error+0.010)*1.48,0.0,0.18)}else{0.0};
+    packet[1]=math.clamp(reach*2.1,0.0,1.0);
+    packet[2]=if(registered==1){palm*palm*(3.0-2.0*palm)}else{reach};
+    packet[3]=(0.18*side)*curl;
+    packet[4]=(0.20*side)*curl;
+    packet[5]=(0.12*side)*curl;
+    packet[6]=(0.43*side)*curl;
+    packet[7]=(0.38*side)*curl;
+    send(8);
+};
 %%end
