@@ -1383,7 +1383,6 @@ f32 prior_head_offset=0.0;
 f64 forward_marker_x=0.0;
 f64 forward_marker_y=0.0;
 f64 forward_marker_opacity=1.0;
-bool forward_marker_handoff=false;
 f64(i32) forward_marker=fn(lane){if(lane==0){forward_marker_x}else{if(lane==1){forward_marker_y}else{forward_marker_opacity}}};
 f64(f64) marker_ease=fn(progress){progress*progress*(3.0-2.0*progress)};
 f32 anchored_head_pitch=0.0;
@@ -2061,16 +2060,16 @@ unit(f64,f64,i32) project_visual=fn(alpha,aspect,avatar){
         presentation[4]=head_tilt;
     };
     bool body=eva&&avatar>0;bool chase=body&&third_person;
+    bool registered=body&&avatar==2&&!entry;
     f64 target=if(chase){1.0}else{0.0};
     if(!presentation_paused){
-        if(chase_blend!=target&&(chase_blend==0.0||chase_blend==1.0)){
-            forward_marker_handoff=body&&avatar==2&&!entry&&head_tilt!=tilt;
-        };
-        if(projection.abs(chase_blend-target)>0.005){chase_blend=chase_blend+(target-chase_blend)*0.22;}else{chase_blend=target;};
-        if(chase_blend==0.0||chase_blend==1.0){forward_marker_handoff=false;};
+        if(!registered&&projection.abs(chase_blend-target)>0.005){
+            chase_blend=chase_blend+(target-chase_blend)*0.22;
+        }else{chase_blend=target;};
     };
+    f64 fraction=chase_blend;
     f64 cx=x;f64 cy=y;f64 cz=z;f64 yaw_out=heading;f64 pitch_out=tilt;
-    if(chase_blend>0.0&&body){
+    if(fraction>0.0&&body){
         f64 sy=projection.sin(heading);f64 cy0=projection.cos(heading);f64 sp=projection.sin(tilt);f64 cp=projection.cos(tilt);
         f64 fx=sy*cp;f64 fy=sp;f64 fz=-cy0*cp;
         f64 ux=-sy*sp;f64 uy=cp;f64 uz=cy0*sp;
@@ -2081,24 +2080,25 @@ unit(f64,f64,i32) project_visual=fn(alpha,aspect,avatar){
         f64 clip=if(entry){1.0}else{core.float_extend<f64>(camera_clip(core.float_trunc<f32>(ax),core.float_trunc<f32>(ay),core.float_trunc<f32>(az),core.float_trunc<f32>(bx),core.float_trunc<f32>(by),core.float_trunc<f32>(bz)))};
         f64 sx=ax+(bx-ax)*clip;f64 sy0=ay+(by-ay)*clip;f64 sz=az+(bz-az)*clip;
         f64 qx=fx*5.3+(ax-sx);f64 qy=fy*5.3+(ay-sy0);f64 qz=fz*5.3+(az-sz);
-        cx=x+(sx-x)*chase_blend;cy=y+(sy0-y)*chase_blend;cz=z+(sz-z)*chase_blend;
-        yaw_out=heading+projection.wrap(projection.atan2(qx,-qz)-heading)*chase_blend;
+        if(registered&&projection.norm(sx-x,sy0-y,sz-z)<=0.8){fraction=0.0;};
+        cx=x+(sx-x)*fraction;cy=y+(sy0-y)*fraction;cz=z+(sz-z)*fraction;
+        yaw_out=heading+projection.wrap(projection.atan2(qx,-qz)-heading)*fraction;
         f64 pitch_goal=projection.atan2(qy,projection.norm(qx,0.0,qz));
-        pitch_out=tilt+(pitch_goal-tilt)*chase_blend;
+        pitch_out=tilt+(pitch_goal-tilt)*fraction;
     };
-    if(head_tilt!=tilt){pitch_out=pitch_out+(head_tilt-tilt)*(1.0-chase_blend);};
-    if(body&&avatar==2&&!entry&&chase_blend<1.0){
+    if(head_tilt!=tilt){pitch_out=pitch_out+(head_tilt-tilt)*(1.0-fraction);};
+    if(body&&avatar==2&&!entry&&fraction<1.0){
         avatar_kinematics.Vec delta_eye=avatar_kinematics.apollo_eye_delta(presentation[21],presentation[22],heading,head_tilt);
-        f64 ex=delta_eye.x*(1.0-chase_blend);
-        f64 ey=delta_eye.y*(1.0-chase_blend);
-        f64 ez=delta_eye.z*(1.0-chase_blend);
+        f64 ex=delta_eye.x*(1.0-fraction);
+        f64 ey=delta_eye.y*(1.0-fraction);
+        f64 ez=delta_eye.z*(1.0-fraction);
         cx=cx+ex;cy=cy+ey;cz=cz+ez;
     };
-    bool exterior_avatar=body&&(chase||chase_blend>0.03)&&projection.norm(cx-x,cy-y,cz-z)>0.8;
+    bool exterior_avatar=body&&(chase||fraction>0.03)&&projection.norm(cx-x,cy-y,cz-z)>0.8;
     f64 relief=if(eva&&aspect<0.72){1.40+0.45*projection.clamp((aspect-0.49)/0.23,0.0,1.0)}else{1.90};
     f64 focus=projection.clamp((if(eva){relief}else{1.8})*aspect,0.0,if(eva){1.42}else{1.45});
     if(body&&avatar==2&&!entry&&focus<0.92){
-        focus=focus+(0.92-focus)*(1.0-chase_blend);
+        focus=focus+(0.92-focus)*(1.0-fraction);
     };
     f64 orbit_blend=if(entry||state[29]==1.0){1.0}else{projection.clamp((projection.norm(x,y,z)-1000.0)/18000.0,0.0,1.0)};
     f64 near=1.0-orbit_blend;
@@ -2122,15 +2122,7 @@ unit(f64,f64,i32) project_visual=fn(alpha,aspect,avatar){
     presentation[59]=if(presentation[58]>0.01&&heat_load<1.0){1.0}else{0.0};
     project_waypoint();
     forward_marker_x=0.0;forward_marker_y=0.0;forward_marker_opacity=1.0;
-    bool project_forward=chase_blend==0.0&&head_tilt!=tilt;
-    if(body&&avatar==2&&!entry&&forward_marker_handoff){
-        if(chase_blend<0.68){
-            project_forward=true;
-            forward_marker_opacity=1.0-marker_ease(projection.clamp((chase_blend-0.20)/0.40,0.0,1.0));
-        }else{
-            forward_marker_opacity=marker_ease(projection.clamp((chase_blend-0.72)/0.28,0.0,1.0));
-        };
-    };
+    bool project_forward=fraction==0.0&&head_tilt!=tilt;
     if(project_forward&&forward_marker_opacity>0.0){
         f64 route_c=projection.cos(tilt);
         f64 route_dx=projection.sin(heading)*route_c;

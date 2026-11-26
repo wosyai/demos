@@ -886,6 +886,21 @@ for(let i=0;i<40;i++)view=visualOf(1,16/9);
 assert.equal(view[53],0,'chase blend converges');
 assert.deepEqual(state,still,'visual-only camera clip and blend do not write flight lanes');
 assert.equal(engine.camera_mode(1),0);
+
+for(const aspect of [390/844,16/9]){
+ const seated=Array.from(visualOf(1,aspect,2).slice(38,54));
+ assert.equal(seated[5],0,'stock begins from the physical helmet eye');
+ for(let n=0;n<6;n++){
+  assert.equal(engine.camera_mode(1),1);
+  const outside=Array.from(visualOf(1,aspect,2));
+  assert.equal(outside[53],0,'stock cut does not render an intermediate camera');
+  assert.equal(outside[43],1,'clear chase still draws the external Apollo');
+  assert.ok(Math.hypot(...outside.slice(38,41).map((v,i)=>v-still[i]))>.8);
+  assert.equal(engine.camera_mode(1),0);
+  assert.deepEqual(Array.from(visualOf(1,aspect,2).slice(38,54)),seated,'first rendered view returns to the original optical seat');
+  assert.deepEqual(state,still,'switching optics does not mutate flight');
+ }
+}
 engine.tick(1/60,4,.05,.02);
 const mid=visualOf(.5,16/9);
 assert.equal(mid[3],Math.fround(still[3]+(state[3]-still[3])*.5),'visual interpolation preserves the legacy f32 pose row');
