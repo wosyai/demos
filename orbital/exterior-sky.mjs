@@ -37,7 +37,11 @@ vec3 orbitalMoon(vec3 backdrop,vec3 ray,vec3 sun) {
   vec3 normal=normalize(right*disk.x+up*disk.y-M*face);
   vec3 rock=moonReady==1?textureLod(moonMap,vec2(.5)+vec2(disk.x,-disk.y)*.495,0.).rgb:vec3(.59,128./255.,128./255.);
   vec2 bump=(rock.gb-128./255.)*1.12;
-  vec3 stoneNormal=normalize(normal+right*bump.x+up*bump.y);
+  vec3 atlasTilt=right*bump.x+up*bump.y;
+  // Rotate the authored center tangent into the local lunar tangent.
+  // The hemisphere keeps 1 + face positive all the way to the limb.
+  vec3 localTilt=atlasTilt-(normal-M)*(dot(normal,atlasTilt)/(1.+face));
+  vec3 stoneNormal=normalize(normal+localTilt);
   float incision=dot(stoneNormal,sun);
   float reliefLight=sqrt(max(0.,incision))*smoothstep(-.10,.04,dot(normal,sun));
   vec3 lunar=rock.r*(vec3(.100,.113,.133)*(.7+.3*face)+vec3(1.19,1.12,1.00)*reliefLight);
