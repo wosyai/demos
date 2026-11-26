@@ -860,7 +860,7 @@ for(const [x,solid] of [[-14,true],[-11.50,false]]){
  engine.set_thrust(0,0);let touched=false;
  for(let i=0;i<120;i++){engine.tick(.032,32,0,0);touched||=Boolean(state[26]);}
  assert.equal(touched,solid);
- if(solid){assert.ok(state[1]>2.90&&state[1]<2.95&&Math.abs(state[6])<.001,'suit rests at real panel height + clearance');}
+ if(solid){assert.ok(state[1]>4.34&&state[1]<4.42&&Math.abs(state[6])<.001,'stock suited body rests above first boot clearance');}
  else{assert.ok(state[1]<1,'suit crossed the actual gap');}
 }
 console.log('EVA flight: descended on the power blanket and through the open adjacent channel.');

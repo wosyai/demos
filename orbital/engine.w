@@ -1,5 +1,6 @@
 %%start
 station = namespace orbital "station.w";
+eva_contact = namespace orbital "eva-contact.w";
 hud = namespace orbital "hud.w";
 packing = namespace orbital "indexed-pack.w";
 material_scene = namespace orbital "station-material.w";
@@ -1503,6 +1504,10 @@ unit(f32,i32) exterior_sweep = fn(d, budget){
     trace_x=pilot_x;trace_y=pilot_y;trace_z=pilot_z;
     trace_vx=vx;trace_vy=vy;trace_vz=vz;
     exterior_surfaces(d);
+    eva_contact.Hit solid=eva_contact.solar(pilot_x,pilot_y,pilot_z,vx,vy,vz,body_yaw,body_pitch,d);
+    if(solid.active&&core.float_trunc<f32>(solid.time)<contact_t){
+        contact_t=core.float_trunc<f32>(solid.time);contact_axis=5;
+    };
     f32 moved=if(contact_axis==0){d}else{contact_t};
     pilot_x=pilot_x+vx*moved;pilot_y=pilot_y+vy*moved;pilot_z=pilot_z+vz*moved;
     if(contact_axis!=0){
@@ -1510,6 +1515,19 @@ unit(f32,i32) exterior_sweep = fn(d, budget){
         if(contact_axis==1){pilot_x=contact_face;vx=0.0;};
         if(contact_axis==2){pilot_y=contact_face;vy=0.0;};
         if(contact_axis==3){pilot_z=contact_face;vz=0.0;};
+        if(contact_axis==5){
+            f32 nx=core.float_trunc<f32>(solid.normal.x);
+            f32 ny=core.float_trunc<f32>(solid.normal.y);
+            f32 nz=core.float_trunc<f32>(solid.normal.z);
+            f32 normal=vx*nx+vy*ny+vz*nz;
+            if(normal<0.0){
+                f32 bounce=if(normal< -0.085){-normal*0.26}else{0.0};
+                vx=(vx-normal*nx)*0.98+bounce*nx;
+                vy=(vy-normal*ny)*0.98+bounce*ny;
+                vz=(vz-normal*nz)*0.98+bounce*nz;
+                pilot_x=pilot_x+0.0005*nx;pilot_y=pilot_y+0.0005*ny;pilot_z=pilot_z+0.0005*nz;
+            };
+        };
         if(contact_axis==4){
             f32 normal=vx*hull_nx+vy*hull_ny+vz*hull_nz;
             vx=vx-normal*hull_nx;vy=vy-normal*hull_ny;vz=vz-normal*hull_nz;
@@ -1937,8 +1955,12 @@ unit(f32,i32,f32,f32) tick = fn(dt,keys,look_x,look_y) {
     f32 pitch_goal=pitch+(lean_pitch-pitch)*hold_blend;
     f32 yaw_rate=0.88-hold_blend*0.51;
     f32 pitch_rate=0.72-hold_blend*0.39;
-    body_yaw=wrap_yaw(body_yaw+d*limit(wrap_yaw(body_goal-body_yaw)*3.0,-yaw_rate,yaw_rate));
-    body_pitch=body_pitch+d*limit((pitch_goal-body_pitch)*3.0,-pitch_rate,pitch_rate);
+    f32 turn_yaw=d*limit(wrap_yaw(body_goal-body_yaw)*3.0,-yaw_rate,yaw_rate);
+    f32 turn_pitch=d*limit((pitch_goal-body_pitch)*3.0,-pitch_rate,pitch_rate);
+    if(deck!=1||mode==1||mode==2||atmosphere||eva_contact.turn_clear(pilot_x,pilot_y,pilot_z,body_yaw,body_pitch,turn_yaw,turn_pitch)){
+        body_yaw=wrap_yaw(body_yaw+turn_yaw);
+        body_pitch=body_pitch+turn_pitch;
+    };
     if(mode==1 || mode==2 && bind==0.0){
         f32 settle_yaw=0.94-0.84*grip;
         f32 settle_pitch=0.60-0.52*grip;

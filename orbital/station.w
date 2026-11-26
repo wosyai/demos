@@ -36,7 +36,11 @@ unit(i32) lattice=fn(i){if(i<20){
     put(0,tilt,3,x,y,-9.70,1.669,0.045,0.15,1.0);
     lattice(i+1);
 };};
+i32[6] solar_parts=[0,0,0,0,0,0];
+i32 solar_count=0;
+i32(i32) solar_member=fn(i){solar_parts[core.int_extend<u64>(i/5)]+i%5};
 unit(f32,f32) wing=fn(x,z){
+    solar_parts[core.int_extend<u64>(solar_count)]=total;solar_count=solar_count+1;
     plank(x,2.66,z,wing_art.wing_width(),0.088,wing_art.wing_depth(),5);
     plank(x,2.63,z+0.02,0.074,0.16,5.66,3);
     plank(x+4.88,2.63,z+0.02,0.074,0.16,5.66,3);
