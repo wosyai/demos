@@ -42,6 +42,13 @@ Grip(Vec,Vec,f64,f64,bool) grip=fn(eye,anchor,weight,stage,valid){
         Grip value={.active=false;.center=v(0.0,0.0,0.0);.radius=0.0;.theta=0.0;.wrist=v(0.0,0.0,0.0);.inward=v(0.0,0.0,0.0);.progress=0.0;};value
     }
 };
+bool(Vec,Vec,f64,f64) hatch_in_reach=fn(eye,shaft,heading,elevation){
+    Axes body=facing(heading,elevation);
+    Vec shoulder=add(eye,add(mul(body.forward,0.085),add(mul(body.up,-0.167),mul(body.right,-0.255))));
+    Grip hold=grip(eye,shaft,1.0,5.0,true);
+    Vec delta=sub(hold.wrist,shoulder);
+    dot(delta,delta)<=0.250
+};
 Vec(Vec,Grip,f64,bool) approach=fn(rest,contact,weight,releasing){
     if(!contact.active){rest}else{
         Vec last=sub(contact.wrist,contact.center);Vec start=sub(rest,contact.center);

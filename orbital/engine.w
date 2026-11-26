@@ -394,6 +394,9 @@ f32() lock_blend = fn {
     t*t*(3.0-2.0*t)
 };
 f32() cargo_lock_y = fn {if(cargo_locked){-0.45}else{if(lock_kind==1){-0.57+0.12*lock_blend()}else{-0.57}}};
+f32 hatch_dock_depth=-2.16;
+f32 hatch_dock_heading=-0.76;
+f32 hatch_dock_elevation=-0.15;
 f32() hatch_lock_y = fn {if(alignment_stage==7){-0.03}else{if(lock_kind==2){-0.14+0.11*lock_blend()}else{-0.14}}};
 f32(i32) transfer_ease = fn(index){
     f32 t=limit(core.sint_to_float<f32>(index)/3.0,0.0,1.0);
@@ -1833,7 +1836,7 @@ unit(f32,i32,f32,f32) tick = fn(dt,keys,look_x,look_y) {
     bool for_alignment=deck==1 && alignment_stage>=1 && !for_hatch;
     f32 dock_x=if(for_hatch){-0.39}else{if(for_alignment){1.04}else{if(deck==0){0.12}else{0.05}}};
     f32 dock_y=if(deck==0){-0.04}else{-0.025};
-    f32 dock_z=if(for_hatch){-1.86}else{if(for_alignment){-4.08}else{if(deck==0){-1.26}else{rail_depth(station_leg)+0.71}}};
+    f32 dock_z=if(for_hatch){hatch_dock_depth}else{if(for_alignment){-4.08}else{if(deck==0){-1.26}else{rail_depth(station_leg)+0.71}}};
     f32 reach_limit=if(deck==1 && reach==1.0){0.55}else{0.37};
     f32 distance_sq=(pilot_x-dock_x)*(pilot_x-dock_x)+(pilot_y-dock_y)*(pilot_y-dock_y)+(pilot_z-dock_z)*(pilot_z-dock_z);
     f32 speed_sq=vx*vx+vy*vy+vz*vz;
@@ -1853,7 +1856,20 @@ unit(f32,i32,f32,f32) tick = fn(dt,keys,look_x,look_y) {
     if(for_hatch && !nearby && (ahead<=0.0 || side_error>ahead*ahead*0.41)){travel_hint=if(lateral>=0.0){hud.Steering::hatch_right}else{hud.Steering::hatch_left};};
     bool aligned=ahead>0.0 && side_error<ahead*ahead*(if(for_alignment || for_hatch){0.105}else{0.49}) && height_error<ahead*ahead*(if(for_alignment || for_hatch){0.13}else{0.50});
     bool slow=speed_sq<(if(for_alignment || for_hatch){0.063}else{2.25});
-    reach=if(nearby&&aligned&&slow){1.0}else{0.0};
+    bool physical_hatch=if(!for_hatch||mode!=0){true}else{
+        f32 rear_swing=if(vz>0.0){vz*0.052}else{0.0};
+        f32 shaft_face=rail_depth(0)-station.rail_radius;
+        bool safe_side=pilot_z+rear_swing<=shaft_face-0.447;
+        bool settled_body=body_pitch>=-0.20&&body_pitch<=0.20&&body_yaw>=-1.46&&body_yaw<=-0.55
+            &&pilot_y>=-0.13&&pilot_y<=0.12;
+        if(safe_side&&settled_body){
+            avatar_kinematics.hatch_in_reach(
+                avatar_kinematics.v(core.float_extend<f64>(pilot_x),core.float_extend<f64>(pilot_y),core.float_extend<f64>(pilot_z)),
+                avatar_kinematics.v(core.float_extend<f64>(arm_x()),core.float_extend<f64>(arm_y()),core.float_extend<f64>(arm_z())),
+                core.float_extend<f64>(body_yaw),core.float_extend<f64>(body_pitch))
+        }else{false}
+    };
+    reach=if(nearby&&aligned&&slow&&physical_hatch){1.0}else{0.0};
     if((keys&64)!=0 && latch==0){
         if(mode==0 && reach==1.0 && !atmosphere){mode=1;mark=1;timer=0.0;carry=pilot_x;carry_y=pilot_y;carry_z=pilot_z;dock_yaw=yaw;dock_pitch=pitch;dock_vx=vx;dock_vy=vy;dock_vz=vz;};
         if(mode==2){
@@ -1914,8 +1930,8 @@ unit(f32,i32,f32,f32) tick = fn(dt,keys,look_x,look_y) {
     if(mode==1){
         timer=limit(timer+d*2.85,0.0,1.0);
         grip=timer*timer*(3.0-2.0*timer);
-        f32 end_heading=if(for_hatch){-0.76}else{if(for_alignment){0.30}else{if(deck==0){0.60}else{if(station_leg==2){-0.015}else{if(station_leg==1){0.13}else{-0.105}}}}};
-        f32 end_pitch=if(for_hatch){-0.15}else{if(for_alignment){-0.34}else{if(deck==0){-0.20}else{if(station_leg==2){-0.285}else{if(station_leg==1){-0.13}else{-0.30}}}}};
+        f32 end_heading=if(for_hatch){hatch_dock_heading}else{if(for_alignment){0.30}else{if(deck==0){0.60}else{if(station_leg==2){-0.015}else{if(station_leg==1){0.13}else{-0.105}}}}};
+        f32 end_pitch=if(for_hatch){hatch_dock_elevation}else{if(for_alignment){-0.34}else{if(deck==0){-0.20}else{if(station_leg==2){-0.285}else{if(station_leg==1){-0.13}else{-0.30}}}}};
         yaw=wrap_yaw(dock_yaw+wrap_yaw(end_heading-dock_yaw)*grip);pitch=dock_pitch+(end_pitch-dock_pitch)*grip;
         f32 keep=(1.0-timer);f32 tangent=timer*keep*keep/2.85;
         f32 slope=6.0*timer*keep*2.85;f32 tangent_speed=keep*(1.0-3.0*timer);
@@ -1948,7 +1964,7 @@ unit(f32,i32,f32,f32) tick = fn(dt,keys,look_x,look_y) {
                 steer_cue=hud.Steering::counterthrust;
             };
             if(slow && !aligned && (nearby || (for_alignment&&!far_from_station()))){steer_cue=aim_hint;};
-            if(!nearby && slow && aligned && distance_sq<1.44){
+            if((!nearby||!physical_hatch) && slow && aligned && distance_sq<1.44){
                 steer_cue=if(for_hatch){hud.Steering::ease_hatch}else{hud.Steering::ease_console};
                 f32 ax0=dock_x-pilot_x;f32 ay0=dock_y-pilot_y;f32 az0=dock_z-pilot_z;
                 f32 forward0=ax0*sine(yaw)-az0*cosine(yaw);

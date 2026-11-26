@@ -554,7 +554,7 @@ function aimReturn(){
 }
 for(let i=0;i<65;i++)step(0,...aimReturn());
 for(let i=0;i<350&&state[18]!==3;i++){
- const dx=-.39-state[0],dy=-.025-state[1],dz=-1.86-state[2],m=Math.hypot(dx,dy,dz);
+ const dx=-.39-state[0],dy=-.025-state[1],dz=-2.16-state[2],m=Math.hypot(dx,dy,dz);
  const ax=.53*dx/m-state[5],az=.53*dz/m-state[7];
  const sn=Math.sin(state[3]),cs=Math.cos(state[3]),forward=(ax*sn-az*cs)*1.8;
  const up=(dy*2-state[6]*2.8)-forward*Math.sin(state[4]);
@@ -563,7 +563,7 @@ for(let i=0;i<350&&state[18]!==3;i++){
 }
 engine.set_thrust(0,0);
 assert.equal(state[18],3,"actual closing drift triggers hatch counterthrust beyond grip reach");
-const hatchDistance=()=>Math.hypot(state[0]+.39,state[1]+.025,state[2]+1.86);
+const hatchDistance=()=>Math.hypot(state[0]+.39,state[1]+.025,state[2]+2.16);
 assert.ok(hatchDistance()>.65&&hatchDistance()<1.20,'return cue precedes the .424 m grip volume without advertising maneuver at cast-off');
 hudIs("Match speed at the hatch",false);
 assert.ok(hint().tip.startsWith(hint().short),"hatch counterthrust direction reaches both responsive displays");
@@ -589,7 +589,7 @@ assert.ok(hint().tip.startsWith(hint().short),"directional approach pulse reache
 let sawPulse=hint().short.includes("ulse");
 const limitPulse=(n)=>Math.max(-.6,Math.min(.6,n));
 for(let i=0;i<450&&state[10]!==1;i++){
- const dx=-.39-state[0],dy=-.025-state[1],dz=-1.86-state[2];
+ const dx=-.39-state[0],dy=-.025-state[1],dz=-2.16-state[2];
  const aimX=-.94-state[0],aimY=-.14-state[1],aimZ=-2.48-state[2];
  const yaw=Math.atan2(aimX,-aimZ),pitch=Math.asin(aimY/Math.hypot(aimX,aimY,aimZ));
  const ax=limitPulse(dx*2-state[5]*2.8),az=limitPulse(dz*2-state[7]*2.8);
