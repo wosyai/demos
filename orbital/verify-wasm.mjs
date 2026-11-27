@@ -204,9 +204,10 @@ assert.equal(state[15],1);assert.ok(evaRoom.length>=5400*8 && evaRoom.length<668
 assert.ok(evaRoom.every(Number.isFinite) && hand.every(Number.isFinite));
 const alloy=[];
 assert.deepEqual([...materialArt.slice(75,79)],[.71925,57,33,.61]);
-for(let i=0;i<evaRoom.length;i+=8)if(Math.abs(evaRoom[i+7]-materialArt[75])<.00001)alloy.push([...evaRoom.slice(i,i+8)]);
-assert.ok(alloy.length>=180&&alloy.length%3===0,'machined tag contains original complete annulus/bevel triangles');
-assert.ok(alloy.every(([x,y,z])=>x>=-1.2821&&x<=-1.2349&&Math.hypot(y-.27,z+2.60)>=.686&&Math.hypot(y-.27,z+2.60)<=.8141),'only the authored airlock collar has the alloy role');
+for(let i=0;i<hull.length;i+=8)if(Math.abs(hull[i+7]-materialArt[75])<.00001)alloy.push([...hull.slice(i,i+8)]);
+assert.equal(alloy.length,480,'the two fixed machined flange bands fit the immutable batch');
+assert.ok(!evaRoom.some((lane,i)=>i%8===7&&Math.abs(lane-materialArt[75])<.00001),'no fixed flange is pushed through the dynamic room upload');
+assert.ok(alloy.every(([x,y,z])=>x>=-1.2821&&x<=-1.2349&&Math.hypot(y-.27,z+2.60)>=.686&&Math.hypot(y-.27,z+2.60)<=.8141),'only the authored airlock flange has the alloy role');
 const wingRear=[];
 assert.deepEqual([...materialArt.slice(79,87)],[.47825,-17.05,-10.90,0,-15.64,-9.41,4.95,5.70]);
 for(let i=0;i<hull.length;i+=8)if(Math.abs(hull[i+7]-materialArt[79])<.00001)wingRear.push([...hull.slice(i,i+8)]);

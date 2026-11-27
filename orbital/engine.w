@@ -903,7 +903,38 @@ unit(f32) airlock_locator = fn(y){
     quad(-1.261,y+0.055,-2.785,-1.261,y+0.041,-2.785,-1.261,y,-2.615,-1.261,y+0.016,-2.615,0.92);
     quad(-1.261,y,-2.615,-1.261,y+0.041,-2.449,-1.261,y+0.055,-2.449,-1.261,y+0.016,-2.615,0.92);
 };
+unit(f32,f32,i32,i32) airlock_gasket_point = fn(gasket_x,gasket_radius,gasket_step,gasket_sides){
+    f32 gasket_theta=6.28318531*core.sint_to_float<f32>(gasket_step)/core.sint_to_float<f32>(gasket_sides);
+    if(gasket_theta>4.6){gasket_theta=gasket_theta-6.28318531;};
+    shell_point(gasket_x,0.27,-2.60,gasket_radius,wave(gasket_theta),cw(gasket_theta),(0.690-0.639)/(-1.265+1.235),0);
+};
+unit(i32,i32) airlock_gasket = fn(gasket_outer,gasket_inner){
+    if(gasket_outer<40||gasket_inner<30){
+        airlock_gasket_point(-1.235,0.690,gasket_outer,40);
+        if(gasket_inner>=30||(gasket_outer<40&&(gasket_outer+1)*30<=(gasket_inner+1)*40)){
+            airlock_gasket_point(-1.235,0.690,gasket_outer+1,40);
+            airlock_gasket_point(-1.265,0.639,gasket_inner,30);
+            airlock_gasket(gasket_outer+1,gasket_inner);
+        }else{
+            airlock_gasket_point(-1.265,0.639,gasket_inner+1,30);
+            airlock_gasket_point(-1.265,0.639,gasket_inner,30);
+            airlock_gasket(gasket_outer,gasket_inner+1);
+        };
+    };
+};
+unit() fixed_airlock_flange = fn {
+    paint(0.28,0.37,0.40,0.65);
+    round_shell(-1.56,0.27,-2.60,-1.39,0.27,-2.60,0.806,0.842,0,0,40);
+    paint(0.49,0.53,0.54,0.62);
+    round_shell(-1.39,0.27,-2.60,-1.282,0.27,-2.60,0.842,0.814,0,0,40);
+    paint(0.66,0.66,0.61,material_scene.airlock_alloy());
+    round_shell(-1.282,0.27,-2.60,-1.235,0.27,-2.60,0.814,0.778,0,0,40);
+    sweep(-1.235,0.27,-2.60,-1.235,0.27,-2.60,0.778,0.690,0,0,40);
+    paint(0.12,0.15,0.17,0.26);
+    airlock_gasket(0,0);
+};
 unit() airlock_pressure_face=fn {
+    fixed_airlock_flange();
     paint(0.235,0.285,0.31,0.62);
     sweep(-1.265,0.27,-2.60,-1.260,0.27,-2.60,0.639,0.606,0,0,30);
     paint(0.69,0.65,0.53,0.62);
@@ -914,15 +945,6 @@ unit() airlock_pressure_face=fn {
     sweep(-1.278,0.27,-2.60,-1.266,0.27,-2.60,0.526,0.0,0,0,30);
 };
 unit() airlock = fn {
-    paint(0.28,0.37,0.40,0.65);
-    round_shell(-1.56,0.27,-2.60,-1.39,0.27,-2.60,0.806,0.842,0,0,20);
-    paint(0.49,0.53,0.54,0.62);
-    round_shell(-1.39,0.27,-2.60,-1.282,0.27,-2.60,0.842,0.814,0,0,20);
-    paint(0.66,0.66,0.61,material_scene.airlock_alloy());
-    round_shell(-1.282,0.27,-2.60,-1.235,0.27,-2.60,0.814,0.778,0,0,30);
-    sweep(-1.235,0.27,-2.60,-1.235,0.27,-2.60,0.778,0.690,0,0,30);
-    paint(0.12,0.15,0.17,0.26);
-    round_shell(-1.235,0.27,-2.60,-1.265,0.27,-2.60,0.690,0.639,0,0,30);
     airlock_bolts(0);
     paint(0.30,0.35,0.36,0.62);
     box(-1.258,-0.486,-2.74,0.109,0.165,0.27);
