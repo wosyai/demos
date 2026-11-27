@@ -1287,12 +1287,9 @@ unit(f32,f32,f32,f32) hull_pt=fn(u,v,w,shade){
 };
 unit(i32,i32) hull_sides=fn(i,n){
     if(i<n){
-        f32 a=(core.sint_to_float<f32>(i)+0.5)*6.28318531/core.sint_to_float<f32>(n);
-        f32 b1=(core.sint_to_float<f32>(i)+1.5)*6.28318531/core.sint_to_float<f32>(n);
-        if(a>3.14){a=a-6.28318531;};if(b1>3.14){b1=b1-6.28318531;};
-        f32 norm=if(n==4){1.41421356}else{if(n==8){1.08239220}else{1.01959116}};
-        f32 a0=cw(a)*norm*hull_piece.u;f32 a1=wave(a)*norm*hull_piece.v;
-        f32 b0=cw(b1)*norm*hull_piece.u;f32 bb=wave(b1)*norm*hull_piece.v;
+        station.RingPoint ring_a=station.hull_ring_point(i,n);station.RingPoint ring_b=station.hull_ring_point(i+1,n);
+        f32 a0=ring_a.u*hull_piece.u;f32 a1=ring_a.v*hull_piece.v;
+        f32 b0=ring_b.u*hull_piece.u;f32 bb=ring_b.v*hull_piece.v;
         f32 t=hull_piece.taper;f32 l=hull_piece.l;
         f32 shade=0.85;
         bool wing_under=hull_piece.finish==5&&n==4&&i==2;

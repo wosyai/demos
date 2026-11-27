@@ -210,6 +210,82 @@ bool(art.Vec,art.Vec) outside_radiator=fn(origin,endpoint){
     hi(origin.y,endpoint.y)< -0.86||lo(origin.y,endpoint.y)>3.26||hi(origin.x,endpoint.x)< -12.32
         ||lo(origin.x,endpoint.x)> -4.89||hi(origin.z,endpoint.z)< -7.40||lo(origin.z,endpoint.z)>2.04
 };
+struct copy Support { f64 low; f64 high; }
+art.Vec(station.Part,i32) prism_vertex=fn(p,i){
+    station.RingPoint q=station.prism_ring_at(i);
+    art.v(f64v(q.u*p.u),f64v(q.v*p.v),0.0)
+};
+Support(station.Part,art.Vec,i32,Support) prism_support=fn(p,a,i,range){
+    if(i==16){range}else{
+        f64 q=art.dot(prism_vertex(p,i),a);
+        Support next={.low=lo(q,range.low);.high=hi(q,range.high);};
+        prism_support(p,a,i+1,next)
+    }
+};
+art.Vec(station.Part,i32) prism_edge=fn(p,i){
+    if(i==16){art.v(0.0,0.0,1.0)}else{art.sub(prism_vertex(p,i+1),prism_vertex(p,i))}
+};
+Sweep(station.Part,art.Axes,art.Vec,art.Vec,art.Vec,f64,f64,i32,Sweep) prism_axes=fn(p,body,o,v,half,dt,pad,i,best){
+    if(i==71||!best.possible){best}else{
+        art.Vec raw=if(i<3){body_axis(body,i)}else{if(i==3){art.v(0.0,0.0,1.0)}else{if(i<20){
+            art.Vec edge=prism_edge(p,i-4);art.v(edge.y,0.0-edge.x,0.0)
+        }else{art.cross(body_axis(body,(i-20)/17),prism_edge(p,(i-20)%17))}}};
+        if(art.dot(raw,raw)<0.000000000001){prism_axes(p,body,o,v,half,dt,pad,i+1,best)}
+        else{
+            art.Vec axis=art.normalized(raw);
+            Support initial={.low=100.0;.high=-100.0;};
+            Support ring=prism_support(p,axis,0,initial);
+            art.Vec local=art.v(art.dot(axis,body.forward),art.dot(axis,body.up),art.dot(axis,body.right));
+            f64 width=support_radius(local,half)+math.abs(axis.z)*f64v(p.l)*0.5+pad;
+            Interval span=slab(art.dot(o,axis),art.dot(v,axis),ring.low-width,ring.high+width,dt);
+            f64 latest=hi(best.enter,span.enter);f64 earliest=lo(best.leave,span.leave);
+            Sweep next={.possible=span.possible&&latest<=earliest&&latest<=dt&&earliest>=0.0;
+                .enter=latest;.leave=earliest;.normal=if(span.enter>best.enter){art.mul(axis,span.sign)}else{best.normal};};
+            prism_axes(p,body,o,v,half,dt,pad,i+1,next)
+        }
+    }
+};
+Sweep(station.Part,art.Axes,art.Vec,art.Vec,art.Vec,f64,f64) prism_probe=fn(p,body,from,v,half,dt,pad){
+    f64 rz=f64v(p.l)*0.5;
+    art.Vec o=art.sub(from,art.v(f64v(p.x),f64v(p.y),f64v(p.z)+rz));
+    f64 x=f64v(p.u)*1.02+extent(body.forward.x,body.up.x,body.right.x,half)+pad;
+    f64 y=f64v(p.v)*1.02+extent(body.forward.y,body.up.y,body.right.y,half)+pad;
+    f64 z=rz+extent(body.forward.z,body.up.z,body.right.z,half)+pad;
+    Interval ix=slab(o.x,v.x,0.0-x,x,dt);Interval iy=slab(o.y,v.y,0.0-y,y,dt);Interval iz=slab(o.z,v.z,0.0-z,z,dt);
+    f64 enter=hi(ix.enter,hi(iy.enter,iz.enter));f64 leave=lo(ix.leave,lo(iy.leave,iz.leave));
+    Sweep start={.possible=ix.possible&&iy.possible&&iz.possible&&enter<=dt&&leave>=0.0&&enter<=leave;
+        .enter=-100000.0;.leave=dt;.normal=art.v(0.0,0.0,0.0);};
+    prism_axes(p,body,o,v,half,dt,pad,0,start)
+};
+bool(station.Part,art.Vec,art.Vec) outside_prism=fn(p,a,b){
+    f64 x=f64v(p.x);f64 y=f64v(p.y);f64 z=f64v(p.z);
+    f64 u=f64v(p.u)*1.02+2.0;f64 v=f64v(p.v)*1.02+2.0;
+    hi(a.x,b.x)<x-u||lo(a.x,b.x)>x+u||hi(a.y,b.y)<y-v||lo(a.y,b.y)>y+v
+        ||hi(a.z,b.z)<z-2.0||lo(a.z,b.z)>z+f64v(p.l)+2.0
+};
+Hit(station.Part,i32,art.Axes,art.Vec,art.Vec,f64,Hit) sweep_prism=fn(p,i,body,origin,v,dt,best){
+    if(i==10){best}else{
+        Probe q=register(i);
+        Sweep test=prism_probe(p,body,art.add(origin,rotate(body,q.local)),v,q.half,best.time,0.003);
+        bool hit=test.possible&&test.enter>=-0.00002&&art.dot(test.normal,v)<0.0;
+        Hit found={.active=true;.time=hi(0.0,test.enter);.normal=test.normal;};
+        sweep_prism(p,i+1,body,origin,v,dt,if(hit&&(!best.active||found.time<best.time)){found}else{best})
+    }
+};
+bool(station.Part,i32,art.Axes,art.Vec,f64,f64) prism_pose_clear=fn(p,i,body,origin,angle,skin){
+    if(i==10){true}else{
+        Probe q=register(i);
+        f64 bound=(art.length(q.local)+art.length(q.half))*angle;
+        Sweep test=prism_probe(p,body,art.add(origin,rotate(body,q.local)),art.v(0.0,0.0,0.0),q.half,0.0,bound+skin);
+        !test.possible&&prism_pose_clear(p,i+1,body,origin,angle,skin)
+    }
+};
+bool(station.Part,art.Vec,f64,f64,f64,f64,i32,f64) prism_turn=fn(p,origin,yaw,pitch,dy,dp,depth,skin){
+    f64 my=yaw+dy*0.5;f64 mp=pitch+dp*0.5;
+    if(prism_pose_clear(p,0,art.facing(my,mp),origin,(math.abs(dy)+math.abs(dp))*0.5,skin)){true}
+    else{depth>0&&prism_turn(p,origin,yaw,pitch,dy*0.5,dp*0.5,depth-1,skin)
+        &&prism_turn(p,origin,my,mp,dy*0.5,dp*0.5,depth-1,skin)}
+};
 Hit(f32,f32,f32,f32,f32,f32,f32,f32,f32,i32) station_sweep=fn(x,y,z,vx,vy,vz,yaw,pitch,step,releasing){
     f64 dt=f64v(step);art.Vec from=art.v(f64v(x),f64v(y),f64v(z));art.Vec v=art.v(f64v(vx),f64v(vy),f64v(vz));
     art.Vec endpoint=art.add(from,art.mul(v,dt));
@@ -217,13 +293,19 @@ Hit(f32,f32,f32,f32,f32,f32,f32,f32,f32,i32) station_sweep=fn(x,y,z,vx,vy,vz,yaw
     bool local_in=!outside_catwalk(from,endpoint);
     bool rail_in=!outside_rails(from,endpoint);
     bool radiator_in=count(2)>0&&!outside_radiator(from,endpoint);
-    if(!solar_in&&!local_in&&!rail_in&&!radiator_in){none(dt)}
+    station.Part aft=if(station.aft_body_id<0){station.empty}else{station.aft_body()};
+    bool aft_in=station.aft_body_id>=0&&!outside_prism(aft,from,endpoint);
+    station.Part spine=if(station.spine_body_id<0){station.empty}else{station.spine_body()};
+    bool spine_in=station.spine_body_id>=0&&!outside_prism(spine,from,endpoint);
+    if(!solar_in&&!local_in&&!rail_in&&!radiator_in&&!aft_in&&!spine_in){none(dt)}
     else{
         art.Axes body=art.facing(f64v(yaw),f64v(pitch));
         Hit wing_hit=if(solar_in){swept(1,0,body,from,v,dt,none(dt))}else{none(dt)};
         Hit box_hit=if(local_in){swept(0,0,body,from,v,dt,wing_hit)}else{wing_hit};
         Hit trays=if(radiator_in){swept(2,0,body,from,v,dt,box_hit)}else{box_hit};
-        if(rail_in){swept_rails(0,releasing,body,from,v,dt,trays)}else{trays}
+        Hit rails=if(rail_in){swept_rails(0,releasing,body,from,v,dt,trays)}else{trays};
+        Hit outer=if(aft_in){sweep_prism(aft,0,body,from,v,dt,rails)}else{rails};
+        if(spine_in){sweep_prism(spine,0,body,from,v,dt,outer)}else{outer}
     }
 };
 bool(i32,i32,art.Axes,art.Vec,art.Vec,f64) orientation_parts=fn(family,i,body,from,actor,padding){
@@ -265,7 +347,13 @@ bool(f32,f32,f32,f32,f32,f32,f32) turn_clear=fn(x,y,z,yaw,pitch,dyaw,dpitch){
             else{rotation_clear(1,origin,f64v(yaw),f64v(pitch),f64v(dyaw),f64v(dpitch),4)};
         bool trays_safe=if(count(2)==0||outside_radiator(origin,origin)){true}
             else{rotation_clear(2,origin,f64v(yaw),f64v(pitch),f64v(dyaw),f64v(dpitch),4)};
-        wing_safe&&trays_safe&&(if(outside_catwalk(origin,origin)){true}
+        station.Part aft=if(station.aft_body_id<0){station.empty}else{station.aft_body()};
+        bool aft_safe=if(station.aft_body_id<0||outside_prism(aft,origin,origin)){true}
+            else{prism_turn(aft,origin,f64v(yaw),f64v(pitch),f64v(dyaw),f64v(dpitch),4,0.0)};
+        station.Part spine=if(station.spine_body_id<0){station.empty}else{station.spine_body()};
+        bool spine_safe=if(station.spine_body_id<0||outside_prism(spine,origin,origin)){true}
+            else{prism_turn(spine,origin,f64v(yaw),f64v(pitch),f64v(dyaw),f64v(dpitch),4,0.003)};
+        wing_safe&&trays_safe&&aft_safe&&spine_safe&&(if(outside_catwalk(origin,origin)){true}
             else{rotation_clear(0,origin,f64v(yaw),f64v(pitch),f64v(dyaw),f64v(dpitch),4)})
     }
 };

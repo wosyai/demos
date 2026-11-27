@@ -935,6 +935,40 @@ for(const [x,solid] of [[-14,true],[-11.50,false]]){
 }
 console.log('EVA flight: descended on the power blanket and through the open adjacent channel.');
 
+for(const [x,solid] of [[-4.69,true],[-7.15,false]]){
+ engine.select_deck(1);engine.tick(0,0,0,0);
+ reachPoint([1,7.4,1]);reachPoint([x,6,-20.8]);engine.set_thrust(0,0);
+ let first;
+ for(let i=0;i<120;i++){
+  const incoming=state[6];engine.tick(.032,32,0,0);
+  if(state[26]&&!first)first={incoming,outgoing:state[6],y:state[1]};
+ }
+ assert.equal(Boolean(first),solid,'the finite aft prism preserves the adjacent flight lane');
+ if(solid){
+  assert.ok(first.y>2.95&&first.y<3.23,'first contact is at the boots, not the pilot point');
+  assert.ok(first.incoming< -2&&first.outgoing>.47,'first impact reverses the inward component');
+  assert.ok(state[1]>2.92&&Math.abs(state[6])<.001,'the suit comes to rest above the physical hull');
+ }else assert.ok(state[1]< -5,'the adjacent flight lane is genuinely open');
+}
+console.log('Aft freighter: the stock suit rebounds at boot contact and the adjoining descent remains open.');
+
+for(const [x,solid] of [[-4.69,true],[-7.6,false]]){
+ engine.select_deck(1);engine.tick(0,0,0,0);
+ reachPoint([1,7.4,1]);reachPoint([x,6,4.35]);engine.set_thrust(0,0);
+ let first;
+ for(let i=0;i<120;i++){
+  const incoming=state[6];engine.tick(.032,32,0,0);
+  if(state[26]&&!first)first={incoming,outgoing:state[6],y:state[1]};
+ }
+ assert.equal(Boolean(first),solid,'the finite pressure spine preserves the adjacent flight lane');
+ if(solid){
+  assert.ok(first.y>3.40&&first.y<3.65,'first contact is at the boots, not the pilot point');
+  assert.ok(first.incoming< -2&&first.outgoing>.47,'first impact reverses the inward component');
+  assert.ok(state[1]>3.40&&Math.abs(state[6])<.001,'the suit comes to rest above the physical hull');
+ }else assert.ok(state[1]< -5,'the adjacent flight lane is genuinely open');
+}
+console.log('Pressure spine: the stock suit rebounds at boot contact and the adjoining descent remains open.');
+
 for(const [z,plate] of [[-.43,true],[1.34,false]]){
  engine.select_deck(1);engine.tick(0,0,0,0);
  reachPoint([1,5,1.3]);reachPoint([-8.55,4.4,1.34]);

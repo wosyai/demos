@@ -124,11 +124,35 @@ unit(i32) plumbing=fn(i){if(i<4){
     plank(-3.27,2.03,z+0.48,1.35,0.03,1.11,6);
     plumbing(i+1);
 };};
+f32(f32) wave = fn(a) {
+    f32 u=if(a>3.14159265){a-6.28318531}else{if(a< -3.14159265){a+6.28318531}else{a}};
+    f32 q=if(u>1.57079633){3.14159265-u}else{if(u< -1.57079633){-3.14159265-u}else{u}};
+    q*(1.0-q*q*(0.16666667-q*q*(0.00833333-q*q*0.000198413)))
+};
+f32(f32) cw = fn(a){wave(a+1.57079633)};
+struct copy RingPoint { f32 u; f32 v; }
+RingPoint(i32,i32) hull_ring_point=fn(i,n){
+    f32 a=(core.sint_to_float<f32>(i)+0.5)*6.28318531/core.sint_to_float<f32>(n);
+    if(a>3.14){a=a-6.28318531;};
+    f32 norm=if(n==4){1.41421356}else{if(n==8){1.08239220}else{1.01959116}};
+    RingPoint p={.u=cw(a)*norm;.v=wave(a)*norm;};p
+};
+RingPoint empty_ring={.u=0.0;.v=0.0;};
+RingPoint[16] prism_ring=[empty_ring,empty_ring,empty_ring,empty_ring,empty_ring,empty_ring,empty_ring,empty_ring,
+    empty_ring,empty_ring,empty_ring,empty_ring,empty_ring,empty_ring,empty_ring,empty_ring];
+unit(i32) fill_prism_ring=fn(i){
+    if(i<16){prism_ring[core.int_extend<u64>(i)]=hull_ring_point(i,16);fill_prism_ring(i+1);};
+};
+RingPoint(i32) prism_ring_at=fn(i){prism_ring[core.int_extend<u64>(i%16)]};
+i32 spine_body_id=-1;
+i32 aft_body_id=-1;
+Part() spine_body=fn{at(spine_body_id)};
+Part() aft_body=fn{at(aft_body_id)};
 unit() build=fn{
  if(total==0){
     tube(0,1,-4.69,0.0,-16.1,0.92,0.88,1.75);
     tube(0,2,-4.69,0.0,-15.18,2.4,1.54,1.24);
-    tube(0,0,-4.69,0.0,-12.78,17.5,1.91,1.0);spine_band(0);
+    spine_body_id=total;tube(0,0,-4.69,0.0,-12.78,17.5,1.91,1.0);spine_band(0);
     tube(0,2,-4.69,0.0,4.72,1.05,1.91,0.76);
     tube(0,1,-4.69,0.0,5.77,0.24,1.47,1.0);
     tube(0,0,-4.69,0.0,6.01,1.62,1.36,0.85);
@@ -149,7 +173,7 @@ unit() build=fn{
     tube(2,9,-5.46,-2.02,-21.71,0.11,0.20,1.0);tube(2,9,-3.83,-2.02,-21.71,0.11,0.20,1.0);
     tube(0,9,-4.69,0.0,-23.9,0.45,1.14,1.06);
     tube(0,3,-4.69,0.0,-23.45,0.66,1.22,1.18);
-    tube(0,2,-4.69,0.0,-22.79,3.45,1.45,1.0);
+    aft_body_id=total;tube(0,2,-4.69,0.0,-22.79,3.45,1.45,1.0);fill_prism_ring(0);
     tube(0,1,-4.69,0.0,-19.34,0.25,1.48,1.0);
     tube(0,0,-4.69,0.0,-19.09,1.82,1.45,0.52);
     tube(0,1,-4.69,0.0,-17.27,1.18,0.73,1.0);
