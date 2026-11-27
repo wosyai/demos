@@ -295,6 +295,7 @@ uniform bool stockEyeSeat;
 uniform int interiorOptic;
 uniform int helmetInteriorPart;
 uniform vec3 helmetForward;
+uniform vec3 stockVisorCenter;
 uniform float plume;
 flat in vec4 surfaceColor;
 uniform bool mapped;
@@ -334,7 +335,13 @@ void main(){
    ${sunVisibility?"if(stationSun&&sun>0.)sun*=shadowAt(world,linerNormal,incidence);":""}
    // The recessed shell absorbs more bounce than the visor's exposed frame.
    // Orient the lobe toward the aperture, not the camera or the screen edge.
-   float opening=.24+.76*max(0.,dot(linerNormal,helmetForward));
+   // Diffuse bounce arrives from the finite stock aperture, not a collimated
+   // ray parallel to the helmet axis. Pose both ends in the same space.
+   // Only the exposed visor frame sees the finite opening. Keep the original
+   // broader ambient response on the recessed pressure shell and neck ring.
+   vec3 bounceDirection=helmetForward;
+   if(helmetInteriorPart==3)bounceDirection=normalize(stockVisorCenter-world);
+   float opening=.24+.76*max(0.,dot(linerNormal,bounceDirection));
    vec3 bounce=helmetInteriorPart==1?vec3(.025,.032,.044):
                helmetInteriorPart==2?vec3(.052,.064,.080):vec3(.082,.100,.124);
    vec3 indirect=bounce*(.61+.89*opening);
@@ -446,7 +453,7 @@ export async function loadApolloBody(gl,url,rig,sunVisibility){
 
 function renderAvatar(gl,pose,meshes,hasEquipment=false,sunVisibility,stock=false){
  const p=program(gl,sunVisibility);
- const U=Object.fromEntries(['eye','basis','optics','roll','depthClip','sunDirection','firstPerson','stockEyeSeat','plume','interiorOptic','helmetInteriorPart','helmetForward','baseColor','baked','mapped','albedo'].map(n=>[n,gl.getUniformLocation(p,n)]));
+ const U=Object.fromEntries(['eye','basis','optics','roll','depthClip','sunDirection','firstPerson','stockEyeSeat','plume','interiorOptic','helmetInteriorPart','helmetForward','stockVisorCenter','baseColor','baked','mapped','albedo'].map(n=>[n,gl.getUniformLocation(p,n)]));
  const S=sunVisibility?Object.fromEntries(['stationSun','sunMap','detailedShadow','renderFraction','earthLighting'].map(n=>[n,gl.getUniformLocation(p,n)])):null;
  const unlitEarth=new Float32Array(4);
  const UBO=3, TEX=8, palette=gl.createBuffer();
@@ -477,7 +484,12 @@ function renderAvatar(gl,pose,meshes,hasEquipment=false,sunVisibility,stock=fals
    const fullInterior=!thirdPerson&&stock&&frame[32]!==1;
    gl.uniform1i(U.stockEyeSeat,Number(Boolean(fullInterior)&&frame[32]!==1));
    gl.uniform1i(U.interiorOptic,0);gl.uniform1i(U.helmetInteriorPart,0);
-   if(fullInterior)gl.uniform3fv(U.helmetForward,last.helmetForward);
+   if(fullInterior){
+    gl.uniform3fv(U.helmetForward,last.helmetForward);
+    // The original, hash-registered visor and lining share rigid Chest slot 5.
+    // +X is outward; coordinates are within the clear stock visor bounds.
+    gl.uniform3fv(U.stockVisorCenter,transform(last.palette.subarray(5*16,6*16),[.215,1.675,0.]));
+   }
    let lining=0;
    for(const m of meshes){
     if(fullInterior){
