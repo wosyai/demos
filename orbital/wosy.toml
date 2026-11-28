@@ -70,6 +70,7 @@ avatar_mmu = "avatar_mmu"
 avatar_mmu_grasps = "avatar_mmu_grasps"
 avatar_elbow = "avatar_elbow"
 avatar_grasp_style = "avatar_grasp_style"
+avatar_training_wrist = "avatar_training_wrist"
 
 [targets.app.profiles.dev]
 main_artifact = "main"

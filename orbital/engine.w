@@ -18,8 +18,11 @@ unit(f64,f64,f64,f64,f64) avatar_mmu=fn(lx,ly,rx,ry,mmu_reach){avatar_kinematics
 unit() avatar_mmu_grasps=fn{avatar_kinematics.publish_mmu_grasps();};
 unit(f64,f64,f64,f64,f64,f64,f64,f64,f64,f64,f64) avatar_elbow=fn(sx,sy,sz,wx,wy,wz,upper,fore,px,py,pz){avatar_kinematics.publish_elbow(sx,sy,sz,wx,wy,wz,upper,fore,px,py,pz);};
 
-unit(f64,f64,i32,i32) avatar_grasp_style=fn(grip_weight,span_error,registered_fit,left_side){
-    avatar_kinematics.publish_grasp_style(grip_weight,span_error,registered_fit,left_side);
+unit(f64,f64,f64,f64,f64,f64,f64,f64,f64,f64) avatar_training_wrist=fn(rx,ry,rz,ax,ay,az,ux,uy,uz,training_weight){
+    avatar_kinematics.publish_training_wrist(rx,ry,rz,ax,ay,az,ux,uy,uz,training_weight);
+};
+unit(f64,f64,i32,i32,i32,i32) avatar_grasp_style=fn(grip_weight,span_error,registered_fit,left_side,phase,rail){
+    avatar_kinematics.publish_grasp_style(grip_weight,span_error,registered_fit,left_side,phase,rail);
 };
 
 host = extern wasm "orbital" {

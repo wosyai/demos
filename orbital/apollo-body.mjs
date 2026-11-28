@@ -129,21 +129,25 @@ export class ApolloPose {
    if(!Number.isFinite(length(axis))||length(axis)<.5)return [side,null];
    return [side,{...g,local:matrix(g.translation,g.orientation),thumb:[node,axis]}];
   }));
+  const heldFingerLanes=new Map(['Index','Middle','Ring'].flatMap((digit,i)=>
+   ['Proximal','Intermediate','Distal'].map((joint,k)=>[digit+joint,3*i+k])));
   this.knuckles=Object.fromEntries(['Left','Right'].map(side=>[side,this.joints.flatMap((i,ib)=>{
    const name=this.nodes[i].name;
    if(!name.startsWith(side+'Hand'))return [];
    const thumb=name.includes('Thumb');
    const jointType=thumb?(name.endsWith('Proximal')?0:name.endsWith('Distal')?1:-1):
       name.endsWith('Proximal')?2:name.endsWith('Intermediate')?3:name.endsWith('Distal')?4:-1;
-   const inv=asset.bind[ib];
-   return jointType>=0?[[i,jointType,unit([inv[0],inv[1],inv[2]]),mmuBendIndex.get(name.slice(side.length+4))]]:[];
+   const inv=asset.bind[ib], suffix=name.slice(side.length+4);
+   return jointType>=0?[[i,jointType,unit([inv[0],inv[1],inv[2]]),mmuBendIndex.get(suffix),heldFingerLanes.get(suffix)]]:[];
   })]));
  }
  solve(frame,options={}){
   const joints=this.globals, index=name=>this.names.get(name);
   const eye=Array.from(frame.slice(0,3));
   const {body,head}=this.rig.axes(frame);
-  const grip=clamp(frame[8],0,1), contact=options.contact===undefined?this.rig.stationGrip(frame):options.contact;
+  const grip=clamp(frame[8],0,1);
+  const contact=grip>0&&frame[15]===1&&frame[16]===0&&frame[19]===0&&options.contact!==null
+   ?this.rig.stationGrip(frame,true):options.contact===undefined?this.rig.stationGrip(frame):options.contact;
   // Apollo faces +X, +Y is up and right is +Z in the exported GLB.
   const base=transformBasis(body.forward,body.up,body.right,
       sub(eye,add(mul(body.up,1.623),mul(body.forward,-.095))));
@@ -176,10 +180,11 @@ export class ApolloPose {
    const reach=side==='Left'?grip:0;
    const authoredWrist=Array.from(frame.slice(12,15));
    const published=options.wrist??add(authoredWrist,[.068,.154,.077]);
-   const target=reach&&contact?this.rig.approach(rest,contact,reach,frame[9]===3):reach?mix(rest,published,reach):rest;
+   const target=reach&&contact?this.rig.approach(rest,contact,reach,frame[9]===3):
+    reach&&frame[15]===0?this.rig.trainingWrist(rest,published,body.up,reach):reach?mix(rest,published,reach):rest;
    const pole=add(mul(body.right,s*.51),mul(body.up,-1));
    const spanError=reach?length(sub(target,a))-(length(sub(b,a))+length(sub(c,b))):0;
-   const art=this.rig.railArticulation(reach,spanError,Boolean(contact),i);
+   const art=this.rig.railArticulation(reach,spanError,Boolean(contact),i,frame[9],frame[16]);
    if(art.collar>0){
     const collar=index('LeftShoulder'), anchor=origin(joints[collar]);
     const push=mul(unit(sub(target,a)),art.collar);
@@ -224,8 +229,8 @@ export class ApolloPose {
    }
    const knuckles=this.knuckles[side];
    for(let j=0;j<knuckles.length;j++){
-    const [joint,jointType,axis,bendIndex]=knuckles[j];
-    const flex=art.flex[jointType];
+    const [joint,jointType,axis,bendIndex,heldLane]=knuckles[j];
+    const flex=art.flex[jointType]+(heldLane===undefined?0:art.heldFingerFlex[heldLane]);
     const bend=mmu&&bendIndex!==undefined?flex+authored.bends[bendIndex]*fit:flex;
     install(joint,product(joints[joint],matrix(undefined,orbitRotation(axis,bend))));
    }

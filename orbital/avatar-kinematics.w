@@ -29,15 +29,17 @@ Vec(f64,f64,f64,f64) apollo_eye_delta=fn(byaw,bpitch,hyaw,hpitch){
     Vec optical_result=if(denom<0.000001){hinge}else{add(hinge,add(rest,add(first,mul(cross(bend,first),1.0/denom))))};optical_result
 };
 Vec(Vec,f64,f64,f64) radial=fn(center,x,r,theta){add(center,v(x,r*math.cos(theta),r*math.sin(theta)))};
-Grip(Vec,Vec,f64,f64,bool) grip=fn(eye,anchor,weight,stage,valid){
+Grip(Vec,Vec,f64,f64,bool,bool) grip=fn(eye,anchor,weight,stage,valid,apollo_first_rail){
     bool active=valid&&weight>=0.004;
     if(active){
         Vec rest=sub(eye,v(0.23,0.40,0.80));
         Vec center=add(rest,mul(sub(anchor,rest),1.0/weight));
         f64 radius=if(stage>=5.0){0.082}else{0.087};f64 theta=if(stage>=5.0){0.61}else{0.365};
         Vec shaft_inward=v(0.0,math.sin(theta),-math.cos(theta));
-        Vec knuckle=radial(center,0.023,radius+0.020,theta);
-        Vec ordinary_wrist=sub(knuckle,mul(shaft_inward,0.066));
+        f64 glove_standoff=if(apollo_first_rail){0.051}else{0.020};
+        Vec knuckle=radial(center,0.023,radius+glove_standoff,theta);
+        f64 palm_depth=if(apollo_first_rail){0.045}else{0.066};
+        Vec ordinary_wrist=sub(knuckle,mul(shaft_inward,palm_depth));
         Vec fitted_wrist=if(stage>=5.0){
             Vec radial_wrist=sub(ordinary_wrist,center);
             Vec outside=normalized(v(0.0,radial_wrist.y,radial_wrist.z));
@@ -56,7 +58,7 @@ Grip(Vec,Vec,f64,f64,bool) grip=fn(eye,anchor,weight,stage,valid){
 bool(Vec,Vec,f64,f64) hatch_in_reach=fn(eye,shaft,heading,elevation){
     Axes body=facing(heading,elevation);
     Vec shoulder=add(eye,add(mul(body.forward,0.085),add(mul(body.up,-0.167),mul(body.right,-0.255))));
-    Grip hold=grip(eye,shaft,1.0,5.0,true);
+    Grip hold=grip(eye,shaft,1.0,5.0,true,false);
     Vec delta=sub(hold.wrist,shoulder);
     dot(delta,delta)<=0.250
 };
@@ -108,7 +110,7 @@ unit(u64,Vec) write_vec=fn(i,value){
     packet[i]=value.x;packet[i+1]=value.y;packet[i+2]=value.z;
 };
 unit(f64,f64,f64,f64,f64,f64,f64,f64,i32) publish_grip=fn(ex,ey,ez,ax,ay,az,weight,stage,valid){
-    Grip contact=grip(v(ex,ey,ez),v(ax,ay,az),weight,stage,valid==1);
+    Grip contact=grip(v(ex,ey,ez),v(ax,ay,az),weight,stage,valid==1||valid==2,valid==2);
     packet[0]=if(contact.active){1.0}else{0.0};
     if(contact.active){
         write_vec(1,contact.center);packet[4]=contact.radius;packet[5]=contact.theta;
@@ -146,7 +148,13 @@ unit(f64,f64,f64,f64,f64,f64,f64,f64,f64,f64,f64) publish_elbow=fn(sx,sy,sz,wx,w
     Arm arm=elbow(v(sx,sy,sz),v(wx,wy,wz),upper,fore,v(px,py,pz));
     write_vec(0,arm.elbow);write_vec(3,arm.wrist);packet[6]=arm.error;send(7);
 };
-unit(f64,f64,i32,i32) publish_grasp_style=fn(reach,span_error,registered,left){
+unit(f64,f64,f64,f64,f64,f64,f64,f64,f64,f64) publish_training_wrist=fn(rx,ry,rz,ax,ay,az,ux,uy,uz,reach){
+    f64 lift=0.075*smooth(reach/0.012)*(1.0-smooth((reach-0.15)/0.24));
+    Vec rest=v(rx,ry,rz);Vec endpoint=v(ax,ay,az);
+    write_vec(0,add(add(rest,mul(sub(endpoint,rest),reach)),mul(v(ux,uy,uz),lift)));
+    send(3);
+};
+unit(f64,f64,i32,i32,i32,i32) publish_grasp_style=fn(reach,span_error,registered,left,phase,rail){
     f64 palm=math.clamp(reach/0.69,0.0,1.0);
     f64 curl=0.72+0.28*reach;
     f64 side=if(left==1){-1.0}else{1.0};
@@ -158,6 +166,16 @@ unit(f64,f64,i32,i32) publish_grasp_style=fn(reach,span_error,registered,left){
     packet[5]=(0.12*side)*curl;
     packet[6]=(0.43*side)*curl;
     packet[7]=(0.38*side)*curl;
-    send(8);
+    bool first_hold=registered==1 && left==1 && phase==2 && rail==0;
+    packet[8]=if(first_hold){-0.80}else{0.0};
+    packet[9]=if(first_hold){0.16}else{0.0};
+    packet[10]=if(first_hold){-0.04}else{0.0};
+    packet[11]=if(first_hold){-0.40}else{0.0};
+    packet[12]=if(first_hold){0.02}else{0.0};
+    packet[13]=if(first_hold){-0.64}else{0.0};
+    packet[14]=if(first_hold){-0.16}else{0.0};
+    packet[15]=0.0;
+    packet[16]=if(first_hold){-0.42}else{0.0};
+    send(17);
 };
 %%end

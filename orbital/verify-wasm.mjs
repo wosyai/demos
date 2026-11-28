@@ -1341,4 +1341,8 @@ for(const [weight,span,registered,side] of [
  assert.equal(palm,registered?t*t*(3-2*t):weight);
  assert.deepEqual(flex,[.18,.20,.12,.43,.38].map(v=>v*(side===0?-1:1)*curl));
 }
-console.log('Apollo rail articulation: bounded Wosy clavicle, palm phase and signed finger flex coefficients passed.');
+assert.deepEqual(rig.railArticulation(1,0,true,0,2,0).heldFingerFlex,[-.80,.16,-.04,-.40,.02,-.64,-.16,0,-.42]);
+for(const args of [[1,0,true,0,1,0],[1,0,true,0,3,0],[1,0,true,1,2,0],[1,0,true,0,2,1],[1,0,false,0,2,0]]){
+ assert.deepEqual(rig.railArticulation(...args).heldFingerFlex,Array(9).fill(0));
+}
+console.log('Apollo rail articulation: Wosy claw and three held digit rows passed.');
